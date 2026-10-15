@@ -53,6 +53,16 @@ CREATE TABLE IF NOT EXISTS scores (
     PRIMARY KEY (account_id, run_date)
 );
 
+-- Cached briefer output (LLM-written only) so regenerating a card is free and identical.
+CREATE TABLE IF NOT EXISTS briefs (
+    account_id        INTEGER NOT NULL REFERENCES accounts(id),
+    run_date          TEXT NOT NULL,
+    why_now           TEXT NOT NULL,
+    best_service_line TEXT NOT NULL,
+    model             TEXT,
+    PRIMARY KEY (account_id, run_date)
+);
+
 CREATE TABLE IF NOT EXISTS exclusions (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL,

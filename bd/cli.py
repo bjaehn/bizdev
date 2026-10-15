@@ -1,4 +1,4 @@
-"""Typer CLI. Commands not yet built exit 2 with a message naming their stage."""
+"""Typer CLI."""
 
 from __future__ import annotations
 
@@ -11,11 +11,6 @@ import typer
 from bd.config import Config, Settings, load_config
 
 app = typer.Typer(help="SEI Chicago BD Signal Agent", no_args_is_help=True)
-
-
-def _not_yet(stage: int, name: str) -> None:
-    typer.echo(f"`bd {name}` is not implemented yet (Stage {stage}).", err=True)
-    raise typer.Exit(code=2)
 
 
 def _fail(msg: str) -> None:
@@ -140,21 +135,126 @@ def scan(
 
 
 @app.command()
-def score() -> None:
-    """Score accounts from stored signals."""
-    _not_yet(4, "score")
+def score(
+    as_of: Optional[str] = typer.Option(None, help="Score date YYYY-MM-DD (default today)"),
+) -> None:
+    """Score every fit-gated (active) account from its stored signals. Deterministic; no API calls."""
+    from bd.db import connect, init_db
+    from bd.score_store import score_accounts
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    scored = score_accounts(conn, cfg, run_date)
+    if not scored:
+        _fail("No active accounts to score. Seed accounts and fill in their fit-gate facts first.")
+    counts: dict[str, int] = {}
+    for sa in scored:
+        counts[sa.result.band] = counts.get(sa.result.band, 0) + 1
+    typer.echo(f"Scored {len(scored)} accounts as of {run_date}: "
+               + ", ".join(f"{b} {counts.get(b, 0)}" for b in ("Hot", "Warm", "Watch", "Stored")))
+    for sa in sorted(scored, key=lambda s: (-s.result.score, s.account.id))[:15]:
+        if sa.result.score:
+            typer.echo(f"  {sa.result.score:>3} {sa.result.band:<6} {sa.account.name}: {sa.result.rationale}")
+
+
+def _shortlist_or_fail(conn, cfg, run_date):
+    from bd.shortlist import ShortlistError, build_shortlist
+
+    try:
+        return build_shortlist(conn, cfg, run_date)
+    except ShortlistError as e:
+        _fail(str(e))
+        raise
 
 
 @app.command()
-def shortlist() -> None:
-    """Build the weekly shortlist."""
-    _not_yet(4, "shortlist")
+def shortlist(
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+) -> None:
+    """Preview who would be posted (read-only: nothing is marked posted, no API calls)."""
+    from bd.db import connect, init_db
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    sl = _shortlist_or_fail(conn, cfg, run_date)
+    typer.echo(f"Shortlist for {run_date}: {len(sl.leads)} lead(s)"
+               + (f" (+{len(sl.overflow)} over the cap of {cfg.post_gate.max_leads_per_post})" if sl.overflow else ""))
+    for lead in sl.leads:
+        typer.echo(f"  {lead.result.score:>3} {lead.result.band:<5} {lead.account.name}: {lead.result.rationale}")
+    tracked = [s for s in sl.skipped if s.band in ("Watch", "Hot", "Warm")]
+    if tracked:
+        typer.echo("Tracked, not posted:")
+        for s in sorted(tracked, key=lambda s: -s.score):
+            typer.echo(f"  {s.score:>3} {s.band:<5} {s.account.name}: {s.reason}")
 
 
 @app.command()
-def card() -> None:
-    """Write card.json (and post to Teams only if TEAMS_WEBHOOK_URL is set)."""
-    _not_yet(4, "card")
+def card(
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    out: str = typer.Option("card.json", help="Where to write the Adaptive Card"),
+    dry_run: bool = typer.Option(False, help="Never post, even if TEAMS_WEBHOOK_URL is set"),
+    no_llm: bool = typer.Option(False, help="Skip the briefer: use plain source-summary fallbacks"),
+    rebrief: bool = typer.Option(False, help="Regenerate briefs instead of using the cached ones"),
+) -> None:
+    """Brief the shortlist, write card.json, and post to Teams ONLY if TEAMS_WEBHOOK_URL is set
+    (default is a dry run). Leads are marked posted, starting their cooldown, only after a successful post."""
+    import json
+
+    from bd.briefer import Briefer, get_briefs
+    from bd.card import CardTooLarge, build_card, post_card, validate_card
+    from bd.db import connect, init_db
+    from bd.shortlist import mark_posted
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    sl = _shortlist_or_fail(conn, cfg, run_date)
+
+    llm = None
+    if sl.leads and not no_llm:
+        from bd.llm import AnthropicWebSearchClient
+        try:
+            key, model = settings.require_llm()
+        except RuntimeError as e:
+            _fail(f"{e}\n(or pass --no-llm to use plain source-summary lines)")
+            raise
+        llm = AnthropicWebSearchClient(cfg, model=model, api_key=key, web_search=False)
+    briefs = get_briefs(conn, cfg, sl.leads, run_date, Briefer(cfg, llm), settings.anthropic_model, rebrief=rebrief) if sl.leads else {}
+
+    try:
+        card_json = build_card(sl.leads, briefs, run_date, cfg, overflow=len(sl.overflow))
+    except CardTooLarge as e:
+        _fail(str(e))
+        raise
+    allowed = {s.url for lead in sl.leads for s in lead.signals}
+    problems = validate_card(card_json, cfg, allowed_urls=allowed)
+    if problems:
+        _fail("Card failed validation, not written:\n" + "\n".join(problems))
+    Path(out).write_text(json.dumps(card_json, indent=2, ensure_ascii=False))
+    n_fb = sum(b.source == "fallback" for b in briefs.values())
+    typer.echo(f"Wrote {out}: {len(sl.leads)} lead(s), {len(json.dumps(card_json).encode())} bytes"
+               + (f", {n_fb} plain fallback why-now line(s)" if n_fb else ""))
+    for lead in sl.leads:
+        b = briefs[lead.account.id]
+        typer.echo(f"  {lead.result.score:>3} {lead.result.band:<5} {lead.account.name} [{b.best_service_line or '-'}] "
+                   f"({b.source}): {b.why_now}")
+
+    if dry_run:
+        typer.echo("DRY RUN (--dry-run): not posted; nothing marked as posted.")
+    elif not settings.teams_webhook_url:
+        typer.echo("DRY RUN: TEAMS_WEBHOOK_URL is not set, so nothing was posted and nothing is marked as posted.")
+    else:
+        res = post_card(settings.teams_webhook_url, card_json)
+        if not res.ok:
+            _fail(f"Teams post failed ({res.detail}). Nothing marked as posted.")
+        mark_posted(conn, sl.leads, run_date, cfg)
+        typer.echo(f"Posted to Teams ({res.detail}); {len(sl.leads)} lead(s) marked posted, "
+                   f"{cfg.post_gate.cooldown_weeks}-week cooldown started.")
 
 
 @app.command()

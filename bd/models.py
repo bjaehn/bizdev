@@ -97,3 +97,4 @@ class ScoringSignal:
     event_date: date
     confidence: str
     service_lines: tuple[str, ...] = ()
+    ref: int | None = None  # signals.id; carried into the score components for audit

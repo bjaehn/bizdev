@@ -143,3 +143,14 @@ sources:
     company_site: High
     secondary_report: Medium
     rumor: Low
+
+briefer:
+  max_words: 30                   # why_now is ONE sentence of at most this many words
+  max_signals_in_prompt: 4
+  # why_now is rejected (retried once, then replaced by a plain fallback) if it contains any of these.
+  banned_phrases: [reach out, outreach, we should, pitch, approach, recommend, SEI, opportunity to sell, cold call]
+
+card:
+  max_bytes: 28000                # Teams adaptive card payloads are limited to about 28 KB
+  max_buttons_per_lead: 3
+  title: SEI Chicago BD Signals

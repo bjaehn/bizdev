@@ -31,6 +31,7 @@ class SignalPoints:
     service_mult: float
     points: float
     weight_in_family: float = 1.0  # filled in by score_account
+    ref: int | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ def signal_points(sig: ScoringSignal, as_of: date, cfg: Config) -> SignalPoints:
         confidence_mult=conf,
         service_mult=svc,
         points=base * rec * conf * svc,
+        ref=sig.ref,
     )
 
 

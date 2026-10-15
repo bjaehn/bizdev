@@ -71,3 +71,37 @@ def account(name="Acme Corp", domain="acme.com", id=1):
 def block(**kw):
     """A fake SDK content block with model_dump()."""
     return SimpleNamespace(model_dump=lambda: dict(kw), **kw)
+
+
+# ---- Stage 4 helpers: seed a DB with accounts and signals -----------------------------------
+import json  # noqa: E402
+
+from bd.hashing import signal_hash  # noqa: E402
+
+
+def add_account(conn, name, domain=None, status="active", **kw):
+    cols = {"name": name, "domain": domain or f"{name.lower().replace(' ', '')}.com", "status": status,
+            "chicagoland": "yes", "ownership": "public", "revenue": 5e8, **kw}
+    cur = conn.execute(f"INSERT INTO accounts({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", list(cols.values()))
+    conn.commit()
+    return cur.lastrowid
+
+
+def add_signal(conn, cfg, account_id, type_, age, conf="High", lines=("Strategy & Operations",),
+               url=None, summary=None, role=None, source_type="company_release", as_of=AS_OF):
+    d = (as_of - timedelta(days=age)).isoformat()
+    url = url or f"https://example-{account_id}.com/{type_}/{age}"
+    conn.execute(
+        "INSERT INTO signals(account_id,family,type,event_date,detected_date,summary,source_url,source_type,"
+        "confidence,service_lines,role_or_person,hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (account_id, cfg.scoring.family_of(type_), type_, d, as_of.isoformat(),
+         summary or f"{type_.replace('_', ' ').capitalize()} at account {account_id}.", url, source_type, conf,
+         json.dumps(list(lines)), role, signal_hash(account_id, type_, date.fromisoformat(d), url)))
+    conn.commit()
+
+
+def make_db(tmp_path):
+    from bd.db import connect, init_db
+    c = connect(tmp_path / "t.sqlite")
+    init_db(c)
+    return c

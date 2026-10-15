@@ -154,6 +154,18 @@ class Sources(_Strict):
         return self
 
 
+class Briefer(_Strict):
+    max_words: int
+    max_signals_in_prompt: int
+    banned_phrases: list[str]
+
+
+class Card(_Strict):
+    max_bytes: int
+    max_buttons_per_lead: int
+    title: str
+
+
 class Config(_Strict):
     scoring: Scoring
     post_gate: PostGate
@@ -164,6 +176,8 @@ class Config(_Strict):
     pricing: Pricing
     verify: Verify
     sources: Sources
+    briefer: Briefer
+    card: Card
 
 
 def load_config(path: str | os.PathLike[str] | None = None) -> Config:

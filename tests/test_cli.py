@@ -15,11 +15,6 @@ def env(tmp_path, monkeypatch):
         monkeypatch.delenv(k, raising=False)
 
 
-def test_later_stage_commands_are_stubs():
-    for cmd in (["score"], ["shortlist"], ["card"]):
-        assert runner.invoke(app, cmd).exit_code == 2, cmd
-
-
 def test_seed_loads_repo_accounts():
     r = runner.invoke(app, ["seed", str(ROOT / "accounts.csv")])
     assert r.exit_code == 0 and "58 inserted" in r.output
@@ -96,3 +91,152 @@ def test_evaluate_reports_gold_problems_before_needing_a_key(tmp_path):
     assert r.exit_code == 1 and "not found" in r.output
     r = runner.invoke(app, ["evaluate", "--gold", str(ROOT / "tests" / "gold.template.csv")])
     assert r.exit_code == 1 and "blank" in r.output
+
+
+# ---- Stage 4: score / shortlist / card ----------------------------------------------------------
+import json  # noqa: E402
+import os  # noqa: E402
+
+from bd.db import connect, init_db  # noqa: E402
+from tests.conftest import add_account, add_signal  # noqa: E402
+
+WEBHOOK = "https://prod-00.example.logic.azure.com/workflows/SECRET-TOKEN/triggers/manual?sig=SECRETSIG"
+AS_OF_S = "2026-10-15"
+
+
+def populate(cfg):
+    conn = connect(os.environ["BD_DB_PATH"])
+    init_db(conn)
+    a = add_account(conn, "Hotco", industry="Industrial")
+    for ty, age in (("leadership_change", 21), ("hiring_cluster", 10), ("pe_addon", 45)):
+        add_signal(conn, cfg, a, ty, age, url=f"https://hotco.com/{ty}", summary=f"Hotco {ty.replace('_', ' ')} 21 days.")
+    w = add_account(conn, "Watchco")
+    add_signal(conn, cfg, w, "leadership_change", 5)
+    add_signal(conn, cfg, w, "risk_factor", 5)
+    held = add_account(conn, "Heldco", status="hold_review")
+    add_signal(conn, cfg, held, "leadership_change", 5)
+    return conn
+
+
+def test_score_needs_active_accounts():
+    assert runner.invoke(app, ["score", "--as-of", AS_OF_S]).exit_code == 1
+
+
+def test_score_and_shortlist_output(cfg):
+    populate(cfg)
+    r = runner.invoke(app, ["score", "--as-of", AS_OF_S])
+    assert r.exit_code == 0 and "Scored 2 accounts" in r.output and "Hot 1" in r.output and "Watch 1" in r.output
+    assert "91 Hot" in r.output and "Heldco" not in r.output
+    s = runner.invoke(app, ["shortlist", "--as-of", AS_OF_S])
+    assert s.exit_code == 0 and "1 lead(s)" in s.output and "Hotco" in s.output
+    assert "Watchco: band Watch is not posted" in s.output
+
+
+def test_shortlist_and_card_need_scores_first(cfg):
+    populate(cfg)
+    assert "bd score" in runner.invoke(app, ["shortlist", "--as-of", AS_OF_S]).output
+    assert runner.invoke(app, ["card", "--as-of", AS_OF_S, "--no-llm"]).exit_code == 1
+
+
+def test_card_default_is_a_dry_run_that_marks_nothing(cfg, tmp_path, monkeypatch):
+    conn = populate(cfg)
+    runner.invoke(app, ["score", "--as-of", AS_OF_S])
+    monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
+    posted = []
+    monkeypatch.setattr("bd.card.post_card", lambda *a, **k: posted.append(a))
+    out = tmp_path / "card.json"
+    r = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--no-llm", "--out", str(out)])
+    assert r.exit_code == 0 and "DRY RUN: TEAMS_WEBHOOK_URL is not set" in r.output and posted == []
+    card = json.loads(out.read_text())
+    assert card["version"] == "1.4" and "Hotco" in json.dumps(card)
+    row = conn.execute("SELECT posted, cooldown_until FROM scores WHERE band='Hot'").fetchone()
+    assert (row["posted"], row["cooldown_until"]) == (0, None)
+
+
+def test_card_without_no_llm_requires_key_and_points_at_the_flag(cfg):
+    populate(cfg)
+    runner.invoke(app, ["score", "--as-of", AS_OF_S])
+    r = runner.invoke(app, ["card", "--as-of", AS_OF_S])
+    assert r.exit_code == 1 and "ANTHROPIC_API_KEY" in r.output and "--no-llm" in r.output
+
+
+def test_card_with_no_leads_needs_no_key_and_still_writes_a_card(cfg, tmp_path):
+    conn = connect(os.environ["BD_DB_PATH"])
+    init_db(conn)
+    a = add_account(conn, "Quietco")
+    add_signal(conn, cfg, a, "leadership_change", 5)
+    runner.invoke(app, ["score", "--as-of", AS_OF_S])
+    out = tmp_path / "c.json"
+    r = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--out", str(out)])
+    assert r.exit_code == 0 and "0 lead(s)" in r.output
+    assert "No account met the posting gate" in out.read_text()
+
+
+def test_webhook_set_posts_marks_posted_and_starts_cooldown_without_printing_the_url(cfg, tmp_path, monkeypatch):
+    conn = populate(cfg)
+    runner.invoke(app, ["score", "--as-of", AS_OF_S])
+    monkeypatch.setenv("TEAMS_WEBHOOK_URL", WEBHOOK)
+    from bd.card import PostResult
+    calls = []
+    monkeypatch.setattr("bd.card.post_card", lambda url, card, *a, **k: calls.append((url, card)) or PostResult(True, "HTTP 202"))
+    out = tmp_path / "card.json"
+    r = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--no-llm", "--out", str(out)])
+    assert r.exit_code == 0 and "Posted to Teams (HTTP 202)" in r.output
+    assert len(calls) == 1 and calls[0][0] == WEBHOOK and calls[0][1]["version"] == "1.4"
+    assert "SECRET" not in r.output and "logic.azure" not in r.output
+    row = conn.execute("SELECT posted, cooldown_until FROM scores WHERE band='Hot'").fetchone()
+    assert (row["posted"], row["cooldown_until"]) == (1, "2026-11-12")
+    # same day again: the account is in cooldown, so the card has no leads
+    again = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--no-llm", "--out", str(out)])
+    assert "0 lead(s)" in again.output
+
+
+def test_dry_run_flag_beats_the_webhook_env(cfg, tmp_path, monkeypatch):
+    conn = populate(cfg)
+    runner.invoke(app, ["score", "--as-of", AS_OF_S])
+    monkeypatch.setenv("TEAMS_WEBHOOK_URL", WEBHOOK)
+    calls = []
+    monkeypatch.setattr("bd.card.post_card", lambda *a, **k: calls.append(a))
+    r = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--no-llm", "--dry-run", "--out", str(tmp_path / "c.json")])
+    assert r.exit_code == 0 and calls == [] and "DRY RUN (--dry-run)" in r.output
+    assert conn.execute("SELECT posted FROM scores WHERE band='Hot'").fetchone()[0] == 0
+
+
+def test_failed_post_exits_nonzero_and_marks_nothing(cfg, tmp_path, monkeypatch):
+    conn = populate(cfg)
+    runner.invoke(app, ["score", "--as-of", AS_OF_S])
+    monkeypatch.setenv("TEAMS_WEBHOOK_URL", WEBHOOK)
+    from bd.card import PostResult
+    monkeypatch.setattr("bd.card.post_card", lambda *a, **k: PostResult(False, "HTTP 400"))
+    r = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--no-llm", "--out", str(tmp_path / "c.json")])
+    assert r.exit_code == 1 and "HTTP 400" in r.output and "SECRET" not in r.output
+    row = conn.execute("SELECT posted, cooldown_until FROM scores WHERE band='Hot'").fetchone()
+    assert (row["posted"], row["cooldown_until"]) == (0, None)
+
+
+def test_card_uses_briefer_without_web_search_and_caches(cfg, tmp_path, monkeypatch):
+    conn = populate(cfg)
+    runner.invoke(app, ["score", "--as-of", AS_OF_S])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+    monkeypatch.delenv("TEAMS_WEBHOOK_URL", raising=False)
+    from tests.conftest import FakeLLM
+    made = []
+    reply = json.dumps({"why_now": "Hotco named a new leader 21 days ago and is hiring.", "best_service_line": "Strategy & Operations"})
+
+    def factory(cfg_, model, api_key=None, web_search=True, **k):
+        llm = FakeLLM([reply])
+        made.append((model, web_search, llm))
+        return llm
+    monkeypatch.setattr("bd.llm.AnthropicWebSearchClient", factory)
+    out = tmp_path / "c.json"
+    r = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--out", str(out)])
+    assert r.exit_code == 0, r.output
+    assert made[0][0] == "claude-sonnet-5-5" and made[0][1] is False       # briefer never gets web search
+    text = out.read_text()
+    assert "named a new leader 21 days ago" in text and "Strategy & Operations" in text
+    assert "(llm)" in r.output
+    run = conn.execute("SELECT * FROM runs WHERE step='brief'").fetchone()
+    assert run["tokens"] == 150 and run["est_cost"] is not None
+    r2 = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--out", str(out)])
+    assert "(cache)" in r2.output and len(made) == 2 and made[1][2].calls == []   # second run: no LLM call

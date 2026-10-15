@@ -118,9 +118,11 @@ class AnthropicWebSearchClient:
     parameters are sent so the same code works across models.
     """
 
-    def __init__(self, cfg: Config, model: str, client: Any | None = None, api_key: str | None = None) -> None:
+    def __init__(self, cfg: Config, model: str, client: Any | None = None, api_key: str | None = None,
+                 web_search: bool = True) -> None:
         self._cfg = cfg
         self._model = model
+        self._web_search = web_search  # False = plain text call (used by the briefer)
         self._client = client or anthropic.Anthropic(api_key=api_key)
 
     def _tools(self) -> list[dict[str, Any]]:
@@ -137,9 +139,10 @@ class AnthropicWebSearchClient:
         resp = None
         for attempt in range(self._cfg.llm.max_continuations + 1):
             try:
+                extra: dict[str, Any] = {"tools": self._tools()} if self._web_search else {}
                 resp = self._client.messages.create(
                     model=self._model, max_tokens=self._cfg.llm.max_tokens,
-                    system=system, messages=convo, tools=self._tools(),
+                    system=system, messages=convo, **extra,
                 )
             except anthropic.APIError as e:
                 raise LLMError(f"{type(e).__name__}: {e}", usage) from e
@@ -159,9 +162,9 @@ class AnthropicWebSearchClient:
         return LLMResult(text=text, retrieved_urls=urls, usage=usage, conversation=convo)
 
 
-def extract_json(text: str) -> Any:
-    """Parse the last JSON object in `text` that has a "signals" key, tolerating prose or
-    code fences around it."""
+def extract_json(text: str, key: str = "signals") -> Any:
+    """Parse the last JSON object in `text` that has `key`, tolerating prose or code fences
+    around it."""
     dec = json.JSONDecoder()
     found = None
     for i, ch in enumerate(text):
@@ -171,14 +174,15 @@ def extract_json(text: str) -> Any:
             obj, _ = dec.raw_decode(text[i:])
         except ValueError:
             continue
-        if isinstance(obj, dict) and "signals" in obj:
+        if isinstance(obj, dict) and key in obj:
             found = obj
     if found is None:
-        raise ValueError("no JSON object with a 'signals' key found")
+        raise ValueError(f"no JSON object with a {key!r} key found")
     return found
 
 
-def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], retries: int = 1) -> tuple[M, LLMResult]:
+def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], retries: int = 1,
+                       key: str = "signals", context: dict[str, Any] | None = None) -> tuple[M, LLMResult]:
     """Ask, parse, validate; on invalid JSON re-ask `retries` times with the error. Returns the
     model plus a merged LLMResult (usage summed, retrieved URLs unioned). Raises InvalidJSON."""
     result = llm.run(system, [{"role": "user", "content": user}])
@@ -187,7 +191,7 @@ def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], ret
     last_err = ""
     for attempt in range(retries + 1):
         try:
-            return model_cls.model_validate(extract_json(result.text)), merged
+            return model_cls.model_validate(extract_json(result.text, key), context=context), merged
         except (ValueError, ValidationError) as e:
             last_err = str(e)[:600]
             if attempt == retries:
