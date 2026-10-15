@@ -9,7 +9,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from bd.models import SIGNAL_TYPES
+from bd.models import SIGNAL_TYPES, SOURCE_TYPES
 
 
 class _Strict(BaseModel):
@@ -103,7 +103,38 @@ class Tier(_Strict):
 
 class Scan(_Strict):
     window_days: int
+    max_future_days: int
     tiers: dict[str, Tier]
+
+
+class Llm(_Strict):
+    max_tokens: int
+    web_search_max_uses: int
+    web_search_tool_type: str
+    max_continuations: int
+    json_retries: int
+
+
+class Verify(_Strict):
+    timeout_seconds: float
+    max_redirects: int
+    block_private_addresses: bool
+
+
+class Sources(_Strict):
+    blocked_domains: list[str]
+    wire_services: list[str]
+    sec_domains: list[str]
+    warn_domains: list[str]
+    confidence_by_source_type: dict[str, str]
+
+    @model_validator(mode="after")
+    def _consistent(self) -> "Sources":
+        if set(self.confidence_by_source_type) != set(SOURCE_TYPES):
+            raise ValueError("confidence_by_source_type must cover every source type")
+        if not set(self.confidence_by_source_type.values()) <= {"High", "Medium", "Low"}:
+            raise ValueError("confidence_by_source_type values must be High, Medium or Low")
+        return self
 
 
 class Config(_Strict):
@@ -112,6 +143,9 @@ class Config(_Strict):
     service_lines: list[str]
     fit_gate: FitGate
     scan: Scan
+    llm: Llm
+    verify: Verify
+    sources: Sources
 
 
 def load_config(path: str | os.PathLike[str] | None = None) -> Config:
@@ -128,6 +162,7 @@ class Settings:
     anthropic_model: str | None
     teams_webhook_url: str | None
     db_path: str
+    user_agent: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -137,6 +172,10 @@ class Settings:
             anthropic_model=e.get("ANTHROPIC_MODEL") or None,
             teams_webhook_url=e.get("TEAMS_WEBHOOK_URL") or None,
             db_path=e.get("BD_DB_PATH", "bd.sqlite"),
+            user_agent=e.get(
+                "BD_USER_AGENT",
+                "SEI-BD-Signal-Agent/0.1 (public-source research; set BD_USER_AGENT with a contact address)",
+            ),
         )
 
     def require_llm(self) -> tuple[str, str]:

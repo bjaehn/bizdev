@@ -85,6 +85,45 @@ fit_gate:
 
 scan:
   window_days: 180
+  max_future_days: 30   # event_date later than run date + this is rejected as implausible
   tiers:
     A: {every_weeks: 1}
     B: {every_weeks: 2}
+
+llm:
+  max_tokens: 16000
+  web_search_max_uses: 8          # cost cap per account per scanner call
+  web_search_tool_type: web_search_20260209   # check Anthropic docs if the model changes
+  max_continuations: 5            # pause_turn resumes per call
+  json_retries: 1                 # one retry on invalid JSON
+
+verify:
+  timeout_seconds: 15
+  max_redirects: 5
+  block_private_addresses: true
+
+sources:
+  # Never searched, never fetched, never accepted as a source_url.
+  # No LinkedIn; paywalled sites. Starter list - edit as needed.
+  blocked_domains:
+    - linkedin.com
+    - wsj.com
+    - ft.com
+    - bloomberg.com
+    - barrons.com
+    - nytimes.com
+    - economist.com
+    - theinformation.com
+    - crainschicago.com
+    - chicagobusiness.com
+  wire_services: [businesswire.com, prnewswire.com, globenewswire.com]
+  sec_domains: [sec.gov]
+  warn_domains: [illinois.gov]
+  # Highest confidence a source type can earn. The model's own claim can only lower it.
+  confidence_by_source_type:
+    company_release: High
+    sec_filing: High
+    warn_notice: High
+    company_site: High
+    secondary_report: Medium
+    rumor: Low

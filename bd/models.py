@@ -46,6 +46,8 @@ SourceType = Literal[
     "rumor",
 ]
 
+SOURCE_TYPES: tuple[str, ...] = get_args(SourceType)
+
 MAX_SUMMARY_WORDS = 25
 
 
@@ -79,6 +81,12 @@ class SignalExtract(BaseModel):
         if p.scheme not in ("http", "https") or not p.netloc:
             raise ValueError("source_url must be an absolute http(s) URL")
         return v.strip()
+
+
+class ScanResponse(BaseModel):
+    """The JSON object a scanner prompt asks Claude to return."""
+
+    signals: list[SignalExtract]
 
 
 @dataclass(frozen=True)

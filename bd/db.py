@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','hold_review','excluded')),
     last_scanned  TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_name ON accounts(lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_domain ON accounts(domain) WHERE domain IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS signals (
@@ -69,7 +70,7 @@ CREATE TABLE IF NOT EXISTS runs (
     accounts_scanned INTEGER NOT NULL DEFAULT 0,
     signals_found    INTEGER NOT NULL DEFAULT 0,
     tokens           INTEGER NOT NULL DEFAULT 0,
-    est_cost         REAL NOT NULL DEFAULT 0,
+    est_cost         REAL,   -- NULL = not priced (pricing lands in Stage 3), never a fake 0
     errors           TEXT
 );
 """

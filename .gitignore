@@ -6,3 +6,4 @@ __pycache__/
 *.db
 *.sqlite
 card.json
+eval_report.json
