@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     ownership     TEXT CHECK (ownership IS NULL OR ownership IN ('public','private','pe-backed')),
     sponsor       TEXT,
     industry      TEXT,
+    cik           TEXT,      -- SEC Central Index Key, 10 digits; human-supplied or confirmed via bd enrich
     tier          TEXT NOT NULL DEFAULT 'A' CHECK (tier IN ('A','B')),
     status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','hold_review','excluded')),
     last_scanned  TEXT
@@ -95,4 +96,8 @@ def connect(path: str | Path = "bd.sqlite") -> sqlite3.Connection:
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    # Lightweight migration for databases created before a column existed.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(accounts)")}
+    if "cik" not in cols:
+        conn.execute("ALTER TABLE accounts ADD COLUMN cik TEXT")
     conn.commit()

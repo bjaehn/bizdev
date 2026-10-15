@@ -26,9 +26,32 @@ def _parse_date(s: Optional[str]) -> date:
         raise
 
 
-def _scanner_deps(cfg: Config, settings: Settings):
-    """Real LLM client and URL verifier. Needs ANTHROPIC_API_KEY and ANTHROPIC_MODEL."""
+def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
+    """`all` = every implemented scanner, minus edgar when no BD_USER_AGENT is configured (the SEC
+    requires a declared contact). Naming edgar explicitly without one is an error."""
+    from bd.scanners import SCANNERS
+
+    implemented = [n for n, c in SCANNERS.items() if c.implemented]
+    if opt == "all":
+        if "edgar" in implemented and not settings.user_agent_configured:
+            typer.echo("edgar scanner skipped: set BD_USER_AGENT (company name and contact email), as the SEC requires.",
+                       err=True)
+            implemented.remove("edgar")
+        return implemented
+    names = [n.strip() for n in opt.split(",") if n.strip()]
+    bad = [n for n in names if n not in SCANNERS or not SCANNERS[n].implemented]
+    if bad:
+        _fail(f"unknown or unimplemented scanner(s): {bad}")
+    if "edgar" in names and not settings.user_agent_configured:
+        _fail("The edgar scanner needs BD_USER_AGENT set to your company name and contact email (SEC fair access).")
+    return names
+
+
+def _build_scanners(names: list[str], cfg: Config, settings: Settings):
+    """Real scanners with their dependencies. Needs ANTHROPIC_API_KEY and ANTHROPIC_MODEL."""
+    from bd.edgar import EdgarClient
     from bd.llm import AnthropicWebSearchClient
+    from bd.scanners import SCANNERS
     from bd.verify import UrlVerifier
 
     try:
@@ -36,7 +59,11 @@ def _scanner_deps(cfg: Config, settings: Settings):
     except RuntimeError as e:
         _fail(str(e))
         raise
-    return AnthropicWebSearchClient(cfg, model=model, api_key=key), UrlVerifier(cfg, settings.user_agent)
+    web = AnthropicWebSearchClient(cfg, model=model, api_key=key)
+    text = AnthropicWebSearchClient(cfg, model=model, api_key=key, web_search=False)
+    verifier = UrlVerifier(cfg, settings.user_agent)
+    edgar = EdgarClient(cfg, settings.user_agent) if "edgar" in names else None
+    return [SCANNERS[n].create(cfg, web, text, verifier, edgar) for n in names]
 
 
 @app.command()
@@ -99,10 +126,7 @@ def scan(
         _fail("--tier must be A, B or all")
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
-    names = [n for n, c in SCANNERS.items() if c.implemented] if scanners == "all" else scanners.split(",")
-    bad = [n for n in names if n not in SCANNERS or not SCANNERS[n].implemented]
-    if bad:
-        _fail(f"unknown or unimplemented scanner(s): {bad}")
+    names = _resolve_scanner_names(scanners, settings)
     conn = connect(settings.db_path)
     init_db(conn)
     _print_gate(apply_fit_gate(conn, cfg))
@@ -110,15 +134,16 @@ def scan(
     if not accounts:
         _fail("No accounts passed the fit gate. Fill in the held accounts' facts or run `bd seed accounts.csv`.")
     due = [a for a in accounts if is_due(a, run_date, cfg, force)]
-    typer.echo(f"{len(due)} of {len(accounts)} accounts due (tier {tier}) x {names} = {len(due) * len(names)} calls")
+    probes = [SCANNERS[n].create(cfg, None, None, None, None) for n in names]
+    n_calls = sum(p.applies_to(a) for a in due for p in probes)   # e.g. edgar only applies to accounts with a CIK
+    typer.echo(f"{len(due)} of {len(accounts)} accounts due (tier {tier}) x {names} = {n_calls} calls")
     if dry_run:
         for a in due:
             typer.echo(f"  would scan: {a.name} (tier {a.tier})")
         return
     if not due:
         return
-    llm, verifier = _scanner_deps(cfg, settings)
-    objs = [SCANNERS[n](cfg, llm, verifier) for n in names]
+    objs = _build_scanners(names, cfg, settings)
     summary = run_scans(conn, cfg, objs, accounts, run_date, model=settings.anthropic_model, workers=workers,
                         force=force, log=typer.echo)
     typer.echo(f"\nPer account (tokens, est. cost):")
@@ -132,6 +157,54 @@ def scan(
     if summary.budget_hit:
         typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): {summary.skipped_budget} calls not started. "
                    "Raise llm.max_cost_per_run_usd in config.yaml and re-run to finish.", err=True)
+
+
+@app.command()
+def enrich(
+    out: str = typer.Option("enrich_proposals.csv", help="Where to write the review CSV"),
+    all_accounts: bool = typer.Option(False, "--all", help="Also re-check accounts that already pass the fit gate"),
+    only: Optional[str] = typer.Option(None, help="Only accounts whose name contains this text"),
+    limit: Optional[int] = typer.Option(None, help="At most N accounts"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+) -> None:
+    """PROPOSE missing account facts (domain, Chicagoland, size, ownership, CIK) with evidence URLs.
+
+    Writes a CSV for you to review and edit, then load with `bd seed`. Never writes to the database."""
+    from bd.db import connect, init_db
+    from bd.edgar import EdgarClient
+    from bd.enrich import Enricher, run_enrich, select_accounts, write_proposals
+    from bd.llm import AnthropicWebSearchClient
+    from bd.verify import UrlVerifier
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    accounts = select_accounts(conn, all_accounts, only, limit)
+    if not accounts:
+        _fail("No accounts to enrich (held accounts by default; use --all, or run `bd seed accounts.csv` first).")
+    try:
+        key, model = settings.require_llm()
+    except RuntimeError as e:
+        _fail(str(e))
+        raise
+    edgar = EdgarClient(cfg, settings.user_agent) if settings.user_agent_configured else None
+    if edgar is None:
+        typer.echo("Note: BD_USER_AGENT is not set, so proposed CIKs cannot be confirmed with EDGAR and will be left out.",
+                   err=True)
+    enricher = Enricher(cfg, AnthropicWebSearchClient(cfg, model=model, api_key=key),
+                        UrlVerifier(cfg, settings.user_agent), edgar)
+    typer.echo(f"Enriching {len(accounts)} account(s) (proposals only; nothing is written to the database)")
+    results, spent, hit = run_enrich(conn, cfg, enricher, accounts, run_date, settings.anthropic_model,
+                                     workers=workers, log=typer.echo)
+    n = write_proposals(results, out)
+    typer.echo(f"\nWrote {out}: {len(results)} row(s), {n} with proposals. Estimated cost ${spent:.4f}.")
+    typer.echo("Review it (each fact lists its evidence URL; `notes` says what was rejected and why), "
+               f"then load it with: bd seed {out}")
+    if hit:
+        typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): some accounts were not enriched. "
+                   "Raise llm.max_cost_per_run_usd and re-run.", err=True)
 
 
 @app.command()
@@ -268,7 +341,6 @@ def evaluate(
 ) -> None:
     """Run scanners over the gold file and report found/missed/wrong date/bad URLs."""
     from bd.evaluate import GoldError, combined_scan, evaluate as run_eval, load_gold
-    from bd.scanners import SCANNERS
 
     try:
         rows = load_gold(gold)
@@ -277,12 +349,8 @@ def evaluate(
         raise
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
-    llm, verifier = _scanner_deps(cfg, settings)
-    names = [n for n, c in SCANNERS.items() if c.implemented] if scanners == "all" else scanners.split(",")
-    bad = [n for n in names if n not in SCANNERS or not SCANNERS[n].implemented]
-    if bad:
-        _fail(f"unknown or unimplemented scanner(s): {bad}")
-    scan_fn = combined_scan([SCANNERS[n](cfg, llm, verifier) for n in names])
+    names = _resolve_scanner_names(scanners, settings)
+    scan_fn = combined_scan(_build_scanners(names, cfg, settings))
     stale = [g for g in rows if g.expected_date and (run_date - g.expected_date).days > cfg.scan.window_days]
     if stale:
         typer.echo(f"WARNING: {len(stale)} gold rows are older than the {cfg.scan.window_days}-day window as of "

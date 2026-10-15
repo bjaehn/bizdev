@@ -154,6 +154,13 @@ class Sources(_Strict):
         return self
 
 
+class Edgar(_Strict):
+    min_interval_seconds: float
+    max_filings_per_scan: int
+    max_chars: int
+    timeout_seconds: float
+
+
 class Briefer(_Strict):
     max_words: int
     max_signals_in_prompt: int
@@ -176,6 +183,7 @@ class Config(_Strict):
     pricing: Pricing
     verify: Verify
     sources: Sources
+    edgar: Edgar
     briefer: Briefer
     card: Card
 
@@ -195,6 +203,7 @@ class Settings:
     teams_webhook_url: str | None
     db_path: str
     user_agent: str
+    user_agent_configured: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -208,6 +217,7 @@ class Settings:
                 "BD_USER_AGENT",
                 "SEI-BD-Signal-Agent/0.1 (public-source research; set BD_USER_AGENT with a contact address)",
             ),
+            user_agent_configured=bool(e.get("BD_USER_AGENT")),
         )
 
     def require_llm(self) -> tuple[str, str]:

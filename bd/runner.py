@@ -67,8 +67,8 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
     for acc in accounts:
         (due if is_due(acc, as_of, cfg, force) else summary.skipped_not_due).append(acc)
 
-    queue: deque[tuple[Account, Scanner]] = deque((a, s) for a in due for s in scanners)
-    remaining = {a.id: len(scanners) for a in due}
+    queue: deque[tuple[Account, Scanner]] = deque((a, s) for a in due for s in scanners if s.applies_to(a))
+    remaining = {a.id: sum(s.applies_to(a) for s in scanners) for a in due}
     failed: set[int] = set()
     inflight: dict[Future[ScanOutcome], tuple[Account, Scanner]] = {}
 

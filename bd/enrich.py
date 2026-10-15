@@ -1,0 +1,287 @@
+"""bd enrich: PROPOSE missing account facts (domain, Chicagoland, size, ownership, CIK) for a human.
+
+Nothing here writes to the accounts table. Output is a CSV (with the evidence URL for each fact)
+that a person reviews and edits, then loads with `bd seed`. Code, not Claude, decides what is
+acceptable:
+  * every sourced fact needs an evidence URL that the search tool actually returned, that resolves
+    when fetched, and that is not on the blocked list;
+  * revenue and employees are accepted only from a company release, SEC filing or the company's own
+    site (a secondary-source figure is dropped, and mentioned in notes);
+  * Chicagoland = "yes" is derived by code from the Illinois county (one of the six configured) -
+    Claude's opinion is not used, and "no" is never proposed automatically;
+  * a CIK must appear in a sec.gov evidence URL and be confirmed by EDGAR itself (its registered
+    name is written to the CSV so the human can check it is the right company);
+  * fields the account already has are never proposed, so human-entered facts are not overwritten."""
+
+from __future__ import annotations
+
+import csv
+import re
+import sqlite3
+from collections import deque
+from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass, field
+from datetime import date
+from importlib import resources
+from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, field_validator
+
+from bd.accounts import PROPOSAL_ONLY_COLUMNS, SEED_COLUMNS, Account, normalize_domain
+from bd.config import Config
+from bd.cost import estimate_cost
+from bd.edgar import EdgarClient, EdgarError
+from bd.llm import LLM, LLMError, Usage, generate_validated
+from bd.models import SourceType
+from bd.scanners.base import reconcile_source_type
+from bd.urls import host_in, hostname, normalize_url
+from bd.verify import UrlVerifier
+
+EVIDENCE_FIELDS = ("il_county", "revenue_usd", "employees", "ownership", "sponsor", "cik")
+_HIGH_SOURCES = {"company_release", "sec_filing", "company_site", "warn_notice"}
+CSV_COLUMNS = SEED_COLUMNS + PROPOSAL_ONLY_COLUMNS
+
+
+class Evidence(BaseModel):
+    url: str
+    source_type: SourceType
+
+
+class Facts(BaseModel):
+    domain: str | None = None
+    hq_city: str | None = None
+    hq_state: str | None = None
+    il_county: str | None = None
+    revenue_usd: float | None = None
+    employees: int | None = None
+    ownership: Literal["public", "private", "pe-backed"] | None = None
+    sponsor: str | None = None
+    industry: str | None = None
+    cik: str | None = None
+    notes: str | None = None
+    evidence: dict[str, Evidence] = {}
+
+    @field_validator("evidence")
+    @classmethod
+    def _known_keys(cls, v: dict[str, Evidence]) -> dict[str, Evidence]:
+        bad = set(v) - set(EVIDENCE_FIELDS)
+        if bad:
+            raise ValueError(f"evidence keys must be among {EVIDENCE_FIELDS}; got {sorted(bad)}")
+        return v
+
+
+class EnrichResponse(BaseModel):
+    facts: Facts
+
+
+@dataclass
+class EnrichResult:
+    account: Account
+    row: dict[str, str] = field(default_factory=dict)      # CSV row (proposals only)
+    dropped: list[str] = field(default_factory=list)       # what was found but not accepted, and why
+    usage: Usage = field(default_factory=Usage)
+    error: str | None = None
+
+
+def _county(raw: str, configured: list[str]) -> str:
+    """Normalise "Cook County" / "dupage" to the configured spelling ("DuPage"); unknown names pass through."""
+    name = re.sub(r"\s+county$", "", raw.strip(), flags=re.I).strip()
+    return {c.lower(): c for c in configured}.get(name.lower(), name)
+
+
+class Enricher:
+    def __init__(self, cfg: Config, llm: LLM, verifier: UrlVerifier, edgar: EdgarClient | None) -> None:
+        self.cfg, self.llm, self.verifier, self.edgar = cfg, llm, verifier, edgar
+
+    def system_prompt(self) -> str:
+        return resources.files("bd.prompts").joinpath("enrich.md").read_text(encoding="utf-8")
+
+    def enrich(self, account: Account, as_of: date) -> EnrichResult:
+        res = EnrichResult(account=account, row={"name": account.name})
+        user = (f"Company: {account.name}\nKnown website domain: {account.domain or 'unknown'}\n"
+                f"Known headquarters city: {account.hq_city or 'unknown'}\nToday's date: {as_of.isoformat()}\n\n"
+                "Find the facts per your instructions. Return the JSON object only.")
+        try:
+            resp, llm_res = generate_validated(self.llm, self.system_prompt(), user, EnrichResponse,
+                                               retries=self.cfg.llm.json_retries, key="facts")
+        except LLMError as e:
+            res.usage, res.error = e.usage, f"{type(e).__name__}: {e}"
+            return res
+        res.usage = llm_res.usage
+        self._accept(account, resp.facts, llm_res.retrieved_urls, res)
+        return res
+
+    # -- acceptance rules -----------------------------------------------------------------------
+    def _evidence_ok(self, name: str, f: Facts, retrieved: set[str], res: EnrichResult) -> Evidence | None:
+        ev = f.evidence.get(name)
+        if ev is None:
+            res.dropped.append(f"{name}: no evidence URL given")
+            return None
+        if host_in(hostname(ev.url), self.cfg.sources.blocked_domains):
+            res.dropped.append(f"{name}: evidence on a blocked domain")
+            return None
+        if normalize_url(ev.url) not in retrieved:
+            res.dropped.append(f"{name}: evidence URL was not in the search results")
+            return None
+        v = self.verifier.verify(ev.url)
+        if not v.ok:
+            res.dropped.append(f"{name}: evidence URL unreachable ({v.reason})")
+            return None
+        return ev
+
+    def _accept(self, acct: Account, f: Facts, retrieved: set[str], res: EnrichResult) -> None:
+        row, evid = res.row, []
+
+        def put(col: str, value: object) -> None:
+            row[col] = str(value)
+
+        domain = None
+        if f.domain:
+            d = normalize_domain(f.domain)
+            v = self.verifier.verify(f"https://{d}") if d else None
+            if d and not host_in(d, self.cfg.sources.blocked_domains) and v and v.ok:
+                domain = d
+                if not acct.domain:
+                    put("domain", d)
+            else:
+                res.dropped.append(f"domain: {f.domain} did not resolve or is not allowed")
+        site = acct.domain or domain
+
+        if f.hq_city and not acct.hq_city:
+            put("hq_city", f.hq_city + (f", {f.hq_state}" if f.hq_state else ""))
+        if f.industry and not acct.industry:
+            put("industry", f.industry)
+
+        if f.il_county and acct.chicagoland == "unknown":
+            ev = self._evidence_ok("il_county", f, retrieved, res)
+            if ev:
+                county = _county(f.il_county, self.cfg.fit_gate.counties)
+                if county in self.cfg.fit_gate.counties:
+                    put("chicagoland", "yes")
+                    evid.append(f"il_county={ev.url}")
+                else:
+                    res.dropped.append(f"il_county: {county} is not one of {self.cfg.fit_gate.counties}; "
+                                       "left unknown for a human (a 'no' is never proposed automatically)")
+
+        for name, col in (("revenue_usd", "revenue"), ("employees", "employees")):
+            val = getattr(f, name)
+            known = getattr(acct, col)
+            if val is None or known is not None:
+                continue
+            ev = self._evidence_ok(name, f, retrieved, res)
+            if not ev:
+                continue
+            st = reconcile_source_type(ev.source_type, ev.url, site, self.cfg)
+            if st not in _HIGH_SOURCES:
+                res.dropped.append(f"{name}: only a secondary source ({hostname(ev.url)}); not accepted as size evidence")
+                continue
+            put(col, int(val) if name == "employees" else f"{val:.0f}")
+            evid.append(f"{name}={ev.url}")
+
+        if f.ownership and not acct.ownership:
+            ev = self._evidence_ok("ownership", f, retrieved, res)
+            if ev:
+                put("ownership", f.ownership)
+                evid.append(f"ownership={ev.url}")
+        if f.sponsor and not acct.sponsor:
+            ev = self._evidence_ok("sponsor", f, retrieved, res)
+            if ev:
+                put("sponsor", f.sponsor)
+                evid.append(f"sponsor={ev.url}")
+
+        if f.cik and not acct.cik:
+            self._accept_cik(f, retrieved, res, evid)
+
+        if evid:
+            row["evidence_urls"] = "; ".join(evid)
+        notes = list(res.dropped) + ([f"model note: {f.notes.strip()[:300]}"] if f.notes else [])
+        if notes:
+            row["notes"] = " | ".join(notes)
+
+    def _accept_cik(self, f: Facts, retrieved: set[str], res: EnrichResult, evid: list[str]) -> None:
+        digits = (f.cik or "").strip()
+        if not digits.isdigit() or len(digits) > 10 or int(digits) == 0:
+            res.dropped.append("cik: not a valid CIK")
+            return
+        ev = self._evidence_ok("cik", f, retrieved, res)
+        if not ev:
+            return
+        if not host_in(hostname(ev.url), self.cfg.sources.sec_domains) or int(digits) not in {int(x) for x in re.findall(r"\d+", ev.url)}:
+            res.dropped.append("cik: evidence must be a sec.gov page containing that CIK")
+            return
+        if self.edgar is None:
+            res.dropped.append("cik: not confirmed with EDGAR (set BD_USER_AGENT to enable); not proposed")
+            return
+        try:
+            name, tickers = self.edgar.company(digits)
+        except EdgarError as e:
+            res.dropped.append(f"cik: EDGAR could not confirm it ({e})")
+            return
+        res.row["cik"] = digits.zfill(10)
+        res.row["sec_name"] = name + (f" ({', '.join(tickers)})" if tickers else "")
+        evid.append(f"cik={ev.url}")
+
+
+def write_proposals(results: list[EnrichResult], path: str | Path) -> int:
+    """Write the review CSV (loadable with `bd seed` after the human has checked it). Returns rows with proposals."""
+    n = 0
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
+        w.writeheader()
+        for r in results:
+            w.writerow({c: r.row.get(c, "") for c in CSV_COLUMNS})
+            n += len(r.row) > 1 and any(k in r.row for k in SEED_COLUMNS[1:])
+    return n
+
+
+def select_accounts(conn: sqlite3.Connection, all_accounts: bool, only: str | None, limit: int | None) -> list[Account]:
+    from bd.accounts import list_accounts
+
+    accts = list_accounts(conn, status=None)
+    accts = [a for a in accts if a.status != "excluded" and (all_accounts or a.status == "hold_review")]
+    if only:
+        accts = [a for a in accts if only.lower() in a.name.lower()]
+    return accts[:limit] if limit else accts
+
+
+def run_enrich(conn: sqlite3.Connection, cfg: Config, enricher: Enricher, accounts: list[Account], as_of: date,
+               model: str | None, workers: int | None = None, max_cost: float | None = None,
+               log: Callable[[str], None] = lambda s: None) -> tuple[list[EnrichResult], float, bool]:
+    """Concurrent enrichment with the same cost logging and soft budget cap as scans.
+    Returns (results in account order, estimated cost, budget_hit)."""
+    workers = max(1, workers or cfg.llm.concurrency)
+    cap = cfg.llm.max_cost_per_run_usd if max_cost is None else max_cost
+    queue = deque(accounts)
+    inflight: dict[Future[EnrichResult], Account] = {}
+    done_results: dict[int, EnrichResult] = {}
+    spent, hit = 0.0, False
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        while queue or inflight:
+            while queue and len(inflight) < workers and not hit:
+                a = queue.popleft()
+                inflight[ex.submit(enricher.enrich, a, as_of)] = a
+            if not inflight:
+                break
+            done, _ = wait(inflight, return_when=FIRST_COMPLETED)
+            for fut in done:
+                a = inflight.pop(fut)
+                try:
+                    r = fut.result()
+                except Exception as e:   # one bad account must not abort the batch
+                    r = EnrichResult(account=a, row={"name": a.name}, error=f"{type(e).__name__}: {e}")
+                cost = estimate_cost(r.usage, model, cfg)
+                spent += cost or 0.0
+                with conn:
+                    conn.execute(
+                        "INSERT INTO runs(run_date,step,account_id,accounts_scanned,signals_found,tokens,est_cost,errors) "
+                        "VALUES (?,?,?,?,?,?,?,?)",
+                        (as_of.isoformat(), "enrich", a.id, 1, 0, r.usage.total_tokens, cost, r.error))
+                done_results[a.id] = r
+                got = [k for k in r.row if k in SEED_COLUMNS[1:]]
+                log(f"  {a.name}: proposed {got or 'nothing'}, {len(r.dropped)} dropped, {r.usage.total_tokens:,} tokens, "
+                    + ("unpriced" if cost is None else f"${cost:.4f}") + (f"  ERROR {r.error}" if r.error else ""))
+            if cap is not None and spent >= cap:
+                hit = True
+    return [done_results[a.id] for a in accounts if a.id in done_results], spent, hit

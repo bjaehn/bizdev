@@ -240,3 +240,57 @@ def test_card_uses_briefer_without_web_search_and_caches(cfg, tmp_path, monkeypa
     assert run["tokens"] == 150 and run["est_cost"] is not None
     r2 = runner.invoke(app, ["card", "--as-of", AS_OF_S, "--out", str(out)])
     assert "(cache)" in r2.output and len(made) == 2 and made[1][2].calls == []   # second run: no LLM call
+
+
+# ---- EDGAR scanner and enrich in the CLI ----------------------------------------------------------------
+
+def test_scan_all_skips_edgar_without_a_user_agent_and_explicit_edgar_fails(tmp_path, monkeypatch):
+    seeded(tmp_path)
+    monkeypatch.delenv("BD_USER_AGENT", raising=False)
+    r = runner.invoke(app, ["scan", "--dry-run"])
+    assert r.exit_code == 0 and "edgar scanner skipped: set BD_USER_AGENT" in r.output
+    r = runner.invoke(app, ["scan", "--dry-run", "--scanners", "edgar"])
+    assert r.exit_code == 1 and "BD_USER_AGENT" in r.output
+
+
+def test_edgar_counts_only_accounts_with_a_cik_in_the_dry_run(tmp_path, monkeypatch):
+    p = tmp_path / "f.csv"
+    p.write_text("name,domain,hq_city,chicagoland,revenue,employees,ownership,sponsor,industry,tier,cik\n"
+                 "Acme,acme.com,Chicago,yes,500000000,,public,,Industrial,A,1234\n"
+                 "Beta,beta.com,Chicago,yes,500000000,,public,,Industrial,A,\n")
+    assert runner.invoke(app, ["seed", str(p)]).exit_code == 0
+    monkeypatch.setenv("BD_USER_AGENT", "SEI BD ops@example.com")
+    r = runner.invoke(app, ["scan", "--dry-run"])
+    assert r.exit_code == 0 and "2 of 2 accounts due" in r.output
+    assert "= 5 calls" in r.output            # leadership + events for both (4) + edgar for Acme only (1)
+
+
+def test_enrich_needs_accounts_and_a_key(tmp_path):
+    assert runner.invoke(app, ["enrich"]).exit_code == 1
+    runner.invoke(app, ["seed", str(ROOT / "accounts.csv")])
+    r = runner.invoke(app, ["enrich", "--limit", "1"])
+    assert r.exit_code == 1 and "ANTHROPIC_API_KEY" in r.output
+
+
+def test_enrich_writes_a_review_csv_and_never_changes_accounts(tmp_path, monkeypatch):
+    runner.invoke(app, ["seed", str(ROOT / "accounts.csv")])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+    monkeypatch.delenv("BD_USER_AGENT", raising=False)
+    from tests.conftest import FakeLLM, FakeVerifier
+    from tests.test_enrich import ALL_URLS, facts
+    reply = json.dumps({"facts": facts(cik=None, evidence={k: v for k, v in facts()["evidence"].items() if k != "cik"})})
+    monkeypatch.setattr("bd.llm.AnthropicWebSearchClient", lambda cfg, model, api_key=None, web_search=True, **k: FakeLLM([reply], urls=ALL_URLS))
+    monkeypatch.setattr("bd.verify.UrlVerifier", lambda cfg, ua, *a, **k: FakeVerifier())
+    conn = connect(os.environ["BD_DB_PATH"])
+    before = [tuple(r) for r in conn.execute("SELECT * FROM accounts ORDER BY id")]
+    out = tmp_path / "p.csv"
+    r = runner.invoke(app, ["enrich", "--only", "Abbott", "--out", str(out)])
+    assert r.exit_code == 0, r.output
+    assert "proposals only" in r.output and "bd seed" in r.output and "BD_USER_AGENT is not set" in r.output
+    import csv as _csv
+    rows = list(_csv.DictReader(out.open()))
+    assert [x["name"] for x in rows] == ["Abbott"] and rows[0]["chicagoland"] == "yes" and rows[0]["revenue"] == "500000000"
+    assert rows[0]["evidence_urls"]
+    assert before == [tuple(r) for r in conn.execute("SELECT * FROM accounts ORDER BY id")]
+    assert conn.execute("SELECT COUNT(*) FROM runs WHERE step='enrich'").fetchone()[0] == 1

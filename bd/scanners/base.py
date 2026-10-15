@@ -64,6 +64,20 @@ class ScanOutcome:
         return ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
 
 
+def reconcile_source_type(source_type: str, url: str, account_domain: str | None, cfg: Config) -> str:
+    """A claimed company / SEC / WARN source must really be hosted where such a source lives;
+    otherwise it is just a secondary report."""
+    s, host = cfg.sources, hostname(url)
+    own = [account_domain] if account_domain else []
+    ok = {
+        "sec_filing": host_in(host, s.sec_domains),
+        "warn_notice": host_in(host, s.warn_domains),
+        "company_site": host_in(host, own),
+        "company_release": host_in(host, own) or host_in(host, s.wire_services),
+    }.get(source_type, True)
+    return source_type if ok else "secondary_report"
+
+
 class Scanner:
     name: ClassVar[str]
     allowed_types: ClassVar[frozenset[str]] = frozenset()
@@ -71,6 +85,15 @@ class Scanner:
 
     def __init__(self, cfg: Config, llm: LLM | None, verifier: UrlVerifier | None) -> None:
         self.cfg, self.llm, self.verifier = cfg, llm, verifier
+
+    @classmethod
+    def create(cls, cfg: Config, web: LLM | None, text: LLM | None, verifier: UrlVerifier | None, edgar: object | None):
+        """Build a scanner from the shared dependencies (web-search LLM, text-only LLM, URL verifier, EDGAR)."""
+        return cls(cfg, web, verifier)
+
+    def applies_to(self, account: Account) -> bool:
+        """False when this scanner has nothing to do for the account (no calls are made or billed)."""
+        return True
 
     # -- prompts ------------------------------------------------------------
     def system_prompt(self) -> str:
@@ -155,20 +178,10 @@ class Scanner:
         return list(accepted.values()), rejected
 
     def _reconcile_source_type(self, c: SignalExtract, account: Account, notes: list[str]) -> str:
-        """A claimed company/SEC/WARN source must really be hosted where such a source lives;
-        otherwise it is just a secondary report."""
-        s, host = self.cfg.sources, hostname(c.source_url)
-        own = [account.domain] if account.domain else []
-        ok = {
-            "sec_filing": host_in(host, s.sec_domains),
-            "warn_notice": host_in(host, s.warn_domains),
-            "company_site": host_in(host, own),
-            "company_release": host_in(host, own) or host_in(host, s.wire_services),
-        }.get(c.source_type, True)
-        if ok:
-            return c.source_type
-        notes.append(f"source_type {c.source_type}->secondary_report (domain {host} not a {c.source_type} host)")
-        return "secondary_report"
+        st = reconcile_source_type(c.source_type, c.source_url, account.domain, self.cfg)
+        if st != c.source_type:
+            notes.append(f"source_type {c.source_type}->{st} (domain {hostname(c.source_url)} not a {c.source_type} host)")
+        return st
 
     def _canonical_lines(self, lines: list[str]) -> list[str]:
         canon = {s.lower(): s for s in self.cfg.service_lines}

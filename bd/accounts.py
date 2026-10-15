@@ -11,7 +11,9 @@ from urllib.parse import urlparse
 from pydantic import BaseModel
 
 SEED_COLUMNS = ["name", "domain", "hq_city", "chicagoland", "revenue", "employees",
-                "ownership", "sponsor", "industry", "tier"]
+                "ownership", "sponsor", "industry", "tier", "cik"]
+# Review-only columns written by `bd enrich`; accepted (and ignored) when seeding a proposals file.
+PROPOSAL_ONLY_COLUMNS = ["evidence_urls", "notes", "sec_name"]
 _OWNERSHIP = {"public", "private", "pe-backed"}
 
 
@@ -26,6 +28,7 @@ class Account(BaseModel):
     ownership: str | None = None
     sponsor: str | None = None
     industry: str | None = None
+    cik: str | None = None
     tier: str = "A"
     status: str = "active"
     last_scanned: str | None = None
@@ -82,6 +85,11 @@ def _parse_row(n: int, row: dict[str, str]) -> tuple[dict[str, object], list[str
         if g("ownership").lower() not in _OWNERSHIP:
             errs.append(f"row {n}: ownership must be one of {sorted(_OWNERSHIP)}")
         out["ownership"] = g("ownership").lower()
+    if g("cik"):
+        if not g("cik").isdigit() or len(g("cik")) > 10 or int(g("cik")) == 0:
+            errs.append(f"row {n}: cik must be 1-10 digits")
+        else:
+            out["cik"] = g("cik").zfill(10)
     if g("tier"):
         if g("tier").upper() not in ("A", "B"):
             errs.append(f"row {n}: tier must be A or B")
@@ -106,7 +114,7 @@ def seed_csv(conn: sqlite3.Connection, path: str | Path) -> SeedResult:
         if "name" not in cols:
             res.errors.append("header must include a 'name' column")
             return res
-        unknown = [c for c in cols if c not in SEED_COLUMNS]
+        unknown = [c for c in cols if c not in SEED_COLUMNS and c not in PROPOSAL_ONLY_COLUMNS]
         if unknown:
             res.errors.append(f"unknown columns: {unknown}")
             return res
