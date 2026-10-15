@@ -173,14 +173,6 @@ def test_tokens_spent_before_a_failure_are_still_logged(cfg):
     assert "api down" in out.error and out.usage.total_tokens == 150 + 10
 
 
-def test_stub_scanners_do_nothing_and_make_no_calls(cfg):
-    from bd.scanners import SCANNERS
-    for name in ("pe", "hiring", "tech_procurement"):
-        sc = SCANNERS[name](cfg, None, None)
-        out = sc.scan(account(), AS_OF)
-        assert not sc.implemented and out.signals == [] and out.error == "scanner not implemented"
-
-
 # ---- storage --------------------------------------------------------------------------
 
 @pytest.fixture

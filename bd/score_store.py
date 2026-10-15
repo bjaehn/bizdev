@@ -53,9 +53,21 @@ def dedupe_same_event(signals: list[ScoringSignal]) -> list[ScoringSignal]:
     return list(best.values())
 
 
+def drop_lapsed_status_signals(signals: list[ScoringSignal], as_of: date, cfg: Config) -> list[ScoringSignal]:
+    """A status-type signal (e.g. a PE hold of 2-4 years) scores flat while its condition holds. Once it
+    no longer holds (the hold passes 4 years) the stored signal must stop scoring."""
+    out = []
+    for s in signals:
+        bounds = cfg.scan.status_type_age_days.get(s.type)
+        age = (as_of - s.event_date).days
+        if bounds is None or bounds[0] <= age <= bounds[1]:
+            out.append(s)
+    return out
+
+
 def score_one(conn: sqlite3.Connection, cfg: Config, account: Account, as_of: date) -> ScoredAccount:
     rows = load_signal_rows(conn, account.id)
-    signals = dedupe_same_event([to_scoring_signal(r) for r in rows])
+    signals = drop_lapsed_status_signals(dedupe_same_event([to_scoring_signal(r) for r in rows]), as_of, cfg)
     return ScoredAccount(account, {r["id"]: r for r in rows}, signals, score_account(signals, as_of, cfg))
 
 

@@ -52,13 +52,27 @@ Costs are estimated from prices in `config.yaml` (`pricing`, from Anthropic's pr
 web search is $10 per 1,000). A model missing from that table logs cost as NULL, never a guess. A per-run
 soft cap (`llm.max_cost_per_run_usd`, default $10) stops new calls once reached.
 
+## Scanners
+
+Each scanner is a module in `bd/scanners/` with its prompt in `bd/prompts/<name>.md`. All of them return
+signals validated by code; none writes outreach.
+
+| Scanner | Signal types | Runs for | Notes |
+|---|---|---|---|
+| `leadership` | leadership_change, leadership_transformation_ai_data, open_exec_search | every account | web search |
+| `edgar` | leadership_change, leadership_transformation_ai_data | accounts with a CIK | SEC 8-K Item 5.02 from EDGAR; Claude only reads the excerpt |
+| `events` | restructuring_layoffs, ma_divestiture, strategy_rebrand, ai_commitment, activist, ops_failure, cost_program | every account | includes Illinois WARN notices |
+| `pe` | pe_platform_or_sponsor_exec, pe_addon, pe_hold_2_4 | accounts whose ownership is `pe-backed` | `pe_hold_2_4` is a status signal: valid only while the sponsor's original investment is 2-4 years old, and it stops scoring when the hold passes 4 years |
+| `hiring` | hiring_cluster, hiring_interim, hiring_single | every account | Claude lists postings; **code** verifies each, counts the cluster (3+ related postings within 60 days) and writes the summaries |
+| `tech_procurement` | platform_migration, vendor_deal, rfp_match, risk_factor | every account | an RFP must have a future due date; a risk factor must be on sec.gov |
+
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `bd seed accounts.csv [--exclusions exclusions.csv]` | Load accounts (blank cells stay *unknown*, never guessed) and exclusions, then run the fit gate. Also loads a reviewed `bd enrich` file |
 | `bd enrich` | **Proposes** missing facts (domain, Chicagoland, size, ownership, CIK) with an evidence URL each, into `enrich_proposals.csv`. Never writes to the database. Review, then `bd seed enrich_proposals.csv` |
-| `bd scan [--tier A\|B\|all] [--dry-run] [--force] [--scanners ...]` | Fit-gate, then scan accounts that are due (A weekly, B every other week) concurrently, logging tokens and cost per account. `--dry-run` shows what would run with no API calls |
+| `bd scan [--tier A\|B\|all] [--dry-run] [--force] [--scanners leadership,events,pe,hiring,tech_procurement,edgar]` | Fit-gate, then scan accounts that are due (A weekly, B every other week) concurrently, logging tokens and cost per account. `--dry-run` shows what would run with no API calls |
 | `bd score` | Deterministic scores for fit-gated accounts |
 | `bd shortlist` | Read-only preview of who would be posted, and why others were not |
 | `bd card [--dry-run] [--no-llm]` | Brief the shortlist, write `card.json`, post to Teams **only if `TEAMS_WEBHOOK_URL` is set** |
@@ -134,14 +148,18 @@ URL verifier, fit gate, runner, briefer, card, EDGAR client, enrich, and the sch
   human-verified gold file is how that is measured.
 * The same event reported on several domains counts once (same account, type and date); an event dated a
   day apart by two sources is counted twice.
-* The scanners cover leadership, events (including Illinois WARN) and SEC 8-K Item 5.02; `pe`, `hiring` and
-  `tech_procurement` are stubs that do nothing.
+* Every scanner is a separate web-search call per account, so a full run costs several times a single scanner
+  (see the table above). Measure on a few accounts before running all of them, and tune `--scanners`.
+* `hiring` only counts postings that state a date and sit on the company's careers or applicant-tracking
+  pages; job boards (Indeed, Glassdoor, ZipRecruiter) and LinkedIn are blocked, so postings on those
+  alone are never seen.
+* `rfp_match` needs a stated, future due date; `risk_factor` must link to the filing on sec.gov.
 * See [SECURITY.md](SECURITY.md) for the full list of gaps.
 
 ## Layout
 
 ```
-bd/            package: cli, config, db, scoring, scanners/, prompts/, verify, edgar, runner, enrich, briefer, card
+bd/            package: cli, config, db, scoring, scanners/ (one module per family), prompts/, verify, edgar, runner, enrich, briefer, card
 config.yaml    all tunables        accounts.csv / exclusions.csv   the target list
 scripts/       weekly.sh, chicago_gate.sh, state.sh      deploy/   crontab.example
 .github/workflows/weekly.yml                              tests/    offline test suite

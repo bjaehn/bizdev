@@ -86,6 +86,10 @@ fit_gate:
 scan:
   window_days: 180
   cadence_grace_days: 1   # a weekly account is due again after 7 - 1 days, so a slightly early run is not skipped
+  # Status-type signals describe a condition, not an event: they are valid while the condition holds.
+  # pe_hold_2_4: the sponsor bought the company between 2 and 4 years ago (days, inclusive).
+  status_type_age_days:
+    pe_hold_2_4: [730, 1461]
   max_future_days: 30   # event_date later than run date + this is rejected as implausible
   tiers:
     A: {every_weeks: 1}
@@ -132,7 +136,13 @@ sources:
     - theinformation.com
     - crainschicago.com
     - chicagobusiness.com
+    # Job boards that restrict automated access (company careers pages and ATS pages are used instead).
+    - indeed.com
+    - glassdoor.com
+    - ziprecruiter.com
   wire_services: [businesswire.com, prnewswire.com, globenewswire.com]
+  # Applicant-tracking systems that host a company's own job postings: count as the company's own site.
+  ats_domains: [greenhouse.io, lever.co, myworkdayjobs.com, icims.com, smartrecruiters.com, ashbyhq.com, jobvite.com, taleo.net]
   sec_domains: [sec.gov]
   warn_domains: [illinois.gov]
   # Highest confidence a source type can earn. The model's own claim can only lower it.
@@ -143,6 +153,17 @@ sources:
     company_site: High
     secondary_report: Medium
     rumor: Low
+
+hiring:
+  window_days: 60               # a posting must be dated within this many days of the run
+  cluster_min: 3                # hiring_cluster = this many related postings
+  senior_levels: [c_suite, svp_vp, director]
+  # Posting theme -> service lines (code, not the model, assigns these).
+  theme_service_lines:
+    ai_technology: [AI & Technology]
+    data_analytics: [Data & Analytics]
+    strategy_operations: [Strategy & Operations]
+    transformation_change: [Strategy & Operations]
 
 edgar:
   min_interval_seconds: 0.15      # SEC fair access allows 10 requests/second; stay well under
