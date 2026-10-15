@@ -122,6 +122,18 @@ secrets (a test asserts this).
   `bd ui` was started in, only `*.csv`.
 * **Accountability:** every change is written to `audit_log`.
 
+### 4b. The hosted app (`bd serve`)
+
+This is the one component reachable from the internet. Controls: refuses to start without `BD_UI_PASSWORD` of 16+
+characters; constant-time password check; signed, expiring (12 h), HttpOnly, SameSite=Lax session cookie (Secure
+and HSTS behind https); failed logins throttled per client and globally with back-off; CSRF token, same-origin
+Origin and Sec-Fetch-Site checks on every POST including login; Content-Security-Policy forbids all scripts;
+`/healthz` returns only `ok`; the login page never shows flash messages or navigation. Jobs: a fixed whitelist run
+as `python -m bd.cli` subprocesses with validated argv (no shell), one at a time, 2-hour timeout, secrets
+redacted from displayed logs, paid-call confirmation, and **no job or button that posts to Teams** - only the
+scheduled Monday run can, and only when `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not 1. The Operate page
+shows whether each secret is set, never its value. The container drops root before serving.
+
 ## 5. Known gaps and limits
 
 1. **Not yet exercised live.** The code was built and tested offline (fake LLM, fake HTTP). It has not yet
@@ -155,11 +167,17 @@ secrets (a test asserts this).
 13. **The UI is single-user and unauthenticated beyond the token.** There is no per-person login, so the audit log
     records `ui` as the actor, not a name.
 
+14. **Hosting provider.** In hosted mode the provider (e.g. Railway) holds the database - target accounts, signals, scores - on its volume, and sees the secrets set in its dashboard. Treat it as one more external service.
+15. **One shared password, no MFA, no IP allowlist.** Anyone with the password has full access to the data, the Operate buttons (which spend API money, capped per run) and account edits; the audit log records `ui`. Strongly recommended before real use: put the service behind SSO (Cloudflare Access, Tailscale) or host it inside SEI.
+16. **Login throttle is in memory and keyed on `X-Forwarded-For`.** It resets on restart, and a client that can forge that header gets a fresh per-client counter (the global limit of 60 failures/hour still applies). Single replica only.
+17. **`wsgiref` is not a hardened internet server.** Connections time out after 30 s and bodies are capped at 64 KB, but there is no rate limiting beyond login and no slow-loris protection beyond the timeout; a reverse proxy in front (the host platform's edge) is assumed.
+18. **Docker image not built in CI here.** The Dockerfile and entrypoint were reviewed and the server was run end to end locally, but the image build itself was not exercised in the development sandbox.
+
 ## 6. Decisions for IT
 
 * Approve or restrict egress: `api.anthropic.com`, `data.sec.gov`, `www.sec.gov`, the Teams webhook host,
   and (hard to allowlist) arbitrary public hosts for URL verification, perhaps through an inspecting proxy.
 * Confirm Anthropic data-retention terms for this use.
-* Choose the deployment: GitHub Actions (private repo, state branch) or an SEI-managed host with cron.
+* Choose the deployment: the hosted app (`bd serve`, one service + volume; needs SSO in front of it per gap 15), GitHub Actions (private repo, state branch) or an SEI-managed host with cron.
 * Decide who may hold the Teams webhook URL and where the API key is stored (secret manager vs repo secret).
 * Decide dependency pinning and scanning, and Actions SHA pinning.

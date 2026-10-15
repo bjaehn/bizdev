@@ -119,7 +119,18 @@ Content-Security-Policy; see SECURITY.md. Stop it with Ctrl-C.
    open `card.json`. Check the per-account cost lines before widening.
 4. **Post.** Set `TEAMS_WEBHOOK_URL` and run `bd card`.
 
+## Hosted app (use it from a browser, no terminal)
+
+`bd serve` is the internet-facing version of the UI: password sign-in, an **Operate** page with buttons for enrich,
+scan, score and dry runs (spend-confirmed, one at a time, never posting), and the Monday 05:00 America/Chicago run
+built in, all on one database. It refuses to start without `BD_UI_PASSWORD` (16+ characters). Everything needed to
+deploy it (Dockerfile, `railway.json`) is in the repo; the steps and variables are in [docs/DEPLOY.md](docs/DEPLOY.md).
+`bd ui` remains the local, loopback-only variant.
+
 ## Weekly schedule: Monday 05:00 America/Chicago
+
+(If you use the hosted app, the schedule is already built in and you can skip this section.)
+
 
 `scripts/weekly.sh` runs `seed → scan → score → card`, stops at the first failing step (`bd scan` exits 3
 if every call failed, so nothing is posted on a broken run), and honours `BD_DRY_RUN=1`. Two ways to

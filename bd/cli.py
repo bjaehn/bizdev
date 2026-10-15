@@ -204,6 +204,86 @@ def ui(
 
 
 @app.command()
+def serve(
+    port: Optional[int] = typer.Option(None, help="Port (default: $PORT, else 8080)"),
+    host: str = typer.Option("0.0.0.0", help="Interface to listen on"),
+) -> None:
+    """Run the hosted app: password login, review UI, Operate page, and the Monday 05:00 Chicago run.
+
+    Needs BD_UI_PASSWORD (16+ characters); refuses to start without it. Data lives in $BD_DATA_DIR (default /data)."""
+    import os
+
+    try:
+        from bd.ui.auth import AuthConfigError
+        from bd.ui.server import build_hosted
+    except ImportError as e:
+        _fail(f"The hosted app needs Jinja2 ({e.name}). Install it with: pip install '.[ui]'")
+        raise
+    from bd.db import connect, init_db
+
+    from bd.ui.auth import Hosted
+
+    try:
+        Hosted(os.environ.get("BD_UI_PASSWORD", ""))    # fail closed before touching any data
+    except AuthConfigError as e:
+        _fail(str(e))
+        raise
+    data_dir = Path(os.environ.get("BD_DATA_DIR", "/data"))
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        _fail(f"Cannot use BD_DATA_DIR {data_dir}: {e}")
+    db_path = str(data_dir / "bd.sqlite")
+    os.environ["BD_DB_PATH"] = db_path                 # child jobs and Settings.from_env() use the same file
+    conn = connect(db_path)
+    init_db(conn)
+    _first_boot_seed(conn)
+    conn.close()
+    the_port = port if port is not None else int(os.environ.get("PORT", "8080"))
+    try:
+        httpd, _app, scheduler = build_hosted(load_config(), db_path, str(data_dir),
+                                              os.environ.get("BD_UI_PASSWORD", ""), the_port, host)
+    except AuthConfigError as e:
+        _fail(str(e))
+        raise
+    except OSError as e:
+        _fail(f"Could not listen on {host}:{the_port}: {e}")
+        raise
+    scheduler.start()
+    typer.echo(f"BD Signals listening on {host}:{httpd.server_port}; data in {data_dir}; "
+               "weekly run Mondays 05:00 America/Chicago.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("Stopped.")
+    finally:
+        scheduler.stop()
+        httpd.server_close()
+
+
+def _first_boot_seed(conn) -> None:
+    """On a brand-new volume, load the reviewed account/exclusion lists shipped with the image. After that the
+    database is the master copy and is never reseeded automatically."""
+    import os
+
+    from bd.accounts import list_accounts, seed_csv
+    from bd.fit_gate import apply_fit_gate, seed_exclusions
+
+    if list_accounts(conn, status=None):
+        return
+    base = Path(os.environ.get("BD_CONFIG", "config.yaml")).resolve().parent
+    if (base / "accounts.csv").exists():
+        res = seed_csv(conn, base / "accounts.csv")
+        typer.echo(f"First boot: seeded {res.inserted} account(s) from accounts.csv." if not res.errors
+                   else "First boot: accounts.csv had errors; nothing seeded: " + "; ".join(res.errors[:3]), err=bool(res.errors))
+    if (base / "exclusions.csv").exists():
+        n, errs = seed_exclusions(conn, base / "exclusions.csv")
+        if errs:
+            typer.echo("First boot: exclusions.csv had errors; nothing added: " + "; ".join(errs[:3]), err=True)
+    apply_fit_gate(conn, load_config())
+
+
+@app.command()
 def export(
     accounts: str = typer.Option("accounts.csv", help="Where to write accounts"),
     exclusions: str = typer.Option("exclusions.csv", help="Where to write exclusions"),
