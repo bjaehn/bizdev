@@ -146,7 +146,7 @@ class App:
             import traceback
             traceback.print_exc()
         resp.headers += [("Content-Security-Policy", CSP), ("X-Content-Type-Options", "nosniff"),
-                         ("Referrer-Policy", "no-referrer"), ("Cache-Control", "no-store"),
+                         ("Referrer-Policy", "same-origin"), ("Cache-Control", "no-store"),
                          ("X-Frame-Options", "DENY")]
         if self.hosted and environ.get("HTTP_X_FORWARDED_PROTO", "") == "https":
             resp.headers.append(("Strict-Transport-Security", "max-age=31536000"))
@@ -199,7 +199,10 @@ class App:
             return self.error("403 Forbidden", "Not signed in. Open the URL printed by `bd ui` in your terminal.")
         if req.method == "POST":
             origin = req.headers.get("origin")
-            if origin and urlparse(origin).netloc not in self.allowed_hosts():
+            if origin == "null":
+                if req.headers.get("sec-fetch-site") != "same-origin":
+                    return self.error("403 Forbidden", "Cross-origin request refused.")
+            elif origin and urlparse(origin).netloc not in self.allowed_hosts():
                 return self.error("403 Forbidden", "Cross-origin request refused.")
             if req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
                 return self.error("403 Forbidden", "Cross-site request refused.")
@@ -220,6 +223,17 @@ class App:
         """The caller's address as the platform proxy reports it (first X-Forwarded-For hop)."""
         return (req.headers.get("x-forwarded-for", "").split(",")[0].strip() or req.headers.get("x-real-ip", "")
                 or req.headers.get("remote-addr", "") or "unknown")[:64]
+
+    @staticmethod
+    def same_origin(req: Request) -> bool:
+        """Origin must match our Host. Some browsers send `Origin: null` on form posts; that is accepted only when
+        the browser itself says the request is same-origin (Sec-Fetch-Site), and the CSRF token still applies."""
+        origin = req.headers.get("origin")
+        if not origin:
+            return True
+        if origin == "null":
+            return req.headers.get("sec-fetch-site") == "same-origin"
+        return urlparse(origin).netloc == req.headers.get("host", "")
 
     def _secure(self, req: Request) -> bool:
         return req.headers.get("x-forwarded-proto", "") == "https"
@@ -249,8 +263,7 @@ class App:
                 return self.redirect("/login")
             return self.error("403 Forbidden", "Not signed in.", nav=False)
         if req.method == "POST":
-            origin = req.headers.get("origin")
-            if origin and urlparse(origin).netloc != req.headers.get("host", ""):
+            if not self.same_origin(req):
                 return self.error("403 Forbidden", "Cross-origin request refused.")
             if req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
                 return self.error("403 Forbidden", "Cross-site request refused.")
@@ -266,8 +279,7 @@ class App:
 
     def login(self, req: Request) -> Response:
         assert self.hosted is not None
-        origin = req.headers.get("origin")
-        if (origin and urlparse(origin).netloc != req.headers.get("host", "")) or \
+        if not self.same_origin(req) or \
                 req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
             return self.error("403 Forbidden", "Cross-origin request refused.", nav=False)
         client = self.client_id(req)

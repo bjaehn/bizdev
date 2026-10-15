@@ -143,6 +143,20 @@ def test_login_rejects_cross_site_posts(hosted):
     assert login(hosted, headers={"Origin": f"https://{HOST}"}).code == 303
 
 
+def test_browsers_that_send_origin_null_can_sign_in_only_when_same_origin(hosted):
+    assert login(hosted, headers={"Origin": "null", "Sec-Fetch-Site": "same-origin"}).code == 303
+    assert login(hosted, headers={"Origin": "null"}).code == 403
+    assert login(hosted, headers={"Origin": "null", "Sec-Fetch-Site": "cross-site"}).code == 403
+    s = session(hosted)
+    r = call(hosted.app, "POST", "/logout", {"csrf": hosted.app._csrf}, cookie=s,
+             headers={"Origin": "null", "Sec-Fetch-Site": "same-origin"})
+    assert r.code == 303
+
+
+def test_pages_send_origin_on_same_origin_posts(hosted):
+    assert call(hosted.app, "GET", "/login").h["Referrer-Policy"] == "same-origin"
+
+
 def test_logout_clears_cookie_and_post_guards_apply(hosted):
     s = session(hosted)
     csrf = hosted.app._csrf

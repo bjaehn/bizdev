@@ -134,7 +134,7 @@ def test_security_headers_on_every_response(world):
         h = r.headers
         assert "script-src 'none'" in h["Content-Security-Policy"] and "default-src 'none'" in h["Content-Security-Policy"]
         assert "frame-ancestors 'none'" in h["Content-Security-Policy"] and "form-action 'self'" in h["Content-Security-Policy"]
-        assert h["X-Content-Type-Options"] == "nosniff" and h["Referrer-Policy"] == "no-referrer"
+        assert h["X-Content-Type-Options"] == "nosniff" and h["Referrer-Policy"] == "same-origin"
         assert h["Cache-Control"] == "no-store" and h["X-Frame-Options"] == "DENY"
 
 
