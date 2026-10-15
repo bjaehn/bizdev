@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.env
+*.db
+*.sqlite
+card.json
+eval_report.json
+enrich_proposals.csv

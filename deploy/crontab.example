@@ -1,0 +1,14 @@
+# Self-hosted alternative to GitHub Actions: Monday 05:00 America/Chicago (DST-correct via CRON_TZ,
+# supported by cronie/vixie-cron on most Linux distributions; if yours lacks it, set the host to
+# America/Chicago or use systemd timers with OnCalendar=Mon *-*-* 05:00:00 America/Chicago).
+#
+# Put the secrets in a file readable only by the service account, e.g. /etc/bd/env (chmod 600):
+#   ANTHROPIC_API_KEY=...
+#   ANTHROPIC_MODEL=...
+#   BD_USER_AGENT=SEI BD Research ops@yourcompany.com
+#   TEAMS_WEBHOOK_URL=...            # leave out for dry runs
+#   BD_DB_PATH=/var/lib/bd/bd.sqlite
+#
+# Install with `crontab -e` as the service account:
+CRON_TZ=America/Chicago
+0 5 * * 1  cd /opt/bd && set -a && . /etc/bd/env && set +a && ./scripts/weekly.sh >> /var/log/bd/weekly.log 2>&1
