@@ -155,6 +155,8 @@ def test_check_constraints(conn):
         conn.execute("INSERT INTO accounts(name, tier) VALUES ('X','C')")
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("INSERT INTO accounts(name, ownership) VALUES ('X','nonprofit')")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO accounts(name, status) VALUES ('X','paused')")
     row = conn.execute("SELECT chicagoland FROM accounts WHERE id=?", (aid,)).fetchone()
     assert row["chicagoland"] == "unknown"  # default is unknown, never assumed
 

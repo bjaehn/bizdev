@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     sponsor       TEXT,
     industry      TEXT,
     tier          TEXT NOT NULL DEFAULT 'A' CHECK (tier IN ('A','B')),
-    status        TEXT NOT NULL DEFAULT 'active',  -- e.g. active | hold_review | excluded
+    status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','hold_review','excluded')),
     last_scanned  TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_domain ON accounts(domain) WHERE domain IS NOT NULL;
