@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sei-bd-agent"
+version = "0.1.0"
+description = "SEI Chicago BD Signal Agent (prototype)"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+bd = "bd.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["bd*"]
+
+[tool.setuptools.package-data]
+bd = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

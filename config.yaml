@@ -1,0 +1,90 @@
+# All weights, thresholds, counties, size floors and exclusions live here.
+# Secrets and the model name come from env vars only (see .env.example).
+
+scoring:
+  # Base points by signal type.
+  base_points:
+    leadership_change: 30
+    leadership_transformation_ai_data: 25
+    open_exec_search: 20
+    pe_platform_or_sponsor_exec: 28
+    pe_addon: 22
+    pe_hold_2_4: 12
+    restructuring_layoffs: 24
+    ma_divestiture: 24
+    activist: 18
+    ops_failure: 18
+    cost_program: 18
+    ai_commitment: 16
+    strategy_rebrand: 14
+    hiring_cluster: 26      # 3+ related postings in 60 days
+    hiring_interim: 18
+    hiring_single: 12
+    platform_migration: 20
+    vendor_deal: 14
+    rfp_match: 30
+    risk_factor: 8
+
+  # Which family each type belongs to.
+  families:
+    leadership: [leadership_change, leadership_transformation_ai_data, open_exec_search]
+    hiring: [hiring_cluster, hiring_interim, hiring_single]
+    events: [restructuring_layoffs, ma_divestiture, activist, ops_failure, cost_program, ai_commitment, strategy_rebrand]
+    pe: [pe_platform_or_sponsor_exec, pe_addon, pe_hold_2_4]
+    technology: [platform_migration, vendor_deal]
+    procurement: [rfp_match]
+    filings: [risk_factor]
+
+  # Recency by event age in days (inclusive upper bound). Older than the last band = 0.
+  recency_bands:
+    - {max_days: 30, multiplier: 1.0}
+    - {max_days: 90, multiplier: 0.7}
+    - {max_days: 180, multiplier: 0.4}
+  # Status types are not events: flat multiplier regardless of event_date.
+  status_types: [pe_hold_2_4]
+  status_multiplier: 0.7
+
+  # Low is stored but never scored (multiplier 0 and excluded before family grouping).
+  confidence_multiplier: {High: 1.0, Medium: 0.7, Low: 0.0}
+  service_match_multiplier: {match: 1.0, none: 0.5}
+
+  # Within a family: strongest counts in full, each further signal at this fraction.
+  within_family_decay: 0.5
+  # Stacking bonus per family beyond the first, capped.
+  stacking_bonus_per_family: 10
+  stacking_bonus_max: 30
+  score_max: 100
+
+  bands:
+    hot: 75
+    warm: 60
+    watch: 40
+  # Bands that are posted to Teams.
+  posted_bands: [Hot, Warm]
+
+post_gate:
+  require_high_confidence_within_days: 90
+  max_leads_per_post: 10
+  cooldown_weeks: 4
+  cooldown_break_score_rise: 15   # or a new family appearing
+
+service_lines:
+  - AI & Technology
+  - Data & Analytics
+  - Strategy & Operations
+  - Concept to Delivery
+
+fit_gate:
+  counties: [Cook, DuPage, Lake, Will, Kane, McHenry]
+  state: IL
+  size_floor:
+    default: {revenue_usd: 250000000, employees: 1000}   # either threshold passes
+    pe-backed: {revenue_usd: 75000000, employees: null}
+  excluded_industries: [cannabis]
+  exclusion_reasons: [client, do_not_pursue, cannabis, conflict]
+
+scan:
+  window_days: 180
+  tiers:
+    A: {every_weeks: 1}
+    B: {every_weeks: 2}
