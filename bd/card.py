@@ -138,7 +138,7 @@ def _build(leads: list[Lead], briefs: dict[int, Brief], run_date: date, cfg: Con
         foot.append(f"{overflow} more postable lead{'s' if overflow != 1 else ''} not shown (cap {cfg.post_gate.max_leads_per_post}).")
     n_fb = sum(1 for l in leads if briefs[l.account.id].source == "fallback")
     if n_fb:
-        foot.append(f"{n_fb} why-now line{'s are' if n_fb != 1 else ' is'} the plain source summary (briefer unavailable).")
+        foot.append(f"{n_fb} why-now line{'s are' if n_fb != 1 else ' is'} the plain source summary, not a written brief.")
     if foot:
         body.append(_tb(" ".join(foot), size="Small", isSubtle=True, spacing="Medium"))
     return {"$schema": SCHEMA, "type": "AdaptiveCard", "version": VERSION, "body": body}
