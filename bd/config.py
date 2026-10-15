@@ -106,6 +106,7 @@ class Scan(_Strict):
     window_days: int
     max_future_days: int
     cadence_grace_days: int
+    status_type_age_days: dict[str, tuple[int, int]] = {}
     tiers: dict[str, Tier]
 
 
@@ -141,6 +142,7 @@ class Verify(_Strict):
 class Sources(_Strict):
     blocked_domains: list[str]
     wire_services: list[str]
+    ats_domains: list[str]
     sec_domains: list[str]
     warn_domains: list[str]
     confidence_by_source_type: dict[str, str]
@@ -152,6 +154,13 @@ class Sources(_Strict):
         if not set(self.confidence_by_source_type.values()) <= {"High", "Medium", "Low"}:
             raise ValueError("confidence_by_source_type values must be High, Medium or Low")
         return self
+
+
+class Hiring(_Strict):
+    window_days: int
+    cluster_min: int
+    senior_levels: list[str]
+    theme_service_lines: dict[str, list[str]]
 
 
 class Edgar(_Strict):
@@ -183,9 +192,19 @@ class Config(_Strict):
     pricing: Pricing
     verify: Verify
     sources: Sources
+    hiring: Hiring
     edgar: Edgar
     briefer: Briefer
     card: Card
+
+    @model_validator(mode="after")
+    def _status_bounds(self) -> "Config":
+        for t, (lo, hi) in self.scan.status_type_age_days.items():
+            if t not in self.scoring.status_types:
+                raise ValueError(f"scan.status_type_age_days names {t!r}, which is not a status type")
+            if not 0 <= lo <= hi:
+                raise ValueError(f"scan.status_type_age_days[{t}] must satisfy 0 <= min <= max")
+        return self
 
 
 def load_config(path: str | os.PathLike[str] | None = None) -> Config:
