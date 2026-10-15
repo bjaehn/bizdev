@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -104,6 +105,7 @@ class Tier(_Strict):
 class Scan(_Strict):
     window_days: int
     max_future_days: int
+    cadence_grace_days: int
     tiers: dict[str, Tier]
 
 
@@ -113,6 +115,21 @@ class Llm(_Strict):
     web_search_tool_type: str
     max_continuations: int
     json_retries: int
+    concurrency: int
+    max_cost_per_run_usd: float | None = None
+
+
+class ModelPrice(_Strict):
+    input: float
+    output: float
+    cache_write_5m: float
+    cache_read: float
+
+
+class Pricing(_Strict):
+    retrieved: date
+    web_search_per_1000: float
+    models: dict[str, ModelPrice]
 
 
 class Verify(_Strict):
@@ -144,6 +161,7 @@ class Config(_Strict):
     fit_gate: FitGate
     scan: Scan
     llm: Llm
+    pricing: Pricing
     verify: Verify
     sources: Sources
 

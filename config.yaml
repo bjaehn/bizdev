@@ -85,6 +85,7 @@ fit_gate:
 
 scan:
   window_days: 180
+  cadence_grace_days: 1   # a weekly account is due again after 7 - 1 days, so a slightly early run is not skipped
   max_future_days: 30   # event_date later than run date + this is rejected as implausible
   tiers:
     A: {every_weeks: 1}
@@ -96,6 +97,21 @@ llm:
   web_search_tool_type: web_search_20260209   # check Anthropic docs if the model changes
   max_continuations: 5            # pause_turn resumes per call
   json_retries: 1                 # one retry on invalid JSON
+  concurrency: 4                  # max simultaneous scanner calls
+  max_cost_per_run_usd: 25.0      # soft cap: stop starting new calls once estimated spend reaches this (edit freely)
+
+# USD per million tokens. Source: https://platform.claude.com/docs/en/about-claude/pricing
+# (retrieved 2026-10-15). A model missing here is logged as unpriced (NULL), never guessed.
+# Search results are billed as input tokens; code execution is free alongside web search.
+pricing:
+  retrieved: 2026-10-15
+  web_search_per_1000: 10.0
+  models:
+    claude-sonnet-5-5: {input: 2.0, output: 10.0, cache_write_5m: 2.5, cache_read: 0.10}
+    claude-sonnet-5: {input: 2.0, output: 10.0, cache_write_5m: 2.5, cache_read: 0.20}
+    claude-opus-5-5: {input: 4.0, output: 20.0, cache_write_5m: 5.0, cache_read: 0.20}
+    claude-opus-5: {input: 5.0, output: 25.0, cache_write_5m: 6.25, cache_read: 0.50}
+    claude-fable-5-1: {input: 10.0, output: 50.0, cache_write_5m: 12.5, cache_read: 0.25}
 
 verify:
   timeout_seconds: 15

@@ -235,3 +235,21 @@ def evaluate(gold: list[GoldRow], scan: Callable[[Account, date], ScanOutcome], 
             res.unexpected = [_sig(s) for s in unused]
         results.append(res)
     return EvalReport(as_of=as_of.isoformat(), tolerance_days=tolerance_days, accounts=results)
+
+
+def combined_scan(scanners: list) -> Callable[[Account, date], ScanOutcome]:
+    """Run several scanners on one account and merge their outcomes into one."""
+    def scan(account: Account, as_of: date) -> ScanOutcome:
+        merged = ScanOutcome(account=account, scanner="+".join(s.name for s in scanners))
+        errors = []
+        for s in scanners:
+            out = s.scan(account, as_of)
+            merged.signals += out.signals
+            merged.rejections += out.rejections
+            merged.candidates += out.candidates
+            merged.usage.add(out.usage)
+            if out.error:
+                errors.append(f"{s.name}: {out.error}")
+        merged.error = "; ".join(errors) or None
+        return merged
+    return scan

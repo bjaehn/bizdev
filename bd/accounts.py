@@ -28,14 +28,20 @@ class Account(BaseModel):
     industry: str | None = None
     tier: str = "A"
     status: str = "active"
+    last_scanned: str | None = None
 
 
-def list_accounts(conn: sqlite3.Connection, tier: str = "all", status: str = "active",
+def list_accounts(conn: sqlite3.Connection, tier: str = "all", status: str | None = "active",
                   limit: int | None = None) -> list[Account]:
-    sql, args = "SELECT * FROM accounts WHERE status = ?", [status]
+    """status=None returns accounts in every status."""
+    where, args = [], []
+    if status is not None:
+        where.append("status = ?")
+        args.append(status)
     if tier != "all":
-        sql += " AND tier = ?"
+        where.append("tier = ?")
         args.append(tier)
+    sql = "SELECT * FROM accounts" + (" WHERE " + " AND ".join(where) if where else "")
     sql += " ORDER BY id"
     if limit:
         sql += " LIMIT ?"

@@ -142,3 +142,14 @@ def test_json_report_roundtrip():
     rep = evaluate([G("A", None, None, None)], fake_scan({}), AS_OF)
     d = json.loads(rep.to_json())
     assert d["totals"]["no_signal_clean"] == 1 and d["accounts"][0]["account"] == "A"
+
+
+def test_combined_scan_merges_scanners_usage_and_errors(cfg):
+    from bd.evaluate import combined_scan
+    from tests.test_runner import FakeScanner
+    a, b = FakeScanner(cfg, "leadership", signals_for={"Acme"}), FakeScanner(cfg, "events", fail={"Acme"})
+    acct = Account(id=-1, name="Acme", domain="acme.com")
+    out = combined_scan([a, b])(acct, AS_OF)
+    assert out.scanner == "leadership+events" and len(out.signals) == 1 and len(out.rejections) == 1
+    assert out.usage.total_tokens == 3000 and out.usage.web_searches == 4
+    assert out.error == "events: LLMError: down"

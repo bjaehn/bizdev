@@ -60,7 +60,9 @@ def test_secrets_and_model_only_from_env(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_MODEL", "m")
     assert Settings.from_env().require_llm() == ("k", "m")
     text = (ROOT / "config.yaml").read_text().lower()
-    assert "api_key" not in text and "webhook" not in text and "claude-" not in text
+    assert "api_key" not in text and "webhook" not in text
+    # Model ids appear only as keys of the price table; nothing in config selects the model.
+    assert "model" not in load_config(ROOT / "config.yaml").llm.model_dump()
 
 
 # ---- hash -----------------------------------------------------------------------

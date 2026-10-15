@@ -45,10 +45,14 @@ def _scanner_deps(cfg: Config, settings: Settings):
 
 
 @app.command()
-def seed(csv_path: str) -> None:
-    """Load accounts from a CSV (blank cells stay unknown; nothing is guessed)."""
+def seed(
+    csv_path: str,
+    exclusions: Optional[str] = typer.Option(None, help="Exclusions CSV: name,domain,reason"),
+) -> None:
+    """Load accounts (and optionally exclusions) from CSV. Blank cells stay unknown; nothing is guessed."""
     from bd.accounts import seed_csv
     from bd.db import connect, init_db
+    from bd.fit_gate import apply_fit_gate, seed_exclusions
 
     settings = Settings.from_env()
     conn = connect(settings.db_path)
@@ -59,6 +63,24 @@ def seed(csv_path: str) -> None:
     if res.errors:
         _fail("Seed aborted, nothing written:\n" + "\n".join(res.errors))
     typer.echo(f"Seeded {settings.db_path}: {res.inserted} inserted, {res.updated} updated.")
+    if exclusions:
+        if not Path(exclusions).exists():
+            _fail(f"{exclusions} not found")
+        n, errs = seed_exclusions(conn, exclusions)
+        if errs:
+            _fail("Exclusions aborted, nothing written:\n" + "\n".join(errs))
+        typer.echo(f"Exclusions: {n} added.")
+    _print_gate(apply_fit_gate(conn, load_config()))
+
+
+def _print_gate(g) -> None:
+    typer.echo(f"Fit gate: {len(g.passed)} pass, {len(g.held)} held for review, {len(g.excluded)} excluded.")
+    for acc, res in g.held[:10]:
+        typer.echo(f"  held: {acc.name}: {'; '.join(res.reasons)}")
+    if len(g.held) > 10:
+        typer.echo(f"  ... and {len(g.held) - 10} more held (fill in chicagoland / revenue / employees / ownership)")
+    for acc, res in g.excluded:
+        typer.echo(f"  excluded: {acc.name}: {'; '.join(res.reasons)}")
 
 
 @app.command()
@@ -66,38 +88,55 @@ def scan(
     tier: str = typer.Option("all", help="A, B or all"),
     limit: Optional[int] = typer.Option(None, help="Scan at most N accounts"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    scanners: str = typer.Option("all", help="Comma list of scanner names, or all implemented"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    force: bool = typer.Option(False, help="Ignore tier cadence"),
+    dry_run: bool = typer.Option(False, help="Apply the fit gate and show what would be scanned; no API calls"),
 ) -> None:
-    """Scan active accounts with every implemented scanner (leadership for now; sequential)."""
+    """Fit-gate, then scan due accounts that passed (concurrently), logging tokens and cost."""
     from bd.accounts import list_accounts
     from bd.db import connect, init_db
-    from bd.scanners import SCANNERS, store_signals
+    from bd.fit_gate import apply_fit_gate
+    from bd.runner import is_due, run_scans
+    from bd.scanners import SCANNERS
 
     if tier not in ("A", "B", "all"):
         _fail("--tier must be A, B or all")
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
-    llm, verifier = _scanner_deps(cfg, settings)
+    names = [n for n, c in SCANNERS.items() if c.implemented] if scanners == "all" else scanners.split(",")
+    bad = [n for n in names if n not in SCANNERS or not SCANNERS[n].implemented]
+    if bad:
+        _fail(f"unknown or unimplemented scanner(s): {bad}")
     conn = connect(settings.db_path)
     init_db(conn)
+    _print_gate(apply_fit_gate(conn, cfg))
     accounts = list_accounts(conn, tier=tier, limit=limit)
-    scanners = [c(cfg, llm, verifier) for c in SCANNERS.values() if c.implemented]
     if not accounts:
-        _fail("No active accounts. Run `bd seed accounts.csv` first.")
-    typer.echo(f"Scanning {len(accounts)} accounts with {[s.name for s in scanners]} as of {run_date}")
-    for acc in accounts:
-        for sc in scanners:
-            out = sc.scan(acc, run_date)
-            ins, known = store_signals(conn, acc.id, out.signals, run_date)
-            errors = "; ".join(x for x in (out.error, out.rejection_summary() and "rejected: " + out.rejection_summary()) if x)
-            with conn:
-                conn.execute(
-                    "INSERT INTO runs(run_date,step,account_id,accounts_scanned,signals_found,tokens,est_cost,errors) "
-                    "VALUES (?,?,?,?,?,?,NULL,?)",
-                    (run_date.isoformat(), f"scan:{sc.name}", acc.id, 1, ins, out.usage.total_tokens, errors or None))
-                if not out.error:
-                    conn.execute("UPDATE accounts SET last_scanned = ? WHERE id = ?", (run_date.isoformat(), acc.id))
-            typer.echo(f"  {acc.name}: {ins} new, {known} known, {len(out.rejections)} rejected, "
-                       f"{out.usage.total_tokens:,} tokens" + (f"  ERROR {out.error}" if out.error else ""))
+        _fail("No accounts passed the fit gate. Fill in the held accounts' facts or run `bd seed accounts.csv`.")
+    due = [a for a in accounts if is_due(a, run_date, cfg, force)]
+    typer.echo(f"{len(due)} of {len(accounts)} accounts due (tier {tier}) x {names} = {len(due) * len(names)} calls")
+    if dry_run:
+        for a in due:
+            typer.echo(f"  would scan: {a.name} (tier {a.tier})")
+        return
+    if not due:
+        return
+    llm, verifier = _scanner_deps(cfg, settings)
+    objs = [SCANNERS[n](cfg, llm, verifier) for n in names]
+    summary = run_scans(conn, cfg, objs, accounts, run_date, model=settings.anthropic_model, workers=workers,
+                        force=force, log=typer.echo)
+    typer.echo(f"\nPer account (tokens, est. cost):")
+    for r in summary.accounts.values():
+        cost = "unpriced" if r.est_cost is None else f"${r.est_cost:.4f}"
+        typer.echo(f"  {r.account.name}: {r.tokens:,} tokens, {r.web_searches} searches, {cost}, "
+                   f"{r.new_signals} new signals" + (f", {len(r.errors)} errors" if r.errors else ""))
+    note = f" ({summary.unpriced_calls} calls unpriced: model not in config pricing)" if summary.unpriced_calls else ""
+    typer.echo(f"Total: {summary.tokens:,} tokens, ${summary.est_cost:.4f} estimated{note}, "
+               f"{summary.new_signals} new signals, {summary.errors} call errors.")
+    if summary.budget_hit:
+        typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): {summary.skipped_budget} calls not started. "
+                   "Raise llm.max_cost_per_run_usd in config.yaml and re-run to finish.", err=True)
 
 
 @app.command()
@@ -125,10 +164,11 @@ def evaluate(
     tolerance_days: int = typer.Option(0, help="Allowed |event_date - expected_date| in days"),
     limit: Optional[int] = typer.Option(None, help="Evaluate only the first N accounts"),
     out: str = typer.Option("eval_report.json", help="Where to write the JSON report"),
+    scanners: str = typer.Option("all", help="Comma list of scanner names, or all implemented"),
 ) -> None:
-    """Run the leadership scanner over the gold file and report found/missed/wrong date/bad URLs."""
-    from bd.evaluate import GoldError, evaluate as run_eval, load_gold
-    from bd.scanners import LeadershipScanner
+    """Run scanners over the gold file and report found/missed/wrong date/bad URLs."""
+    from bd.evaluate import GoldError, combined_scan, evaluate as run_eval, load_gold
+    from bd.scanners import SCANNERS
 
     try:
         rows = load_gold(gold)
@@ -138,12 +178,16 @@ def evaluate(
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
     llm, verifier = _scanner_deps(cfg, settings)
-    scanner = LeadershipScanner(cfg, llm, verifier)
+    names = [n for n, c in SCANNERS.items() if c.implemented] if scanners == "all" else scanners.split(",")
+    bad = [n for n in names if n not in SCANNERS or not SCANNERS[n].implemented]
+    if bad:
+        _fail(f"unknown or unimplemented scanner(s): {bad}")
+    scan_fn = combined_scan([SCANNERS[n](cfg, llm, verifier) for n in names])
     stale = [g for g in rows if g.expected_date and (run_date - g.expected_date).days > cfg.scan.window_days]
     if stale:
         typer.echo(f"WARNING: {len(stale)} gold rows are older than the {cfg.scan.window_days}-day window as of "
                    f"{run_date}; they cannot be found. Pass --as-of closer to their dates.", err=True)
-    report = run_eval(rows, scanner.scan, run_date, tolerance_days=tolerance_days, limit=limit)
+    report = run_eval(rows, scan_fn, run_date, tolerance_days=tolerance_days, limit=limit)
     Path(out).write_text(report.to_json())
     typer.echo(report.render())
     typer.echo(f"\nFull report: {out}")
