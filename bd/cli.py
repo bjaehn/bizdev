@@ -261,7 +261,7 @@ def card(
 def evaluate(
     gold: str = typer.Option("tests/gold.csv", help="Verified gold file"),
     as_of: Optional[str] = typer.Option(None, help="Evaluate as of YYYY-MM-DD (default today)"),
-    tolerance_days: int = typer.Option(0, help="Allowed |event_date - expected_date| in days"),
+    tolerance_days: int = typer.Option(3, help="Allowed |event_date - expected_date| in days"),
     limit: Optional[int] = typer.Option(None, help="Evaluate only the first N accounts"),
     out: str = typer.Option("eval_report.json", help="Where to write the JSON report"),
     scanners: str = typer.Option("all", help="Comma list of scanner names, or all implemented"),

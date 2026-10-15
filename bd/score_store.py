@@ -38,9 +38,24 @@ def to_scoring_signal(row: sqlite3.Row) -> ScoringSignal:
     )
 
 
+_RANK = {"Low": 0, "Medium": 1, "High": 2}
+
+
+def dedupe_same_event(signals: list[ScoringSignal]) -> list[ScoringSignal]:
+    """One event reported by several domains counts once: same type and event_date collapse to the
+    highest-confidence source (lowest signal id on a tie). The extra rows stay stored for audit."""
+    best: dict[tuple[str, date], ScoringSignal] = {}
+    for s in signals:
+        key = (s.type, s.event_date)
+        cur = best.get(key)
+        if cur is None or (_RANK[s.confidence], -(s.ref or 0)) > (_RANK[cur.confidence], -(cur.ref or 0)):
+            best[key] = s
+    return list(best.values())
+
+
 def score_one(conn: sqlite3.Connection, cfg: Config, account: Account, as_of: date) -> ScoredAccount:
     rows = load_signal_rows(conn, account.id)
-    signals = [to_scoring_signal(r) for r in rows]
+    signals = dedupe_same_event([to_scoring_signal(r) for r in rows])
     return ScoredAccount(account, {r["id"]: r for r in rows}, signals, score_account(signals, as_of, cfg))
 
 
