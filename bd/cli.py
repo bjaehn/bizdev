@@ -76,8 +76,11 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
 def seed(
     csv_path: str,
     exclusions: Optional[str] = typer.Option(None, help="Exclusions CSV: name,domain,reason"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Let CSV values replace different values already in the database"),
 ) -> None:
-    """Load accounts (and optionally exclusions) from CSV. Blank cells stay unknown; nothing is guessed."""
+    """Load accounts (and optionally exclusions) from CSV. The DATABASE is the master copy: for an account that
+    already exists a CSV value only fills a fact that is still unknown, and differences are reported (use
+    --overwrite to let the CSV win). Blank cells stay unknown; nothing is guessed."""
     from bd.accounts import seed_csv
     from bd.db import connect, init_db
     from bd.fit_gate import apply_fit_gate, seed_exclusions
@@ -87,10 +90,18 @@ def seed(
     init_db(conn)
     if not Path(csv_path).exists():
         _fail(f"{csv_path} not found")
-    res = seed_csv(conn, csv_path)
+    res = seed_csv(conn, csv_path, overwrite=overwrite)
     if res.errors:
         _fail("Seed aborted, nothing written:\n" + "\n".join(res.errors))
-    typer.echo(f"Seeded {settings.db_path}: {res.inserted} inserted, {res.updated} updated.")
+    typer.echo(f"Seeded {settings.db_path}: {res.inserted} inserted, {res.updated} existing matched, "
+               f"{res.filled} unknown fact(s) filled" + (f", {res.overwritten} overwritten" if res.overwritten else "") + ".")
+    if res.conflicts:
+        typer.echo(f"{len(res.conflicts)} CSV value(s) differ from the database; the database values were kept "
+                   "(re-run with --overwrite to apply the CSV):", err=True)
+        for c in res.conflicts[:10]:
+            typer.echo(f"  {c}", err=True)
+        if len(res.conflicts) > 10:
+            typer.echo(f"  ... and {len(res.conflicts) - 10} more", err=True)
     if exclusions:
         if not Path(exclusions).exists():
             _fail(f"{exclusions} not found")
@@ -167,6 +178,46 @@ def scan(
         typer.echo("Every scan call failed (bad API key or model, no network?). Exiting with an error so a scheduled "
                    "run stops before scoring and posting.", err=True)
         raise typer.Exit(code=3)
+
+
+@app.command()
+def ui(
+    port: int = typer.Option(8765, help="Port on 127.0.0.1 (0 = pick a free one)"),
+    no_open: bool = typer.Option(False, "--no-open", help="Do not open a browser; just print the link"),
+) -> None:
+    """Open the local review-and-curate UI (leads, accounts, enrich review, exclusions, runs).
+
+    It listens on 127.0.0.1 only, and cannot scan, score, call a model or post to Teams."""
+    try:
+        from bd.ui.server import serve
+    except ImportError as e:
+        _fail(f"The UI needs Jinja2 ({e.name}). Install it with: pip install -e '.[ui]'")
+        raise
+    from bd.db import connect, init_db
+
+    settings = Settings.from_env()
+    init_db(connect(settings.db_path))
+    try:
+        serve(load_config(), settings.db_path, port=port, open_browser=not no_open)
+    except OSError as e:
+        _fail(f"Could not start the UI on 127.0.0.1:{port}: {e}")
+
+
+@app.command()
+def export(
+    accounts: str = typer.Option("accounts.csv", help="Where to write accounts"),
+    exclusions: str = typer.Option("exclusions.csv", help="Where to write exclusions"),
+) -> None:
+    """Write the database's accounts and exclusions to CSV (for git or backup). Overwrites those files."""
+    from bd.accounts import export_accounts_csv, export_exclusions_csv
+    from bd.db import connect, init_db
+
+    settings = Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    n = export_accounts_csv(conn, accounts)
+    m = export_exclusions_csv(conn, exclusions)
+    typer.echo(f"Wrote {n} account(s) to {accounts} and {m} exclusion(s) to {exclusions}. Review with `git diff`.")
 
 
 @app.command()

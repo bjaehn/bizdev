@@ -19,7 +19,7 @@ def test_seed_loads_repo_accounts():
     r = runner.invoke(app, ["seed", str(ROOT / "accounts.csv")])
     assert r.exit_code == 0 and "58 inserted" in r.output
     assert "58 held for review" in r.output  # names only: location and size unverified, so nothing is scanned
-    assert "0 inserted, 58 updated" in runner.invoke(app, ["seed", str(ROOT / "accounts.csv")]).output
+    assert "0 inserted, 58 existing matched" in runner.invoke(app, ["seed", str(ROOT / "accounts.csv")]).output
 
 
 def test_seed_missing_file_and_bad_csv(tmp_path):

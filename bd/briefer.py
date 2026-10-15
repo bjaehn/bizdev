@@ -19,7 +19,9 @@ from importlib import resources
 from pydantic import BaseModel, ValidationInfo, field_validator
 
 from bd.config import Config
+from bd.brief_core import Brief, fallback_brief  # noqa: F401  (re-exported)
 from bd.cost import estimate_cost
+from bd.labels import fmt_date  # noqa: F401  (re-exported)
 from bd.llm import LLM, LLMError, Usage, generate_validated
 from bd.shortlist import Lead
 
@@ -85,32 +87,6 @@ class BriefResponse(BaseModel):
         if v.strip().lower() not in canon:
             raise ValueError(f"best_service_line must be exactly one of {allowed}")
         return canon[v.strip().lower()]
-
-
-@dataclass
-class Brief:
-    why_now: str
-    best_service_line: str | None
-    source: str                      # llm | cache | fallback
-    usage: Usage = field(default_factory=Usage)
-    error: str | None = None
-
-
-def fmt_date(d: date) -> str:
-    return f"{d:%b} {d.day}, {d.year}"
-
-
-def fallback_brief(lead: Lead, error: str | None = None, usage: Usage | None = None, cfg: Config | None = None) -> Brief:
-    """Plain, deterministic text from the strongest stored signal. No model involved."""
-    top = lead.signals[0]
-    why = f"{top.summary.strip().rstrip('.')} ({fmt_date(top.event_date)})."
-    weights: dict[str, float] = {}
-    for s in lead.signals:
-        for line in s.service_lines:
-            weights[line] = weights.get(line, 0.0) + s.points
-    order = {l: i for i, l in enumerate(cfg.service_lines)} if cfg else {}
-    best = min(weights, key=lambda l: (-weights[l], order.get(l, 99))) if weights else None
-    return Brief(why, best, "fallback", usage or Usage(), error)
 
 
 def _lead_input(lead: Lead, as_of: date, cfg: Config) -> dict:

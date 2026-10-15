@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Enrich review{% endblock %}
+{% block body %}
+<h1>Enrich review</h1>
+<p class="sub">Review what <code>bd enrich</code> proposed. Each fact comes with the page it was found on; tick the ones you accept. Nothing changes until you press Apply for that account.</p>
+<form method="get" action="/enrich" class="filters">
+<label for="file" style="margin:0">Proposals file</label>
+<input type="text" id="file" name="file" value="{{ file }}" style="min-width:280px">
+<button class="ghost" type="submit">Load</button></form>
+<p class="meta">Files are read only from under <code>{{ root }}</code>.</p>
+
+{% if missing %}
+<div class="card empty">No readable CSV at that path. Run <code>bd enrich</code> first, or type the file name above.</div>
+{% else %}
+{% if errors %}<div class="errors"><b>Problems in the file</b><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+{% for p in props %}
+<div class="card">
+<div class="row"><div>{% if p.account_id %}<a class="name" href="/accounts/{{ p.account_id }}">{{ p.name }}</a>{% else %}<span class="name">{{ p.name }}</span>{% endif %}
+{% if p.sec_name %}<div class="meta">SEC registered name: <b>{{ p.sec_name }}</b> (check this is the right company)</div>{% endif %}</div>
+{% if not p.account_id %}<span class="badge bad">not in the database</span>{% endif %}</div>
+{% if p.notes %}<p class="meta">{{ p.notes }}</p>{% endif %}
+{% if p.account_id and p.diffs %}
+<form method="post" action="/enrich/apply">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="file" value="{{ file }}"><input type="hidden" name="account_id" value="{{ p.account_id }}">
+<div class="wrap"><table>
+<tr><th>Apply</th><th>Fact</th><th>Now</th><th>Proposed</th><th>Evidence</th></tr>
+{% for d in p.diffs %}
+<tr><td>{% if d.status == 'same' %}<span class="meta">same</span>{% else %}<input type="checkbox" name="apply" value="{{ d.column }}" id="{{ p.account_id }}-{{ d.column }}" {{ 'checked' if d.status == 'new' else '' }} aria-label="Apply {{ d.column }}">{% endif %}</td>
+<td><label for="{{ p.account_id }}-{{ d.column }}" style="margin:0;color:var(--ink)">{{ d.column }}</label></td>
+<td>{{ d.current|fact(d.column) }}</td>
+<td><b>{{ d.proposed|fact(d.column) }}</b>{% if d.status == 'conflict' %}<br><span class="badge warm">differs from a known value</span>{% endif %}</td>
+<td>{% if d.evidence_url|safe_url %}<a href="{{ d.evidence_url|safe_url }}" target="_blank" rel="noopener noreferrer">source</a>{% else %}<span class="meta">none given</span>{% endif %}</td></tr>
+{% endfor %}
+</table></div>
+<p><button type="submit">Apply ticked facts</button> <span class="meta">Conflicts are unticked by default: they would replace a value already in the database.</span></p>
+</form>
+{% elif p.account_id %}<p class="meta">Nothing was proposed for this account.</p>{% endif %}
+</div>
+{% else %}<div class="card empty">The file has no rows.</div>{% endfor %}
+{% endif %}
+{% endblock %}

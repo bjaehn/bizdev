@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block body %}
+<div class="row"><div><h1>Accounts</h1>
+<p class="sub">{{ total }} accounts. Only <b>active</b> accounts are scanned and scored; the rest wait for a fact you can supply.</p></div>
+<a class="btn" href="/accounts/new">Add account</a></div>
+<div class="pill-row">
+<a class="badge good" href="/accounts?status=active">{{ counts.active }} active</a>
+<a class="badge warm" href="/accounts?status=hold_review">{{ counts.hold_review }} held for review</a>
+<a class="badge bad" href="/accounts?status=excluded">{{ counts.excluded }} excluded</a>
+<a class="badge" href="/accounts">all</a>
+</div>
+<form method="get" action="/accounts" class="filters">
+<input type="text" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
+<select name="status" aria-label="Status"><option value="">any status</option>
+{% for s in ['active','hold_review','excluded'] %}<option value="{{ s }}" {{ 'selected' if s == status else '' }}>{{ s }}</option>{% endfor %}</select>
+<button class="ghost" type="submit">Filter</button></form>
+<div class="wrap"><table>
+<tr><th>Account</th><th>Status</th><th>Why</th><th>Chicagoland</th><th class="num">Revenue</th><th class="num">Employees</th><th>Ownership</th><th>Tier</th><th>Last scanned</th></tr>
+{% for r in rows %}{% set a = r.a %}
+<tr><td><a href="/accounts/{{ a.id }}">{{ a.name }}</a></td>
+<td><span class="badge {{ 'good' if a.status == 'active' else ('warm' if a.status == 'hold_review' else 'bad') }}">{{ a.status }}</span></td>
+<td class="meta">{{ r.fit.reasons|join('; ') }}</td>
+<td>{{ a.chicagoland }}</td><td class="num">{{ a.revenue|money }}</td><td class="num">{{ a.employees|show }}</td><td>{{ a.ownership|show }}</td><td>{{ a.tier }}</td><td>{{ a.last_scanned or 'never' }}</td></tr>
+{% else %}<tr><td colspan="9" class="empty">No accounts match.</td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

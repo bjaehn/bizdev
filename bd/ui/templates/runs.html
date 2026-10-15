@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Runs &amp; cost{% endblock %}
+{% block body %}
+<h1>Runs &amp; cost</h1>
+<p class="sub">Tokens and estimated cost per account per step, from the <code>runs</code> table. A call to a model with no price in <code>config.yaml</code> shows as unpriced, not as zero.</p>
+<h2>Totals by step</h2>
+<div class="wrap"><table>
+<tr><th>Step</th><th class="num">Calls</th><th class="num">Tokens</th><th class="num">Est. cost</th></tr>
+{% for s in steps %}<tr><td>{{ s['step'] }}</td><td class="num">{{ s['n'] }}</td><td class="num">{{ '{:,}'.format(s['tokens'] or 0) }}</td>
+<td class="num">{% if s['cost'] is none %}unpriced{% else %}${{ '%.2f'|format(s['cost']) }}{% endif %}{% if s['unpriced'] and s['cost'] is not none %} <span class="badge warm">{{ s['unpriced'] }} unpriced</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="4" class="empty">No runs recorded yet.</td></tr>{% endfor %}
+</table></div>
+<h2>Latest 300 entries</h2>
+<div class="wrap"><table>
+<tr><th>Run date</th><th>Step</th><th>Account</th><th class="num">Tokens</th><th class="num">Est. cost</th><th class="num">New signals</th><th>Notes</th></tr>
+{% for r in rows %}<tr><td>{{ r['run_date'] }}</td><td>{{ r['step'] }}</td><td>{{ r['account'] or '(whole run)' }}</td><td class="num">{{ '{:,}'.format(r['tokens']) }}</td>
+<td class="num">{{ ('$%.4f'|format(r['est_cost'])) if r['est_cost'] is not none else 'unpriced' }}</td><td class="num">{{ r['signals_found'] }}</td><td class="meta">{{ r['errors']|show if r['errors'] else '' }}</td></tr>
+{% endfor %}
+</table></div>
+{% endblock %}

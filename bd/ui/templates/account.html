@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_facts.html" import facts_form, errors_box %}
+{% block title %}{{ a.name }}{% endblock %}
+{% block body %}
+<p class="meta"><a href="/accounts">← Accounts</a></p>
+<div class="row"><div><h1>{{ a.name }}</h1>
+<p class="sub">Fit gate: <span class="badge {{ 'good' if fit.verdict == 'pass' else ('warm' if fit.verdict == 'unknown' else 'bad') }}">{{ fit.verdict }}</span>
+status <b>{{ a.status }}</b>{% if fit.reasons %} · {{ fit.reasons|join('; ') }}{% endif %}</p></div></div>
+<div class="card">
+<h2 style="margin-top:0">Facts</h2>
+{{ errors_box(errors) }}
+{{ facts_form(form, '/accounts/' ~ a.id, 'Save facts') }}
+</div>
+
+<h2>Signals ({{ signals|length }})</h2>
+{% if signals %}
+<div class="wrap"><table>
+<tr><th>Event date</th><th>Signal</th><th>Confidence</th><th>Summary</th><th>Source</th></tr>
+{% for s in signals %}
+<tr><td>{{ s['event_date']|fdate }}</td><td>{{ labels[s['type']] }}</td>
+<td>{{ s['confidence'] }}{% if s['confidence'] not in conf_scored %}<br><span class="meta">stored, never scored</span>{% endif %}</td>
+<td>{{ s['summary'] }}{% if s['role_or_person'] %}<br><span class="meta">{{ s['role_or_person'] }}</span>{% endif %}</td>
+<td>{% if s['source_url']|safe_url %}<a href="{{ s['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s['source_url']|host }}</a>{% endif %}<br><span class="meta">{{ s['source_type'] }} · found {{ s['detected_date'] }}</span></td></tr>
+{% endfor %}
+</table></div>
+{% else %}<div class="card empty">No signals stored for this account.</div>{% endif %}
+
+<h2>Score history</h2>
+{% if scores %}
+<div class="wrap"><table>
+<tr><th>Scored on</th><th class="num">Score</th><th>Band</th><th>Posted</th><th>Calculation</th></tr>
+{% for s in scores %}<tr><td>{{ s['run_date'] }}</td><td class="num">{{ s['score'] }}</td><td>{{ s['band'] }}</td><td>{{ ('yes · cooldown until ' ~ s['cooldown_until']) if s['posted'] else 'no' }}</td><td class="meta">{{ s['rationale'] }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<div class="card empty">Not scored yet.</div>{% endif %}
+
+<h2>Recent changes</h2>
+{% if history %}
+<div class="wrap"><table>
+<tr><th>When (UTC)</th><th>By</th><th>What</th><th>Was</th><th>Now</th></tr>
+{% for h in history %}<tr><td>{{ h['ts'] }}</td><td>{{ h['actor'] }}</td><td>{{ h['action'] }}{% if h['field'] %} · {{ h['field'] }}{% endif %}</td><td>{{ h['old']|show }}</td><td>{{ h['new']|show }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="meta">No recorded changes.</p>{% endif %}
+{% endblock %}

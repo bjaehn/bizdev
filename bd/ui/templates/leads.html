@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Leads{% endblock %}
+{% block body %}
+<div class="row"><div><h1>Leads</h1>
+<p class="sub">What the weekly run would post: Hot or Warm accounts with a High-confidence signal in the last 90 days, not in cooldown.</p></div>
+{% if dates %}<form method="get" action="/" class="filters"><label for="date" style="margin:0">Scored on</label>
+<select id="date" name="date">{% for d in dates %}<option value="{{ d }}" {{ 'selected' if d == run_date else '' }}>{{ d }}</option>{% endfor %}</select>
+<button class="ghost" type="submit">Show</button></form>{% endif %}</div>
+
+{% if not dates %}
+<div class="card empty">No scores yet.<br>Run <code>bd scan</code> and then <code>bd score</code>; this page reads what they stored.</div>
+{% elif error %}
+<div class="errors"><b>{{ error }}</b></div>
+{% else %}
+<p class="meta">{{ leads|length }} lead{{ '' if leads|length == 1 else 's' }}{% if overflow %} (+{{ overflow }} more postable, over the cap){% endif %}. Read-only.</p>
+{% for c in leads %}
+{% set l = c.lead %}
+<div class="card">
+<div class="row">
+<div><a class="name" href="/accounts/{{ l.account.id }}">{{ l.account.name }}</a>
+<div class="meta">{{ [l.account.industry, l.account.hq_city, l.account.ownership if l.account.ownership != 'public' else none, ('sponsor: ' ~ l.account.sponsor) if l.account.sponsor else none]|select|join(' · ') or 'no company details recorded' }}</div></div>
+<div><span class="badge {{ 'hot' if l.result.band == 'Hot' else 'warm' }}">{{ l.result.band }} · {{ l.result.score }}</span>
+{% if c.posted %}<span class="badge good">posted</span>{% endif %}</div>
+</div>
+<p style="margin:10px 0 2px">{{ c.why_now }}</p>
+<div class="meta">{{ c.why_source }} · best fit: <b>{{ c.service_line }}</b></div>
+<ul class="signals">
+{% for s in l.signals %}
+<li><b>{{ labels[s.type] }}</b> · {{ s.event_date|fdate }} · {{ s.confidence }}{% if s.role_or_person %} · {{ s.role_or_person }}{% endif %}<br>
+<span class="meta">{{ s.summary }}</span><br>
+{% if s.url|safe_url %}<a href="{{ s.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s.url|safe_url }}</a>{% endif %}</li>
+{% endfor %}
+</ul>
+<details><summary>How the {{ l.result.score }} was calculated</summary>
+<p class="meta">{{ l.result.rationale }}</p>
+<div class="wrap"><table>
+<tr><th>Family</th><th>Signal</th><th>Date</th><th class="num">Base</th><th class="num">× Recency</th><th class="num">× Confidence</th><th class="num">× Service match</th><th class="num">Points</th><th class="num">Counts</th></tr>
+{% for fam, fd in c.families.items() %}{% for s in fd.signals %}
+<tr><td>{{ fam }}</td><td>{{ labels[s.type] }}</td><td>{{ s.event_date|fdate }}</td><td class="num">{{ s.base|round(1) }}</td><td class="num">{{ s.recency }}</td><td class="num">{{ s.confidence_mult }}</td><td class="num">{{ s.service_mult }}</td><td class="num">{{ s.points|round(1) }}</td><td class="num">{{ '100%' if s.weight_in_family == 1 else '50%' }}</td></tr>
+{% endfor %}{% endfor %}
+</table></div>
+<p class="meta">Stacking bonus: +{{ c.bonus|round|int }} (10 per extra family, max 30). Computed by plain code from the stored signals; no model is involved.</p>
+</details>
+</div>
+{% else %}
+<div class="card empty">No account met the posting gate on {{ run_date }}.</div>
+{% endfor %}
+
+{% if skipped %}
+<h2>Tracked, not posted</h2>
+<div class="wrap"><table>
+<tr><th>Account</th><th class="num">Score</th><th>Band</th><th>Why not posted</th></tr>
+{% for s in skipped %}<tr><td><a href="/accounts/{{ s.account.id }}">{{ s.account.name }}</a></td><td class="num">{{ s.score }}</td><td>{{ s.band }}</td><td>{{ s.reason }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endif %}
+{% endblock %}

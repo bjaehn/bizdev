@@ -40,7 +40,7 @@ def test_reseed_updates_without_blanking_and_is_case_insensitive(conn, tmp_path)
     ("A,,,maybe,,,,,,", "chicagoland"),
     ("A,,,,,,nonprofit,,,", "ownership"),
     ("A,,,,,,,,,C", "tier"),
-    ("A,,,,lots,,,,,", "numbers"),
+    ("A,,,,lots,,,,,", "non-negative number"),
 ])
 def test_bad_rows_abort_everything(conn, tmp_path, row, msg):
     res = seed_csv(conn, write(tmp_path, "Good Co,,,,,,,,,\n" + row + "\n"))

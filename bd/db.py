@@ -54,6 +54,20 @@ CREATE TABLE IF NOT EXISTS scores (
     PRIMARY KEY (account_id, run_date)
 );
 
+-- Every change made to accounts or exclusions outside the weekly scan (UI edits, seeding, applied
+-- enrich proposals). The database is the master copy, so changes must be traceable.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id         INTEGER PRIMARY KEY,
+    ts         TEXT NOT NULL,
+    actor      TEXT NOT NULL,      -- ui | seed | enrich
+    action     TEXT NOT NULL,      -- create | update | status | exclusion_add | exclusion_remove
+    account_id INTEGER,
+    field      TEXT,
+    old        TEXT,
+    new        TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_audit_account ON audit_log(account_id, id);
+
 -- Cached briefer output (LLM-written only) so regenerating a card is free and identical.
 CREATE TABLE IF NOT EXISTS briefs (
     account_id        INTEGER NOT NULL REFERENCES accounts(id),
