@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Optional
 
@@ -18,9 +19,14 @@ def _fail(msg: str) -> None:
     raise typer.Exit(code=1)
 
 
+def _today() -> date:
+    """Run dates are America/Chicago dates, whatever timezone the host or CI runner uses."""
+    return datetime.now(ZoneInfo("America/Chicago")).date()
+
+
 def _parse_date(s: Optional[str]) -> date:
     try:
-        return date.fromisoformat(s) if s else date.today()
+        return date.fromisoformat(s) if s else _today()
     except ValueError:
         _fail(f"--as-of must be YYYY-MM-DD, got {s!r}")
         raise
@@ -157,6 +163,10 @@ def scan(
     if summary.budget_hit:
         typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): {summary.skipped_budget} calls not started. "
                    "Raise llm.max_cost_per_run_usd in config.yaml and re-run to finish.", err=True)
+    if summary.calls and summary.errors == summary.calls:
+        typer.echo("Every scan call failed (bad API key or model, no network?). Exiting with an error so a scheduled "
+                   "run stops before scoring and posting.", err=True)
+        raise typer.Exit(code=3)
 
 
 @app.command()

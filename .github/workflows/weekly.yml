@@ -1,0 +1,86 @@
+name: weekly-bd-run
+
+# Monday 05:00 America/Chicago. GitHub cron is UTC-only, so both candidate hours are scheduled and the
+# "Gate" step lets exactly one through (10:00 UTC = 05:00 CDT, 11:00 UTC = 05:00 CST). GitHub can start
+# scheduled runs late; a run that starts after 05:59 Chicago time is skipped by the gate. Re-run it by hand
+# with "Run workflow" if that happens.
+on:
+  schedule:
+    - cron: '0 10 * * 1'
+    - cron: '0 11 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: scan and score, but never post to Teams'
+        type: boolean
+        default: true
+
+concurrency:
+  group: bd-weekly
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # only to update the single-commit state branch (scripts/state.sh)
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false   # state.sh authenticates itself; no write token left in git config for later steps
+
+      - name: Gate to Monday 05:00 America/Chicago
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "decision=$(scripts/chicago_gate.sh)" >> "$GITHUB_OUTPUT"
+          else
+            echo "decision=run" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.decision == 'run'
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install
+        if: steps.gate.outputs.decision == 'run'
+        run: pip install -e .
+
+      - name: Restore database
+        id: restore
+        if: steps.gate.outputs.decision == 'run'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: scripts/state.sh restore
+
+      - name: Weekly run (seed, scan, score, card)
+        id: weekly
+        if: steps.gate.outputs.decision == 'run'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+          BD_USER_AGENT: ${{ vars.BD_USER_AGENT }}
+          BD_DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '1' || '0' }}
+        run: scripts/weekly.sh
+
+      # Save even if the run failed part-way: signals already paid for must not be lost. Never save if the
+      # restore failed, or an empty database would overwrite the real one.
+      - name: Save database
+        if: always() && steps.restore.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: scripts/state.sh save
+
+      - name: Keep the card for audit
+        if: always() && steps.gate.outputs.decision == 'run'
+        uses: actions/upload-artifact@v4
+        with:
+          name: card
+          path: card.json
+          retention-days: 30
+          if-no-files-found: ignore

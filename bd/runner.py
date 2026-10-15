@@ -38,6 +38,7 @@ class RunSummary:
     run_date: date
     accounts: dict[int, AccountRun] = field(default_factory=dict)
     skipped_not_due: list[Account] = field(default_factory=list)
+    calls: int = 0            # (account, scanner) calls that finished (successfully or not)
     skipped_budget: int = 0   # (account, scanner) calls never started because of the cost cap
     budget_hit: bool = False
     est_cost: float = 0.0     # priced calls only
@@ -83,6 +84,7 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
             summary.est_cost += cost
             if run.est_cost is not None:
                 run.est_cost += cost
+        summary.calls += 1
         run.tokens += out.usage.total_tokens
         run.web_searches += out.usage.web_searches
         run.new_signals += ins

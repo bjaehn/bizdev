@@ -7,3 +7,4 @@ __pycache__/
 *.sqlite
 card.json
 eval_report.json
+enrich_proposals.csv
