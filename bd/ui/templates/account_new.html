@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% from "_facts.html" import facts_form, errors_box %}
+{% block title %}Add account{% endblock %}
+{% block body %}
+<p class="meta"><a href="/accounts">← Accounts</a></p>
+<h1>Add account</h1>
+<p class="sub">Only the name is required. Anything you leave blank stays unknown, and the account is held for review until its location and size are verified.</p>
+<div class="card">
+{{ errors_box(errors) }}
+{{ facts_form(form, '/accounts/new', 'Add account', with_name=True) }}
+</div>
+{% endblock %}

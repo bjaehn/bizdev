@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_facts.html" import errors_box %}
+{% block title %}Exclusions{% endblock %}
+{% block body %}
+<h1>Exclusions</h1>
+<p class="sub">Clients, do-not-pursue and conflicts. An excluded account is never scanned, scored or sent anywhere. Adding or removing one re-runs the fit gate for every account at once.</p>
+<div class="wrap"><table>
+<tr><th>Name</th><th>Domain</th><th>Reason</th><th></th></tr>
+{% for r in rows %}
+<tr><td>{{ r['name'] }}</td><td>{{ r['domain']|show }}</td><td>{{ r['reason'] }}</td>
+<td><form method="post" action="/exclusions/{{ r['id'] }}/remove"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit" aria-label="Remove {{ r['name'] }}">Remove</button></form></td></tr>
+{% else %}<tr><td colspan="4" class="empty">No exclusions yet.</td></tr>{% endfor %}
+</table></div>
+<h2>Add an exclusion</h2>
+<div class="card">
+{{ errors_box(errors) }}
+<form method="post" action="/exclusions/add"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="grid">
+<div><label for="name">Company name</label><input type="text" id="name" name="name" value="{{ form.get('name','') }}" required></div>
+<div><label for="domain">Domain (optional, matches subdomains)</label><input type="text" id="domain" name="domain" value="{{ form.get('domain','') }}"></div>
+<div><label for="reason">Reason</label><select id="reason" name="reason">{% for r in reasons %}<option value="{{ r }}" {{ 'selected' if form.get('reason') == r else '' }}>{{ r }}</option>{% endfor %}</select></div>
+</div>
+<p><button type="submit">Add exclusion</button></p>
+</form></div>
+{% endblock %}

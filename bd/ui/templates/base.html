@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}BD Signals{% endblock %} · SEI Chicago BD Signals</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#14181f;--muted:#5b6573;--line:#dde1e7;--accent:#1f4fd8;--hot:#c0392b;--warm:#b7791f;--good:#1e7e4f;--bad:#b42318;--chip:#eef1f6}
+@media (prefers-color-scheme:dark){:root{--bg:#10131a;--panel:#171c26;--ink:#e8ebf0;--muted:#98a2b3;--line:#2a3140;--accent:#7aa2ff;--hot:#ff7a6b;--warm:#e0b04c;--good:#4cc38a;--bad:#ff8a80;--chip:#222a38}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:var(--panel);border-bottom:1px solid var(--line)}
+.bar{max-width:1100px;margin:0 auto;padding:0 16px;display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.brand{font-weight:700;margin-right:12px;padding:12px 0}
+nav a{display:inline-block;padding:14px 10px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent}
+nav a:hover{color:var(--ink)}
+nav a.on{color:var(--ink);border-bottom-color:var(--accent)}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}
+h2{font-size:17px;margin:28px 0 8px}
+.sub{color:var(--muted);margin:0 0 16px}
+a{color:var(--accent);overflow-wrap:anywhere}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:0 0 14px}
+.row{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+.name{font-size:17px;font-weight:650;color:var(--ink);text-decoration:none}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:650;background:var(--chip);color:var(--muted);white-space:nowrap}
+.hot{color:var(--hot)}.warm{color:var(--warm)}.good{color:var(--good)}.bad{color:var(--bad)}
+.badge.hot{background:color-mix(in srgb,var(--hot) 16%,transparent)}.badge.warm{background:color-mix(in srgb,var(--warm) 18%,transparent)}
+.badge.good{background:color-mix(in srgb,var(--good) 16%,transparent)}.badge.bad{background:color-mix(in srgb,var(--bad) 16%,transparent)}
+.meta{color:var(--muted);font-size:13px}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:14px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:var(--chip)}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;white-space:nowrap}
+.wrap{overflow-x:auto}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 3px}
+input[type=text],input[type=number],select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 16px}
+button,.btn{display:inline-block;padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+button.ghost,.btn.ghost{background:transparent;color:var(--accent)}
+button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
+.flash{padding:10px 14px;border-radius:8px;margin:0 0 12px;border:1px solid var(--line);background:var(--panel)}
+.flash.ok{border-color:var(--good)}.flash.err{border-color:var(--bad)}
+.errors{border:1px solid var(--bad);background:color-mix(in srgb,var(--bad) 10%,transparent);border-radius:8px;padding:10px 14px;margin:0 0 12px}
+.errors ul{margin:4px 0 0 18px;padding:0}
+ul.signals{list-style:none;padding:0;margin:10px 0 0}
+ul.signals li{padding:6px 0;border-top:1px solid var(--line)}
+details summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:8px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
+.filters input,.filters select{width:auto}
+footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);font-size:12px}
+.pill-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.empty{text-align:center;color:var(--muted);padding:32px 16px}
+</style>
+</head>
+<body>
+<header><div class="bar">
+<span class="brand">BD Signals</span>
+<nav>
+{% for key, href, label in [('leads','/','Leads'),('accounts','/accounts','Accounts'),('enrich','/enrich','Enrich review'),('exclusions','/exclusions','Exclusions'),('runs','/runs','Runs &amp; cost'),('audit','/audit','Changes')] %}
+<a href="{{ href }}" class="{{ 'on' if page == key else '' }}">{{ label|safe }}</a>
+{% endfor %}
+</nav>
+</div></header>
+<main>
+{% for kind, text in flash %}<div class="flash {{ kind }}">{{ text }}</div>{% endfor %}
+{% block body %}{% endblock %}
+</main>
+<footer>Local view of bd.sqlite. This page cannot scan, score, call a model or post to Teams. Links open the original public source in a new tab.</footer>
+</body>
+</html>

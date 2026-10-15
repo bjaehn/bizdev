@@ -13,7 +13,7 @@ sources only: no LinkedIn, no paywalled sites. For the external services and dat
 ## How it works
 
 ```
-accounts.csv ──bd seed──► fit gate ──► scan (leadership, events, edgar) ──► score ──► shortlist ──► card ──► Teams
+accounts.csv ──bd seed──► database ──► fit gate ──► scan (leadership, events, edgar) ──► score ──► shortlist ──► card ──► Teams
  exclusions.csv            pass / HOLD / fail   │                              │          │            │
                            (unknown is held,    │ Claude + web search          │ plain    │ cooldown,  │ briefer writes one
                             never scored)       │ extracts; CODE verifies      │ code,    │ 90-day     │ sentence; Adaptive
@@ -70,7 +70,9 @@ signals validated by code; none writes outreach.
 
 | Command | What it does |
 |---|---|
-| `bd seed accounts.csv [--exclusions exclusions.csv]` | Load accounts (blank cells stay *unknown*, never guessed) and exclusions, then run the fit gate. Also loads a reviewed `bd enrich` file |
+| `bd seed accounts.csv [--exclusions exclusions.csv] [--overwrite]` | Load accounts and exclusions, then run the fit gate. **The database is the master copy**: for an account that already exists, a CSV value only fills a fact that is still unknown; differences are reported and the database value is kept unless you pass `--overwrite`. Blank cells stay *unknown*, never guessed. Also loads a reviewed `bd enrich` file |
+| `bd export [--accounts accounts.csv] [--exclusions exclusions.csv]` | Write the database's accounts and exclusions back to CSV (for git or backup). Overwrites those files, so review with `git diff` |
+| `bd ui` | Open the local review-and-curate UI (see **Local UI** below) |
 | `bd enrich` | **Proposes** missing facts (domain, Chicagoland, size, ownership, CIK) with an evidence URL each, into `enrich_proposals.csv`. Never writes to the database. Review, then `bd seed enrich_proposals.csv` |
 | `bd scan [--tier A\|B\|all] [--dry-run] [--force] [--scanners leadership,events,pe,hiring,tech_procurement,edgar]` | Fit-gate, then scan accounts that are due (A weekly, B every other week) concurrently, logging tokens and cost per account. `--dry-run` shows what would run with no API calls |
 | `bd score` | Deterministic scores for fit-gated accounts |
@@ -80,12 +82,37 @@ signals validated by code; none writes outreach.
 
 Run dates are America/Chicago dates; pass `--as-of YYYY-MM-DD` to override.
 
+## Local UI
+
+```bash
+pip install -e '.[ui]'     # adds Jinja2, the only extra dependency
+bd ui                      # prints a one-time link; open it (a browser is opened for you unless --no-open)
+```
+
+A review-and-curate screen for the database. It **cannot** scan, score, call a model or post to Teams; those stay
+on the command line.
+
+| Page | What you can do |
+|---|---|
+| **Leads** | See what the weekly run would post: score, the one-line why-now, every source link, and a "how the score was calculated" table. Also who is tracked but not posted, and why |
+| **Accounts** | List and search; see why an account is held; edit its facts (blank = unknown) and see the fit-gate verdict at once; add an account |
+| **Enrich review** | Go through `bd enrich`'s proposals fact by fact, each with its evidence link. New facts are ticked, ones that would replace a known value are not. **Apply** writes only the ticked facts, using the values in the file (not the page) |
+| **Exclusions** | Add or remove clients and do-not-pursue companies; every account's status is re-checked immediately |
+| **Runs & cost** | Tokens and estimated cost per step and per account; unpriced calls shown as unpriced, never as $0 |
+| **Changes** | The audit log of every edit made in the UI, by `bd seed`, or by applying proposals |
+
+Because the **database is the master copy**, the UI edits `bd.sqlite` directly and `bd seed` no longer
+overwrites it. Use `bd export` to write the accounts and exclusions back to CSV when you want them in git.
+
+It listens on `127.0.0.1` only, behind a random per-run token, with CSRF and Host checks and a no-scripts
+Content-Security-Policy; see SECURITY.md. Stop it with Ctrl-C.
+
 ## First live run
 
 1. **Facts.** `bd seed accounts.csv` holds your 58 account names with every fact blank, so the fit gate
    holds all of them. Fill in `chicagoland` (yes/no), `revenue` or `employees`, `ownership`, `domain`,
-   and `cik` for public companies, directly or with `bd enrich --limit 3` first to see real per-account
-   cost, then review and `bd seed enrich_proposals.csv`.
+   and `cik` for public companies: in `bd ui`, in the CSV before seeding, or with `bd enrich --limit 3`
+   first (to see real per-account cost) and then reviewing the proposals in the UI's **Enrich review** page.
 2. **Measure accuracy.** Copy `tests/gold.template.csv` to `tests/gold.csv` and fill in expected signals you
    have verified yourself (write `none` for accounts with no signal), then `bd evaluate`.
 3. **Dry-run the pipeline.** `bd scan --limit 3`, `bd score`, `bd shortlist`, `bd card --dry-run`, and
@@ -108,19 +135,24 @@ schedule it:
 * Runners are ephemeral, so the SQLite database is kept on a single-commit branch `bd-state`
   (`scripts/state.sh`). **The repository must be private.** The first run creates the database from
   `accounts.csv`; if the state branch cannot be reached the run aborts rather than start empty.
+* **Caveat if you also use `bd ui`:** the UI edits *your* copy of the database, but the Monday run works on the
+  copy on `bd-state`, and its final save replaces that branch. An edit made in the UI never reaches the run
+  unless you push your copy (`scripts/state.sh save`), and a push made while the run is in progress is lost.
+  Workable with discipline, not safe by default. If you will use the UI regularly, prefer Option B.
 * "Run workflow" is a dry run by default (it never posts to Teams).
 
 ### Option B: cron on an SEI-managed host
 
 See `deploy/crontab.example` (`CRON_TZ=America/Chicago`, `0 5 * * 1`). The database lives on the host's
-disk, so no state branch is needed.
+disk, so no state branch is needed, and `bd ui` run on the same host (with the same `BD_DB_PATH`) edits the very
+database the Monday run uses. This is the clean setup for the database-as-master model.
 
 ## Configuration
 
 Everything tunable is in `config.yaml`: base points and families, recency bands, confidence and service
 multipliers, bands and post gate, counties, size floors, exclusion industries, scan window and cadence,
-concurrency and budget, blocked domains, pricing. Edit it, not the code. `accounts.csv` and
-`exclusions.csv` are the reviewed source of truth for the target list.
+concurrency and budget, blocked domains, pricing. Edit it, not the code. The **database** is the master copy of accounts and exclusions;
+`accounts.csv` and `exclusions.csv` are seed files and backups (`bd export`).
 
 ## Testing
 
@@ -160,7 +192,8 @@ URL verifier, fit gate, runner, briefer, card, EDGAR client, enrich, and the sch
 
 ```
 bd/            package: cli, config, db, scoring, scanners/ (one module per family), prompts/, verify, edgar, runner, enrich, briefer, card
-config.yaml    all tunables        accounts.csv / exclusions.csv   the target list
+config.yaml    all tunables        accounts.csv / exclusions.csv   seed files and backups of the database
+bd/ui/         the local review-and-curate UI (templates in bd/ui/templates)
 scripts/       weekly.sh, chicago_gate.sh, state.sh      deploy/   crontab.example
 .github/workflows/weekly.yml                              tests/    offline test suite
 ```

@@ -17,7 +17,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+ui = ["jinja2>=3.1"]
+dev = ["pytest>=8.0", "jinja2>=3.1"]
 
 [project.scripts]
 bd = "bd.cli:app"
@@ -26,7 +27,7 @@ bd = "bd.cli:app"
 include = ["bd*"]
 
 [tool.setuptools.package-data]
-bd = ["prompts/*.md"]
+bd = ["prompts/*.md", "ui/templates/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

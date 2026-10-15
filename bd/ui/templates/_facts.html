@@ -1,0 +1,35 @@
+{% macro facts_form(form, action, submit, with_name=False) %}
+<form method="post" action="{{ action }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+{% if with_name %}
+<label for="name">Company name</label>
+<input type="text" id="name" name="name" value="{{ form.get('name','') }}" required maxlength="200">
+{% endif %}
+<div class="grid">
+<div><label for="domain">Website domain</label><input type="text" id="domain" name="domain" value="{{ form.get('domain','') }}" placeholder="acme.com"></div>
+<div><label for="hq_city">HQ city</label><input type="text" id="hq_city" name="hq_city" value="{{ form.get('hq_city','') }}"></div>
+<div><label for="chicagoland">Chicagoland (HQ or major office in Cook, DuPage, Lake, Will, Kane or McHenry)</label>
+<select id="chicagoland" name="chicagoland">
+{% for v in ['unknown','yes','no'] %}<option value="{{ v }}" {{ 'selected' if (form.get('chicagoland') or 'unknown') == v else '' }}>{{ v }}</option>{% endfor %}
+</select></div>
+<div><label for="revenue">Revenue (USD, plain number)</label><input type="text" id="revenue" name="revenue" value="{{ form.get('revenue','') }}" placeholder="500000000"></div>
+<div><label for="employees">Employees</label><input type="text" id="employees" name="employees" value="{{ form.get('employees','') }}"></div>
+<div><label for="ownership">Ownership</label>
+<select id="ownership" name="ownership">
+<option value="" {{ 'selected' if not form.get('ownership') else '' }}>unknown</option>
+{% for v in ['public','private','pe-backed'] %}<option value="{{ v }}" {{ 'selected' if form.get('ownership') == v else '' }}>{{ v }}</option>{% endfor %}
+</select></div>
+<div><label for="sponsor">PE sponsor</label><input type="text" id="sponsor" name="sponsor" value="{{ form.get('sponsor','') }}"></div>
+<div><label for="industry">Industry</label><input type="text" id="industry" name="industry" value="{{ form.get('industry','') }}"></div>
+<div><label for="tier">Tier (A weekly, B every other week)</label>
+<select id="tier" name="tier">{% for v in ['A','B'] %}<option value="{{ v }}" {{ 'selected' if (form.get('tier') or 'A') == v else '' }}>{{ v }}</option>{% endfor %}</select></div>
+<div><label for="cik">SEC CIK (public companies)</label><input type="text" id="cik" name="cik" value="{{ form.get('cik','') }}" placeholder="0000001800"></div>
+</div>
+<p class="meta">Leaving a field blank marks that fact <b>unknown</b>. Nothing is guessed: an account with an unknown location or size is held and never scanned or scored.</p>
+<button type="submit">{{ submit }}</button>
+</form>
+{% endmacro %}
+
+{% macro errors_box(errors) %}
+{% if errors %}<div class="errors"><b>Not saved.</b><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+{% endmacro %}

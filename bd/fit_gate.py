@@ -18,7 +18,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bd.accounts import Account, normalize_domain
+from bd.accounts import Account, is_valid_domain, normalize_domain
 from bd.config import Config, SizeFloor
 from bd.urls import host_in
 
@@ -146,7 +146,10 @@ def seed_exclusions(conn: sqlite3.Connection, path: str | Path) -> tuple[int, li
                 errs.append(f"row {n}: name is required")
             if reason not in reasons:
                 errs.append(f"row {n}: reason must be one of {sorted(reasons)}")
-            rows.append((name, normalize_domain(dom) if dom else None, reason))
+            nd = normalize_domain(dom) if dom else None
+            if dom and not is_valid_domain(nd or ""):
+                errs.append(f"row {n}: domain {dom!r} is not a valid host name")
+            rows.append((name, nd, reason))
     if errs:
         return 0, errs
     inserted = 0

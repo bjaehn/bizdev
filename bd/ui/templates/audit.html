@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Changes{% endblock %}
+{% block body %}
+<h1>Changes</h1>
+<p class="sub">Every edit to accounts and exclusions made by you in this UI, by <code>bd seed</code>, or by applying enrich proposals. The database is the master copy, so this is its history.</p>
+<div class="wrap"><table>
+<tr><th>When (UTC)</th><th>By</th><th>Account</th><th>What</th><th>Was</th><th>Now</th></tr>
+{% for h in rows %}<tr><td>{{ h['ts'] }}</td><td>{{ h['actor'] }}</td><td>{% if h['account_id'] %}<a href="/accounts/{{ h['account_id'] }}">{{ h['account'] or h['account_id'] }}</a>{% endif %}</td>
+<td>{{ h['action'] }}{% if h['field'] %} · {{ h['field'] }}{% endif %}</td><td>{{ h['old']|show }}</td><td>{{ h['new']|show }}</td></tr>
+{% else %}<tr><td colspan="6" class="empty">No changes recorded yet.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

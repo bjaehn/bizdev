@@ -63,10 +63,11 @@ submit actions. Anyone who holds the webhook URL can post to that channel, so tr
 
 ## 2. Data stored locally
 
-One SQLite file (default `bd.sqlite`, not encrypted). Tables: `accounts` (facts you entered or approved),
+One SQLite file (default `bd.sqlite`, not encrypted), which is the **master copy** of accounts and exclusions. Tables: `accounts` (facts you entered or approved), `audit_log` (who changed which fact, when: UI, seed, or applied enrich proposals),
 `signals` (public-source summaries and URLs), `scores`, `briefs`, `exclusions` (**client / do-not-pursue
-names: confidential**), `runs` (tokens, estimated cost, error text). `exclusions.csv` and `accounts.csv`
-in the repository hold the same account and exclusion information. Excluded and held accounts are never
+names: confidential**), `runs` (tokens, estimated cost, error text). `bd export` writes the accounts and
+exclusions to `accounts.csv` and `exclusions.csv` (**the target list and the client names: keep them private**; if
+the repository is ever public, do not commit them). Excluded and held accounts are never
 sent to Anthropic, EDGAR or Teams. Deleting the file deletes everything the system has learned.
 
 ## 3. Secrets and configuration
@@ -103,6 +104,24 @@ secrets (a test asserts this).
 * **Reviewable proposals.** `bd enrich` writes a CSV with an evidence URL per fact and never writes to the
   database; a person reviews it before it is loaded.
 
+### 4a. The local UI (`bd ui`)
+* **Scope:** review and curate only. The UI code imports none of the scanning, scoring, model or Teams-posting
+  code (a test checks this in a fresh interpreter), and exposes no route that could run them.
+* **Network:** binds to `127.0.0.1` only (not configurable). It makes no outbound requests and loads no external
+  scripts, fonts or images; links to public sources open in a new tab with `noopener noreferrer`.
+* **Access:** a random per-run token (printed once in the terminal) is exchanged for an `HttpOnly`,
+  `SameSite=Strict` cookie. Every request must carry it, and the `Host` header must be `127.0.0.1` or `localhost`
+  on its port (defeats DNS rebinding).
+* **Web attacks:** every POST needs a CSRF token and a same-origin `Origin`/`Sec-Fetch-Site`; pages carry a
+  Content-Security-Policy that forbids all scripts and framing; Jinja autoescaping is on; only `http(s)` URLs
+  become links; request bodies are capped at 64 KB; error pages never show tracebacks; the request log omits
+  query strings (the login token).
+* **Input:** edits go through the same validators as CSV seeding (domains must be real host names, numbers must be
+  numbers, enumerations are fixed); name, status and id cannot be edited through a form; proposals are applied from
+  the values in the file, never from the submitted form; proposal files are read only from under the directory
+  `bd ui` was started in, only `*.csv`.
+* **Accountability:** every change is written to `audit_log`.
+
 ## 5. Known gaps and limits
 
 1. **Not yet exercised live.** The code was built and tested offline (fake LLM, fake HTTP). It has not yet
@@ -116,7 +135,7 @@ secrets (a test asserts this).
    DNS-rebinding race between the address check and the connection is not closed.
 4. **Prompt injection cannot be ruled out.** The controls above limit the effect to an incorrect or
    missing signal, but a hostile page could still skew a summary.
-5. **No lockfile.** Dependencies (`anthropic`, `httpx2`, `pydantic`, `pyyaml`, `typer`, `tzdata`) resolve to
+5. **No lockfile.** Dependencies (`anthropic`, `httpx2`, `pydantic`, `pyyaml`, `typer`, `tzdata`, plus `jinja2` for the optional UI) resolve to
    the latest compatible versions at install time. Pin and scan them before production use.
 6. **GitHub Actions are referenced by tag** (`actions/checkout@v4`, `setup-python@v5`, `upload-artifact@v4`),
    not by commit SHA.
@@ -127,6 +146,14 @@ secrets (a test asserts this).
    Glassdoor and ZipRecruiter job boards), not a complete paywall or social-media inventory.
 10. **Job-posting dates are read from pages by the model** (a page that says "posted 5 days ago" is converted
     to a date). Code verifies the URL and window but cannot independently confirm a posting's date.
+11. **The UI protects against other web pages and other machines, not against other software or users on the same
+    computer.** Anyone who can read the terminal output or the browser history (the one-time link contains the
+    token) while `bd ui` is running could use it. Do not run it on a shared account.
+12. **The Monday run and the UI can disagree on GitHub Actions.** The UI edits the local database; the run uses
+    the copy on the `bd-state` branch and replaces it when it finishes. An edit pushed while the run is in progress
+    is lost. A single host running both (cron) avoids this.
+13. **The UI is single-user and unauthenticated beyond the token.** There is no per-person login, so the audit log
+    records `ui` as the actor, not a name.
 
 ## 6. Decisions for IT
 
