@@ -41,8 +41,9 @@ from bd.fit_gate import check_fit, load_exclusions
 from bd.jobs import KINDS, SCANNER_NAMES, JobError, JobRunner
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
-from bd.labels import TYPE_LABELS, fmt_date
+from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
+from bd.opportunities import build_opportunities, filter_opportunities, score_dates
 from bd.settings_store import (INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
                                refresh_enabled, reset_discovery, save_discovery, save_refresh)
 from bd.shortlist import ShortlistError, build_shortlist
@@ -129,7 +130,7 @@ class App:
         self.env = Environment(loader=PackageLoader("bd.ui", "templates"), autoescape=select_autoescape(["html"]),
                                trim_blocks=True, lstrip_blocks=True)
         self.env.filters.update(money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
-        self.env.globals.update(csrf=self._csrf, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
+        self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
                                 hosted=hosted is not None, operate=jobs is not None)
         init_conn = connect(db_path)
         init_db(init_conn)
@@ -344,7 +345,8 @@ class App:
                 return self.job_page(int(p[6:]))
         parts = p.strip("/").split("/")
         table = {
-            ("GET", "/"): lambda: self.leads(req, conn),
+            ("GET", "/"): lambda: self.opportunities(req, conn),
+            ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
             ("GET", "/accounts/new"): lambda: self.render("account_new.html", page="accounts", form={}, errors=[]),
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
@@ -385,15 +387,37 @@ class App:
         return self.error("404 Not Found", "No such page.")
 
     # ---- pages ------------------------------------------------------------------------------------------------
+    def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
+        dates = score_dates(conn)
+        if not dates:
+            return self.render("opportunities.html", page="opportunities", dates=[], run_date=None, items=[], total=0, error=None,
+                               q={}, families=[], lines=[], stale=[], prev_date=None)
+        chosen = req.q("date") if req.q("date") in dates else dates[0]
+        try:
+            ol = build_opportunities(conn, self.cfg, date.fromisoformat(chosen), include_tracked_only=req.q("tracked") == "1")
+        except ShortlistError as e:
+            return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=[], total=0, error=str(e),
+                               q={}, families=[], lines=[], stale=[], prev_date=None)
+        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked")}
+        q["pe"] = req.q("pe") == "1"
+        q["new"] = req.q("new") == "1"
+        items = filter_opportunities(ol.items, band=q["band"], family=q["family"], service_line=q["service_line"], pe_only=q["pe"],
+                                     q=q["q"], new_only=q["new"], status=q["status"], sort=q["sort"] or "score")
+        families = sorted({r.kind for o in ol.items for r in o.reasons})
+        return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=items, total=len(ol.items),
+                           error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale,
+                           prev_date=ol.prev_date.isoformat() if ol.prev_date else None, bands=["Hot", "Warm", "Watch", "Stored"],
+                           statuses=["card", "over_cap", "held", "tracking"])
+
     def leads(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = [r[0] for r in conn.execute("SELECT DISTINCT run_date FROM scores ORDER BY run_date DESC")]
         if not dates:
-            return self.render("leads.html", page="leads", dates=[], run_date=None, leads=[], skipped=[], overflow=0, error=None)
+            return self.render("leads.html", page="card", dates=[], run_date=None, leads=[], skipped=[], overflow=0, error=None)
         chosen = req.q("date") if req.q("date") in dates else dates[0]
         try:
             sl = build_shortlist(conn, self.cfg, date.fromisoformat(chosen))
         except ShortlistError as e:
-            return self.render("leads.html", page="leads", dates=dates, run_date=chosen, leads=[], skipped=[], overflow=0, error=str(e))
+            return self.render("leads.html", page="card", dates=dates, run_date=chosen, leads=[], skipped=[], overflow=0, error=str(e))
         briefs = {r["account_id"]: r for r in conn.execute("SELECT * FROM briefs WHERE run_date = ?", (chosen,))}
         posted = {r["account_id"]: r for r in conn.execute("SELECT account_id, posted, cooldown_until FROM scores WHERE run_date = ?", (chosen,))}
         cards = []
@@ -411,7 +435,7 @@ class App:
                 "posted": posted[lead.account.id]["posted"] if lead.account.id in posted else 0,
             })
         tracked = sorted((s for s in sl.skipped if s.score >= self.cfg.scoring.bands.watch), key=lambda s: -s.score)
-        return self.render("leads.html", page="leads", dates=dates, run_date=chosen, leads=cards, skipped=tracked,
+        return self.render("leads.html", page="card", dates=dates, run_date=chosen, leads=cards, skipped=tracked,
                            overflow=len(sl.overflow), error=None)
 
     def accounts(self, req: Request, conn: sqlite3.Connection) -> Response:

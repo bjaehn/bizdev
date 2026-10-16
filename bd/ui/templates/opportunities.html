@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Opportunities{% endblock %}
+{% block body %}
+<div class="row"><div><h1>Opportunities</h1>
+<p class="sub">Every active account that scored at least Watch, ranked. Each score is the sum of what the account's own signals earned, plus a capped lift from its private equity owner's news. The Monday card is the top of this list that also passes the posting gates.</p></div>
+{% if dates %}<form method="get" action="/" class="filters"><label for="date" style="margin:0">Scored on</label>
+<select id="date" name="date">{% for d in dates %}<option value="{{ d }}" {{ 'selected' if d == run_date else '' }}>{{ d }}</option>{% endfor %}</select>
+<button class="ghost" type="submit">Show</button></form>{% endif %}</div>
+
+{% if not dates %}
+<div class="card empty">No scores yet.<br>Run a scan and then Score from the <a href="/operate">Operate</a> page; this page reads what they stored.</div>
+{% elif error %}<div class="errors"><b>{{ error }}</b></div>
+{% else %}
+{% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} account(s) ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). Run Score again; statuses below are not shown until then.</div>{% endif %}
+<form method="get" action="/" class="filters">
+<input type="hidden" name="date" value="{{ run_date }}">
+<input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name">
+<select name="band" aria-label="Band"><option value="">any band</option>{% for b in bands %}<option {{ 'selected' if q.band == b else '' }}>{{ b }}</option>{% endfor %}</select>
+<select name="family" aria-label="Signal group"><option value="">any signal group</option>{% for f in families %}<option value="{{ f }}" {{ 'selected' if q.family == f else '' }}>{{ family_labels.get(f, 'Sponsor activity' if f == 'sponsor' else f) }}</option>{% endfor %}</select>
+<select name="service_line" aria-label="Service line"><option value="">any service line</option>{% for l in lines %}<option {{ 'selected' if q.service_line == l else '' }}>{{ l }}</option>{% endfor %}</select>
+<select name="status" aria-label="Status"><option value="">any status</option>
+{% for k, t in [('card','on the Monday card'),('over_cap','over the cap'),('held','held back'),('tracking','tracking only')] %}<option value="{{ k }}" {{ 'selected' if q.status == k else '' }}>{{ t }}</option>{% endfor %}</select>
+<select name="sort" aria-label="Sort"><option value="score">sort: score</option><option value="change" {{ 'selected' if q.sort == 'change' else '' }}>sort: biggest change</option><option value="hiring" {{ 'selected' if q.sort == 'hiring' else '' }}>sort: hiring</option></select>
+<label style="margin:0"><input type="checkbox" name="pe" value="1" {{ 'checked' if q.pe else '' }}> PE-backed</label>
+<label style="margin:0"><input type="checkbox" name="new" value="1" {{ 'checked' if q.new else '' }}> new since last run</label>
+<label style="margin:0"><input type="checkbox" name="tracked" value="1" {{ 'checked' if q.tracked == '1' else '' }}> include below Watch</label>
+<button class="ghost" type="submit">Filter</button></form>
+<p class="meta">{{ items|length }} of {{ total }} opportunit{{ 'y' if total == 1 else 'ies' }}{% if prev_date %}; change is against the run on {{ prev_date }}{% else %}; no earlier run to compare with{% endif %}.</p>
+
+{% for o in items %}
+<div class="card">
+<div class="row">
+<div><span class="meta">#{{ o.rank }}</span> <a class="name" href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a>
+<div class="meta">{{ [o.account.industry, o.account.hq_city, o.account.ownership if o.account.ownership != 'public' else none]|select|join(' · ') or 'no company details recorded' }}{% if o.firms %} · owned by {% for f in o.firms %}<a href="/firms">{{ f }}</a>{{ ', ' if not loop.last }}{% endfor %}{% endif %}</div></div>
+<div><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} · {{ o.result.score }}</span>
+{% if o.delta is not none and o.delta != 0 %}<span class="badge {{ 'good' if o.delta > 0 else 'bad' }}">{{ '+' if o.delta > 0 }}{{ o.delta }}</span>{% endif %}
+{% if o.is_new %}<span class="badge warm">new</span>{% endif %}
+<span class="badge {{ 'good' if o.status == 'card' else '' }}">{{ o.status_text }}</span>{% if o.posted %} <span class="badge good">posted</span>{% endif %}</div>
+</div>
+<p style="margin:10px 0 4px">{{ o.why_now }}</p>
+<div class="meta">{{ o.why_source }}{% if o.service_line %} · best fit: <b>{{ o.service_line }}</b>{% endif %}{% if o.open_postings %} · {{ o.open_postings }} open posting{{ '' if o.open_postings == 1 else 's' }}{% if o.leadership_postings %}, {{ o.leadership_postings }} leadership{% endif %}{% endif %}</div>
+<div class="pill-row" style="margin-top:10px">{% for r in o.reasons %}<span class="badge {{ 'warm' if r.kind == 'sponsor' else '' }}" title="{{ r.headline }}">{{ r.label }} +{{ r.points|round(1) }}: {{ r.headline }}</span>{% endfor %}</div>
+<details><summary>Signals and sources</summary>
+<ul class="signals">
+{% for s in o.signals %}<li><b>{{ labels[s.type] }}</b> · {{ s.event_date|fdate }} · {{ s.confidence }}{% if s.role_or_person %} · {{ s.role_or_person }}{% endif %} · {{ s.points|round(1) }} pts<br>
+<span class="meta">{{ s.summary }}</span><br>
+{% if s.url|safe_url %}<a href="{{ s.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s.url|safe_url }}</a>{% endif %}</li>{% endfor %}
+</ul>
+<p class="meta">{{ o.result.rationale }}</p></details>
+</div>
+{% else %}<div class="card empty">No opportunities match.</div>{% endfor %}
+{% endif %}
+{% endblock %}

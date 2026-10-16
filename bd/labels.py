@@ -31,6 +31,10 @@ TYPE_LABELS = {
 }
 assert set(TYPE_LABELS) == set(SIGNAL_TYPES)
 
+FAMILY_LABELS = {"leadership": "Leadership", "hiring": "Hiring", "events": "Company events", "pe": "Private equity",
+                 "technology": "Technology", "procurement": "Procurement", "filings": "Filings"}
+FIRM_TYPE_LABELS = {"firm_new_fund": "new fund", "firm_exit": "exit", "firm_operating_partner": "operating-partner hire"}
+
 
 def fmt_date(d: date) -> str:
     return f"{d:%b} {d.day}, {d.year}"

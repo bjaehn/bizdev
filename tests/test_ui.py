@@ -130,7 +130,7 @@ def test_a_get_can_never_change_anything(world):
 
 
 def test_security_headers_on_every_response(world):
-    for r in (world.c.get("/"), world.c.get("/nope"), Client(world.app, signed_in=False).get("/")):
+    for r in (world.c.get("/monday"), world.c.get("/nope"), Client(world.app, signed_in=False).get("/")):
         h = r.headers
         assert "script-src 'none'" in h["Content-Security-Policy"] and "default-src 'none'" in h["Content-Security-Policy"]
         assert "frame-ancestors 'none'" in h["Content-Security-Policy"] and "form-action 'self'" in h["Content-Security-Policy"]
@@ -177,12 +177,12 @@ def test_only_http_urls_become_links(world):
     world.conn.commit()
     body = world.c.get(f"/accounts/{world.hot}").body
     assert "javascript:" not in body
-    body = world.c.get("/").body
+    body = world.c.get("/monday").body
     assert "javascript:" not in body
 
 
 def test_external_links_open_safely(world):
-    body = world.c.get("/").body
+    body = world.c.get("/monday").body
     links = re.findall(r"<a [^>]*href=\"https://hotco\.com[^>]*>", body)
     assert links and all('target="_blank"' in l and 'rel="noopener noreferrer"' in l for l in links)
 
@@ -222,7 +222,7 @@ def test_each_run_gets_a_different_token(cfg, tmp_path):
 # ======================== leads =======================================================================================
 
 def test_leads_page_shows_the_shortlist_sources_and_the_arithmetic(world):
-    r = world.c.get("/")
+    r = world.c.get("/monday")
     assert r.code == 200
     b = r.body
     assert "Hotco" in b and "Hot · 91" in b and "Industrial" in b and "sponsor: Test Capital" in b
@@ -237,7 +237,7 @@ def test_leads_page_uses_a_stored_brief_when_one_exists(world):
     world.conn.execute("INSERT INTO briefs(account_id, run_date, why_now, best_service_line, model) VALUES (?,?,?,?,?)",
                        (world.hot, AS_OF.isoformat(), "Hotco named a new CIO and is hiring.", "Data & Analytics", "m"))
     world.conn.commit()
-    b = world.c.get("/").body
+    b = world.c.get("/monday").body
     assert "Hotco named a new CIO and is hiring." in b and "written brief" in b and "Data &amp; Analytics" in b
 
 
@@ -247,28 +247,28 @@ def test_leads_empty_states(world, cfg, tmp_path):
     conn = make_db(fresh)
     app = App(cfg, str(fresh / "t.sqlite"), TOKEN, root=fresh)
     app.port = 8765
-    assert "No scores yet" in Client(app).get("/").body
+    assert "No scores yet" in Client(app).get("/monday").body
     add_account(conn, "Quiet")
     score_accounts(conn, cfg, AS_OF)
-    assert "No account met the posting gate" in Client(app).get("/").body
+    assert "No account met the posting gate" in Client(app).get("/monday").body
 
 
 def test_leads_flags_stale_scores_instead_of_showing_wrong_numbers(world, cfg):
     add_signal(world.conn, cfg, world.hot, "ai_commitment", 1)
-    b = world.c.get("/").body
+    b = world.c.get("/monday").body
     assert "no longer matches its signals" in b and "Hot · 91" not in b
 
 
 def test_leads_date_picker_ignores_garbage(world):
-    assert world.c.get("/?date=2020-01-01").code == 200 and "Hotco" in world.c.get("/?date=<script>").body
-    assert f'<option value="{AS_OF.isoformat()}" selected>' in world.c.get("/").body
+    assert world.c.get("/monday?date=2020-01-01").code == 200 and "Hotco" in world.c.get("/monday?date=<script>").body
+    assert f'<option value="{AS_OF.isoformat()}" selected>' in world.c.get("/monday").body
 
 
 def test_posted_leads_are_marked(world):
     from bd.shortlist import mark_posted, build_shortlist
     sl = build_shortlist(world.conn, world.cfg, AS_OF)
     mark_posted(world.conn, sl.leads, AS_OF, world.cfg)
-    assert "No account met the posting gate" in world.c.get("/").body        # now in cooldown, so it is not listed again
+    assert "No account met the posting gate" in world.c.get("/monday").body        # now in cooldown, so it is not listed again
 
 
 # ======================== accounts ====================================================================================

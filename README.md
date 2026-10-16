@@ -99,7 +99,8 @@ on the command line.
 
 | Page | What you can do |
 |---|---|
-| **Leads** | See what the weekly run would post: score, the one-line why-now, every source link, and a "how the score was calculated" table. Also who is tracked but not posted, and why |
+| **Opportunities** (home) | Every active account scored Watch or better, ranked, each with the points by source (leadership, hiring, company events, private equity, technology, procurement, filings, and the PE owner's own activity shown separately), the one-line why-now, open job postings, change since the last run, and whether it is on the Monday card or why it is held back. Filters: band, signal group, service line, PE-backed, new since last run, status |
+| **Monday card** | The part of Opportunities the weekly run would post (Hot or Warm, a High-confidence signal in the last 90 days, not in cooldown, capped): score, why-now, every source link, and a "how the score was calculated" table |
 | **Accounts** | List and search; see why an account is held; edit its facts (blank = unknown) and see the fit-gate verdict at once; add an account |
 | **Enrich review** | Go through `bd enrich`'s proposals fact by fact, each with its evidence link. New facts are ticked, ones that would replace a known value are not. **Apply** writes only the ticked facts, using the values in the file (not the page) |
 | **Exclusions** | Add or remove clients and do-not-pursue companies; every account's status is re-checked immediately |

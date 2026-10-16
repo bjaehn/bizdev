@@ -58,6 +58,19 @@ class Shortlist:
     skipped: list[Skipped] = field(default_factory=list)
 
 
+def lead_signals(sa, keep: int) -> list[LeadSignal]:
+    """The strongest scored signals of a scored account (with their stored text and source), best first."""
+    out = []
+    for p in sorted((p for p in sa.result.signals if p.ref is not None), key=lambda p: (-p.points, p.event_date, p.type))[:keep]:
+        row = sa.rows[p.ref]
+        out.append(LeadSignal(
+            id=row["id"], type=row["type"], event_date=date.fromisoformat(row["event_date"]),
+            summary=row["summary"], url=row["source_url"], source_type=row["source_type"],
+            confidence=row["confidence"], role_or_person=row["role_or_person"],
+            service_lines=tuple(json.loads(row["service_lines"] or "[]")), points=p.points))
+    return out
+
+
 def _prior_post(conn: sqlite3.Connection, account_id: int, as_of: date) -> PriorPost | None:
     r = conn.execute(
         "SELECT score, components_json, cooldown_until FROM scores WHERE account_id = ? AND posted = 1 "
@@ -99,15 +112,7 @@ def build_shortlist(conn: sqlite3.Connection, cfg: Config, as_of: date) -> Short
         if not cooldown_allows(prior, res, as_of, cfg):
             skip(f"in cooldown until {prior.cooldown_until}")  # type: ignore[union-attr]
             continue
-        ls = []
-        for p in sorted((p for p in res.signals if p.ref is not None),
-                        key=lambda p: (-p.points, p.event_date, p.type))[:keep]:
-            row = sa.rows[p.ref]
-            ls.append(LeadSignal(
-                id=row["id"], type=row["type"], event_date=date.fromisoformat(row["event_date"]),
-                summary=row["summary"], url=row["source_url"], source_type=row["source_type"],
-                confidence=row["confidence"], role_or_person=row["role_or_person"],
-                service_lines=tuple(json.loads(row["service_lines"] or "[]")), points=p.points))
+        ls = lead_signals(sa, keep)
         candidates.append(Lead(acc, res, ls))
 
     by_id = {lead.account.id: lead for lead in candidates}
