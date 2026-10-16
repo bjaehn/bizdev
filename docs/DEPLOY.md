@@ -10,6 +10,7 @@ UI is exactly what the weekly run uses.
 |---|---|---|
 | `BD_UI_PASSWORD` | yes | The sign-in password. 16+ characters or the app refuses to start. Changing it signs everyone out. |
 | `ANTHROPIC_API_KEY` | for enrich/scan/brief | Your Anthropic API key. |
+| `ANTHROPIC_WORKSPACE_ID` | only if the API says the key "is not scoped to a workspace" | The workspace id (from the Anthropic Console). The app sends it as the `anthropic-workspace-id` header. Not needed for a workspace-scoped key. |
 | `ANTHROPIC_MODEL` | for enrich/scan/brief | Model id to use. Not hard-coded anywhere. |
 | `BD_USER_AGENT` | for the edgar scanner | Company name and contact email (SEC fair access), e.g. `SEI Chicago BD (you@sei.com)`. |
 | `TEAMS_WEBHOOK_URL` | for posting | Without it the Monday run builds the card but posts nothing. |

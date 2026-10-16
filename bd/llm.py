@@ -8,6 +8,7 @@ invented can be detected), and counts tokens.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
 
@@ -100,11 +101,15 @@ class AnthropicWebSearchClient:
     """
 
     def __init__(self, cfg: Config, model: str, client: Any | None = None, api_key: str | None = None,
-                 web_search: bool = True) -> None:
+                 web_search: bool = True, workspace_id: str | None = None) -> None:
         self._cfg = cfg
         self._model = model
         self._web_search = web_search  # False = plain text call (used by the briefer)
-        self._client = client or anthropic.Anthropic(api_key=api_key)
+        # An API key that is not scoped to one workspace needs the workspace named on every request. Environment only
+        # (ANTHROPIC_WORKSPACE_ID); a key that is already workspace-scoped needs nothing.
+        ws = workspace_id if workspace_id is not None else os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+        headers = {"anthropic-workspace-id": ws} if ws else None
+        self._client = client or anthropic.Anthropic(api_key=api_key, default_headers=headers)
 
     def _tools(self, allowed_domains: list[str] | None = None) -> list[dict[str, Any]]:
         tool: dict[str, Any] = {

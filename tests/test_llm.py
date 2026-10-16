@@ -131,3 +131,22 @@ def test_refusal_and_api_errors_raise_llm_errors(cfg):
     c, _ = client(cfg, [err])
     with pytest.raises(LLMError, match="APIConnectionError"):
         c.run("S", [{"role": "user", "content": "go"}])
+
+
+def test_workspace_header_is_sent_only_when_configured(cfg, monkeypatch):
+    import anthropic as sdk
+    seen = {}
+
+    class Spy:
+        def __init__(self, **kw):
+            seen.update(kw)
+
+    monkeypatch.setattr(sdk, "Anthropic", Spy)
+    monkeypatch.delenv("ANTHROPIC_WORKSPACE_ID", raising=False)
+    AnthropicWebSearchClient(cfg, model="m", api_key="k")
+    assert seen["default_headers"] is None
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", " wrkspc_123 ")
+    AnthropicWebSearchClient(cfg, model="m", api_key="k")
+    assert seen["default_headers"] == {"anthropic-workspace-id": "wrkspc_123"}
+    AnthropicWebSearchClient(cfg, model="m", api_key="k", workspace_id="wrkspc_explicit")
+    assert seen["default_headers"] == {"anthropic-workspace-id": "wrkspc_explicit"}
