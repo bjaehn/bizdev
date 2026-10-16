@@ -409,3 +409,20 @@ def test_settings_page_saves_validates_and_resets(hosted):
     assert call(hosted.app, "POST", "/settings/discovery/reset", {"csrf": csrf}, cookie=s).code == 303
     assert "pharma distribution" not in call(hosted.app, "GET", "/settings", cookie=s).body
     assert connect(hosted.db).execute("SELECT COUNT(*) FROM audit_log WHERE field='settings.discovery'").fetchone()[0] == 2
+
+
+def test_enrich_page_offers_apply_all_and_applies_only_new_facts(hosted):
+    import sqlite3
+    c = sqlite3.connect(hosted.db)
+    c.execute("INSERT INTO accounts(name, domain, chicagoland) VALUES ('Acme', 'acme.com', 'unknown')")
+    c.commit()
+    (hosted.tmp / "p.csv").write_text("name,chicagoland,revenue,evidence_urls\nAcme,yes,500000000,il_county=https://acme.com/loc; revenue_usd=https://acme.com/ir\n")
+    s, csrf = session(hosted), hosted.app._csrf
+    page = call(hosted.app, "GET", "/enrich?file=p.csv", cookie=s).body
+    assert "Apply all new facts" in page and "2 new facts" in page
+    r = call(hosted.app, "POST", "/enrich/apply-all", {"csrf": csrf, "file": "p.csv"}, cookie=s)
+    assert r.code == 303
+    assert "Applied 2 new fact(s) to 1 account(s)" in call(hosted.app, "GET", "/enrich?file=p.csv", cookie=s).body
+    assert c.execute("SELECT chicagoland, revenue FROM accounts").fetchone() == ("yes", 5e8)
+    assert call(hosted.app, "POST", "/enrich/apply-all", {"csrf": csrf, "file": "../../etc/passwd"}, cookie=s).code == 303
+    assert call(hosted.app, "POST", "/enrich/apply-all", {"file": "p.csv"}, cookie=s).code == 403

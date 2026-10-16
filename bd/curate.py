@@ -158,6 +158,10 @@ class Proposal:
     notes: str = ""
     sec_name: str = ""
 
+    @property
+    def n_new(self) -> int:
+        return sum(d.status == "new" for d in self.diffs) if self.account_id else 0
+
 
 def _evidence(raw: str) -> dict[str, str]:
     out: dict[str, str] = {}
@@ -205,6 +209,33 @@ def apply_selected(conn: sqlite3.Connection, cfg: Config, account_id: int, selec
     if errs:
         return WriteResult(False, errs, account_id=account_id)
     return write_facts(conn, cfg, account_id, data, actor)
+
+
+def apply_all_new(conn: sqlite3.Connection, cfg: Config, path: str | Path, actor: str = "enrich") -> dict[str, int]:
+    """Apply every NEW fact in a proposals file (facts the database does not have yet) in one go. A fact that differs from a
+    value already in the database (a conflict) is never applied here, and neither is a row for a company that is not an
+    account. Each applied fact is audited with the evidence URL the file gave for it. Returns counts."""
+    props, errors = load_proposals(conn, path)
+    out = {"accounts": 0, "facts": 0, "conflicts_skipped": 0, "not_in_database": 0, "failed": 0, "file_errors": len(errors)}
+    for p in props:
+        if p.account_id is None:
+            out["not_in_database"] += 1
+            continue
+        out["conflicts_skipped"] += sum(d.status == "conflict" for d in p.diffs)
+        picks = {d.column: str(d.proposed) for d in p.diffs if d.status == "new"}
+        if not picks:
+            continue
+        res = apply_selected(conn, cfg, p.account_id, picks, actor)
+        if not res.ok:
+            out["failed"] += 1
+            continue
+        out["accounts"] += 1
+        out["facts"] += len(res.changed)
+        with conn:
+            for d in p.diffs:
+                if d.status == "new" and d.evidence_url:
+                    log_audit(conn, actor, "evidence", p.account_id, d.column, None, d.evidence_url)
+    return out
 
 
 # ---- discovery review queue ----------------------------------------------------------------------------------------

@@ -13,6 +13,11 @@
 <div class="card empty">No readable CSV at that path. Run <code>bd enrich</code> first, or type the file name above.</div>
 {% else %}
 {% if errors %}<div class="errors"><b>Problems in the file</b><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+{% if props %}{% set n_new = props|sum(attribute='n_new') %}
+<form method="post" action="/enrich/apply-all" class="card"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="file" value="{{ file }}">
+<b>{{ n_new }} new fact{{ '' if n_new == 1 else 's' }}</b> across {{ props|selectattr('n_new')|list|length }} account{{ '' if props|selectattr('n_new')|list|length == 1 else 's' }}, each with its source.
+<span class="meta">Applying all fills only facts the database does not have yet. Conflicts, and rows for companies not in the database, are never touched here. Every fact is logged on the Changes page with its source link.</span>
+<p><button type="submit">Apply all new facts</button></p></form>{% endif %}
 {% for p in props %}
 <div class="card">
 <div class="row"><div>{% if p.account_id %}<a class="name" href="/accounts/{{ p.account_id }}">{{ p.name }}</a>{% else %}<span class="name">{{ p.name }}</span>{% endif %}
