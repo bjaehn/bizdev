@@ -87,3 +87,22 @@ def reset_discovery(conn: sqlite3.Connection, actor: str = "ui") -> None:
         conn.execute("DELETE FROM settings WHERE key = 'discovery'")
         if old:
             log_audit(conn, actor, "update", None, "settings.discovery", json.dumps(old), None)
+
+
+def refresh_enabled(conn: sqlite3.Connection) -> bool:
+    """Whether the scheduler runs the daily light refresh (default on). Stored as settings key 'refresh'."""
+    r = conn.execute("SELECT value_json FROM settings WHERE key = 'refresh'").fetchone()
+    try:
+        return bool(json.loads(r["value_json"]).get("enabled", True)) if r else True
+    except (ValueError, AttributeError):
+        return True
+
+
+def save_refresh(conn: sqlite3.Connection, enabled: bool, actor: str = "ui") -> None:
+    old = refresh_enabled(conn)
+    with conn:
+        conn.execute("INSERT INTO settings(key, value_json, updated) VALUES ('refresh', ?, ?) "
+                     "ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated = excluded.updated",
+                     (json.dumps({"enabled": enabled}), datetime.now(timezone.utc).isoformat(timespec="seconds")))
+        if old != enabled:
+            log_audit(conn, actor, "update", None, "settings.refresh", old, enabled)

@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS accounts (
     origin        TEXT NOT NULL DEFAULT 'seed' CHECK (origin IN ('seed','manual','discovered')),
     source_url    TEXT,      -- where discovery found it (provenance, not a fact source)
     reviewed      INTEGER NOT NULL DEFAULT 1,   -- 0 = auto-added by discovery, not yet looked at by a person
-    discovered_at TEXT
+    discovered_at TEXT,
+    ats_provider  TEXT CHECK (ats_provider IS NULL OR ats_provider IN ('greenhouse','lever','ashby')),
+    ats_board     TEXT       -- the company's job-board id at that provider (learned from posting URLs)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_name ON accounts(lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_domain ON accounts(domain) WHERE domain IS NOT NULL;
@@ -80,6 +82,34 @@ CREATE TABLE IF NOT EXISTS briefs (
     best_service_line TEXT NOT NULL,
     model             TEXT,
     PRIMARY KEY (account_id, run_date)
+);
+
+-- Job postings seen on a company's job board (one row per posting URL). `open` is 1 while the board still lists it.
+-- Only an authoritative feed (the `ats` scanner) closes postings; signals are built from this by code.
+CREATE TABLE IF NOT EXISTS postings (
+    id          INTEGER PRIMARY KEY,
+    account_id  INTEGER NOT NULL REFERENCES accounts(id),
+    url         TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    posted_date TEXT NOT NULL,
+    theme       TEXT NOT NULL,
+    seniority   TEXT NOT NULL,
+    interim     INTEGER NOT NULL DEFAULT 0,
+    source      TEXT NOT NULL,       -- ats provider name, or 'search' when found by the model scanner
+    first_seen  TEXT NOT NULL,
+    last_seen   TEXT NOT NULL,
+    open        INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (account_id, url)
+);
+CREATE INDEX IF NOT EXISTS ix_postings_account ON postings(account_id, open, posted_date);
+
+-- SEC filings already read by the edgar / earnings scanners, so a daily refresh only pays for new ones.
+CREATE TABLE IF NOT EXISTS filings_read (
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    scanner    TEXT NOT NULL,
+    accession  TEXT NOT NULL,
+    read_date  TEXT NOT NULL,
+    PRIMARY KEY (account_id, scanner, accession)
 );
 
 -- Companies found by `bd discover` that did not clear the auto-add bar (or were rejected by the fit gate).
@@ -186,7 +216,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(accounts)")}
     if "cik" not in cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN cik TEXT")
-    for col, ddl in (("origin", "TEXT NOT NULL DEFAULT 'seed'"), ("source_url", "TEXT"),
+    for col, ddl in (("origin", "TEXT NOT NULL DEFAULT 'seed'"), ("source_url", "TEXT"), ("ats_provider", "TEXT"), ("ats_board", "TEXT"),
                      ("reviewed", "INTEGER NOT NULL DEFAULT 1"), ("discovered_at", "TEXT")):
         if col not in cols:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")

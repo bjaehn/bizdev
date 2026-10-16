@@ -7,8 +7,9 @@ the signals itself, so counts and dates cannot be invented:
   hiring_cluster   cluster_min or more related (same theme) postings inside the window. event_date is the
                    date the cluster FORMED (the cluster_min-th earliest posting), so it stays the same week to
                    week and the same surge is not counted again as new postings join. At most one per account.
+  hiring_leadership a VP-or-above (hiring.leadership_levels) posting in a relevant area (newest one)
   hiring_interim   an interim / fractional senior role (newest one)
-  hiring_single    one senior posting (only when there is no cluster)
+  hiring_single    one director-level posting (only when there is no cluster and no leadership posting)
 
 Summaries are written by code from the verified titles; Claude writes none of the signal text."""
 
@@ -21,16 +22,18 @@ from typing import Literal
 from pydantic import BaseModel, field_validator
 
 from bd.accounts import Account
+from bd.ats import board_from_url
 from bd.hashing import signal_hash
 from bd.llm import LLMError, generate_validated
 from bd.models import SignalExtract
 from bd.scanners.base import AcceptedSignal, Rejection, ScanOutcome, Scanner, reconcile_source_type
 from bd.urls import host_in, hostname, normalize_url
 
-Theme = Literal["ai_technology", "data_analytics", "strategy_operations", "transformation_change"]
+Theme = Literal["ai_technology", "data_analytics", "strategy_operations", "transformation_change", "product_engineering"]
 Seniority = Literal["c_suite", "svp_vp", "director", "other"]
 THEME_LABEL = {"ai_technology": "AI and technology", "data_analytics": "data and analytics",
-               "strategy_operations": "strategy and operations", "transformation_change": "transformation and change"}
+               "strategy_operations": "strategy and operations", "transformation_change": "transformation and change",
+               "product_engineering": "product and engineering"}
 _RANK = {"Low": 0, "Medium": 1, "High": 2}
 
 
@@ -78,8 +81,12 @@ def _short(title: str, words: int = 8) -> str:
 
 class HiringScanner(Scanner):
     name = "hiring"
-    allowed_types = frozenset({"hiring_cluster", "hiring_interim", "hiring_single"})
+    allowed_types = frozenset({"hiring_cluster", "hiring_leadership", "hiring_interim", "hiring_single"})
     response_model = HiringResponse
+
+    def applies_to(self, account: Account) -> bool:
+        # An account whose job board the `ats` scanner reads directly gets the complete feed, not a model search.
+        return not (account.ats_provider and account.ats_board)
 
     def user_prompt(self, account: Account, as_of: date) -> str:
         start = as_of - timedelta(days=self.cfg.hiring.window_days)
@@ -106,6 +113,8 @@ class HiringScanner(Scanner):
         out.candidates = len(resp.postings)
         verified, out.rejections = self._verify(account, as_of, resp.postings, result.retrieved_urls)
         out.signals = self._build(account, verified)
+        out.postings = [v.p for v in verified]
+        out.learned_board = next((b for b in (board_from_url(v.p.url) for v in verified) if b), None)
         return out
 
     # -- verification (per posting) ---------------------------------------------------------------
@@ -173,7 +182,13 @@ class HiringScanner(Scanner):
                        f"including {_short(formed_by.p.title, 6)}.")
             out.append(self._signal(account, "hiring_cluster", formed_by.p.posted_date, summary, formed_by, conf, theme,
                                     [f"{len(vs)} postings, cluster formed {formed_by.p.posted_date.isoformat()}"]))
-        else:
+        leaders = [v for v in regular if v.p.seniority in set(cfg.hiring.leadership_levels)]
+        if leaders:
+            v = newest(leaders)
+            out.append(self._signal(account, "hiring_leadership", v.p.posted_date,
+                                    f"Senior {THEME_LABEL[v.p.theme]} leadership role posted: {_short(v.p.title)}.", v,
+                                    v.confidence, v.p.theme, [f"{len(leaders)} leadership posting(s)"]))
+        if not clusters and not leaders:
             seniors = [v for v in regular if v.p.seniority in senior]
             if seniors:
                 v = newest(seniors)

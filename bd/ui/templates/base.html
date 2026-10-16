@@ -60,7 +60,7 @@ footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);fon
 <span class="brand">BD Signals</span>
 {% if nav is not defined or nav %}
 <nav>
-{% for key, href, label in [('leads','/','Leads'),('accounts','/accounts','Accounts'),('candidates','/candidates','Discovery'),('firms','/firms','PE firms'),('enrich','/enrich','Enrich review'),('exclusions','/exclusions','Exclusions'),('runs','/runs','Runs &amp; cost'),('settings','/settings','Settings'),('audit','/audit','Changes')] + ([('operate','/operate','Operate')] if operate else []) %}
+{% for key, href, label in [('leads','/','Leads'),('accounts','/accounts','Accounts'),('hiring','/hiring','Hiring'),('candidates','/candidates','Discovery'),('firms','/firms','PE firms'),('enrich','/enrich','Enrich review'),('exclusions','/exclusions','Exclusions'),('runs','/runs','Runs &amp; cost'),('settings','/settings','Settings'),('audit','/audit','Changes')] + ([('operate','/operate','Operate')] if operate else []) %}
 <a href="{{ href }}" class="{{ 'on' if page == key else '' }}">{{ label|safe }}</a>
 {% endfor %}
 </nav>

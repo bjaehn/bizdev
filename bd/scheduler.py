@@ -49,6 +49,29 @@ def due(now: datetime, last_started_utc: str | None) -> datetime | None:
     return slot
 
 
+def most_recent_daily_slot(now: datetime) -> datetime:
+    """The latest 05:00 America/Chicago at or before `now`."""
+    local = now.astimezone(CHICAGO)
+    slot = _slot(local.date())
+    return slot if slot <= local else _slot(local.date() - timedelta(days=1))
+
+
+def refresh_due(now: datetime, last_started_utc: str | None) -> datetime | None:
+    """The daily light-refresh slot to run now, if one is due. Mondays belong to the weekly run (which does everything the
+    refresh does), so the slot must not be a Monday. Same catch-up and 'nothing started since' rules as the weekly run;
+    `last_started_utc` is the latest weekly OR refresh job's creation time."""
+    slot = most_recent_daily_slot(now)
+    if slot.weekday() == 0:
+        return None
+    if now.astimezone(CHICAGO) - slot > timedelta(hours=CATCH_UP_HOURS):
+        return None
+    if last_started_utc:
+        last = datetime.strptime(last_started_utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        if last >= slot.astimezone(timezone.utc):
+            return None
+    return slot
+
+
 class Scheduler:
     def __init__(self, runner: JobRunner, tick_seconds: float = 60.0,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
@@ -57,14 +80,30 @@ class Scheduler:
         self._thread: threading.Thread | None = None
 
     def check(self) -> int | None:
-        """Start the weekly job if due and nothing else is running. Returns the job id, or None."""
-        last = self.runner.last_scheduled()
-        if due(self.clock(), last.created if last else None) is None or self.runner.busy():
+        """Start the weekly job (Monday) or the daily light refresh (other days) if due and nothing else is running.
+        Returns the job id, or None."""
+        if self.runner.busy():
             return None
+        now = self.clock()
+        last = self.runner.last_scheduled()
         try:
-            return self.runner.submit("weekly", {}, scheduled=True)
+            if due(now, last.created if last else None) is not None:
+                return self.runner.submit("weekly", {}, scheduled=True)
+            if self.refresh_enabled():
+                latest = self.runner.last_job(("weekly", "refresh"))
+                if refresh_due(now, latest.created if latest else None) is not None:
+                    return self.runner.submit("refresh", {}, scheduled=True)
         except JobError:
             return None
+        return None
+
+    def refresh_enabled(self) -> bool:
+        from bd.settings_store import refresh_enabled
+        try:
+            with self.runner._conn() as c:
+                return refresh_enabled(c)
+        except Exception:
+            return True
 
     def start(self) -> None:
         def loop() -> None:

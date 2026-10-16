@@ -1,4 +1,5 @@
 from bd.scanners.base import AcceptedSignal, Rejection, ScanOutcome, Scanner, store_signals
+from bd.scanners.ats import AtsScanner
 from bd.scanners.earnings import EarningsScanner
 from bd.scanners.edgar import EdgarScanner
 from bd.scanners.events import EventsScanner
@@ -10,7 +11,7 @@ from bd.scanners.tech_procurement import TechProcurementScanner
 
 SCANNERS: dict[str, type[Scanner]] = {
     c.name: c for c in (LeadershipScanner, EdgarScanner, EarningsScanner, EventsScanner, PressScanner, PeScanner, HiringScanner,
-                      TechProcurementScanner)
+                      AtsScanner, TechProcurementScanner)
 }
 
 __all__ = ["AcceptedSignal", "Rejection", "ScanOutcome", "Scanner", "store_signals", "SCANNERS",

@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
-SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "tech_procurement")
+SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement")
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
 LOG_TAIL_BYTES = 20_000
@@ -54,6 +54,8 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "card_dry": ("Build the card (dry run, never posts)", True, False),
     "weekly_dry": ("Full weekly run, dry run (scan, score, card; never posts)", True, False),
     "weekly": ("Scheduled weekly run", True, True),
+    "refresh": ("Scheduled daily light refresh", True, True),
+    "refresh_now": ("Light refresh now (job boards and SEC filings)", True, False),
 }
 
 
@@ -103,6 +105,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return ["pe-sync"]
     if kind in ("pe_portfolio", "pe_signals"):
         return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
+    if kind in ("refresh", "refresh_now"):
+        return []   # steps are fixed in sequence_for()
     if kind == "discover":
         return ["discover", "--limit", str(num("limit", 1, 30, required=True))]
     if kind == "enrich":
@@ -132,8 +136,16 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
     return []   # weekly / weekly_dry: steps are fixed in sequence_for()
 
 
+def refresh_scanners() -> str:
+    """Scanners for the light refresh: the free job-board feed always; SEC filings only when BD_USER_AGENT is set (the SEC
+    requires a declared contact). Only filings not read before cost a model call."""
+    return "ats" + (",edgar,earnings" if os.environ.get("BD_USER_AGENT") else "")
+
+
 def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
     """The `bd` invocations (after the executable) a job runs, in order."""
+    if kind in ("refresh", "refresh_now"):
+        return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
         return [["scan", "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["score", "--as-of", as_of],
@@ -184,6 +196,11 @@ class JobRunner:
     def get(self, job_id: int) -> Job | None:
         with self._conn() as c:
             r = c.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        return self._row(r) if r else None
+
+    def last_job(self, kinds: tuple[str, ...]) -> Job | None:
+        with self._conn() as c:
+            r = c.execute(f"SELECT * FROM jobs WHERE kind IN ({','.join('?' * len(kinds))}) ORDER BY id DESC LIMIT 1", kinds).fetchone()
         return self._row(r) if r else None
 
     def last_scheduled(self) -> Job | None:

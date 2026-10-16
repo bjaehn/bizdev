@@ -18,6 +18,7 @@ scoring:
     ai_commitment: 16
     strategy_rebrand: 14
     hiring_cluster: 26      # 3+ related postings in 60 days
+    hiring_leadership: 30   # a VP-or-above role posted in a relevant area (AI, data, transformation, strategy/ops, product)
     hiring_interim: 18
     hiring_single: 12
     platform_migration: 20
@@ -28,7 +29,7 @@ scoring:
   # Which family each type belongs to.
   families:
     leadership: [leadership_change, leadership_transformation_ai_data, open_exec_search]
-    hiring: [hiring_cluster, hiring_interim, hiring_single]
+    hiring: [hiring_cluster, hiring_leadership, hiring_interim, hiring_single]
     events: [restructuring_layoffs, ma_divestiture, activist, ops_failure, cost_program, ai_commitment, strategy_rebrand]
     pe: [pe_platform_or_sponsor_exec, pe_addon, pe_hold_2_4]
     technology: [platform_migration, vendor_deal]
@@ -164,12 +165,27 @@ hiring:
   window_days: 60               # a posting must be dated within this many days of the run
   cluster_min: 3                # hiring_cluster = this many related postings
   senior_levels: [c_suite, svp_vp, director]
+  leadership_levels: [c_suite, svp_vp]   # a posting at these levels is a hiring_leadership signal
   # Posting theme -> service lines (code, not the model, assigns these).
   theme_service_lines:
     ai_technology: [AI & Technology]
     data_analytics: [Data & Analytics]
     strategy_operations: [Strategy & Operations]
     transformation_change: [Strategy & Operations]
+    product_engineering: [Concept to Delivery]
+  # Used only by the `ats` scanner, which reads a company's own job board directly: a posting counts toward a theme
+  # when its TITLE contains one of the phrases (whole words, any case). First theme in this order that matches wins;
+  # a title that matches none is ignored. The model-based `hiring` scanner assigns themes itself.
+  theme_keywords:
+    data_analytics: [data engineer, data scientist, data analyst, data architect, data platform, data governance, data science, analytics, business intelligence, chief data, head of data]
+    ai_technology: [machine learning, artificial intelligence, ai, generative ai, llm, mlops, ml engineer, chief technology, chief information, cio, cto, enterprise architect, cloud architect, it strategy, digital technology]
+    transformation_change: [transformation, pmo, program management, portfolio management, change management, business excellence, operational excellence, continuous improvement, integration management]
+    strategy_operations: [strategy, chief operating, coo, chief of staff, corporate development, business operations, operations excellence, operating model]
+    product_engineering: [product manager, product management, head of product, vp product, chief product, digital product, platform engineer, software engineer, engineering manager]
+  # product_engineering is noisy (every large company hires engineers), so its titles must also contain one of these.
+  theme_title_gates:
+    product_engineering: [manager, director, head, vp, vice president, chief, principal, staff, lead, architect]
+  interim_words: [interim, fractional, contract executive]
 
 edgar:
   min_interval_seconds: 0.15      # SEC fair access allows 10 requests/second; stay well under

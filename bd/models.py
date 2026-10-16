@@ -24,6 +24,7 @@ SignalType = Literal[
     "ai_commitment",
     "strategy_rebrand",
     "hiring_cluster",
+    "hiring_leadership",
     "hiring_interim",
     "hiring_single",
     "platform_migration",

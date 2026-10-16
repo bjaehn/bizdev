@@ -28,6 +28,7 @@ UI is exactly what the weekly run uses.
 
 * On first boot the 58 target accounts load from `accounts.csv`. Their facts are blank, so every account is **held** by the fit gate.
 * **Operate → Discover** (start with 2 segments) finds new Chicagoland companies; those that pass the fit gate appear on Accounts as *auto-added*, the rest wait on the **Discovery** page. Mark auto-added accounts reviewed once you have looked at them.
+* **Hiring page**: open postings per company, from each company's own Greenhouse / Lever / Ashby board (read daily) or the weekly search. The first scan that finds a posting on one of those boards identifies it. **Settings** turns the daily light refresh on or off.
 * **Operate → PE firms**: *Sync* (free) creates the firm list from accounts that have a sponsor; *Portfolio research* finds each firm's other Chicagoland companies; *Firm signals* looks for fund, exit and operating-partner news. The **PE firms** page shows each firm's portfolio and signals; the Monday run includes firm signals automatically.
 * **Operate → Enrich** proposes missing facts (revenue, employees, ownership, HQ) from public sources. **Enrich review** shows each proposal with its source; you accept the ones you trust. Nothing is applied automatically.
 * **Operate → Scan** (start with 5 accounts to see the cost), then **Score**, then **Build card (dry run)**. Leads appear on the **Leads** page; cost per run on **Runs & cost**.

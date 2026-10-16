@@ -57,6 +57,10 @@ class ScanOutcome:
     usage: Usage = field(default_factory=Usage)
     candidates: int = 0
     error: str | None = None
+    postings: list = field(default_factory=list)       # job postings seen (bd.scanners.hiring.Posting), stored by the runner
+    postings_complete: bool = False                    # True: `postings` is the board's complete list, so absent ones are closed
+    learned_board: tuple[str, str] | None = None       # (provider, board id) learned from posting URLs
+    read_filings: list[str] = field(default_factory=list)   # SEC accession numbers read (remembered so they are not re-read)
 
     def rejection_summary(self) -> str:
         counts: dict[str, int] = {}
@@ -90,9 +94,12 @@ class Scanner:
         self.cfg, self.llm, self.verifier = cfg, llm, verifier
 
     @classmethod
-    def create(cls, cfg: Config, web: LLM | None, text: LLM | None, verifier: UrlVerifier | None, edgar: object | None):
+    def create(cls, cfg: Config, web: LLM | None, text: LLM | None, verifier: UrlVerifier | None, edgar: object | None,
+               ats: object | None = None):
         """Build a scanner from the shared dependencies (web-search LLM, text-only LLM, URL verifier, EDGAR)."""
         return cls(cfg, web, verifier)
+
+    reads_filings: ClassVar[bool] = False    # True for scanners that take `known_accessions` (SEC filings already read)
 
     def llm_kwargs(self, account: Account) -> dict:
         """Extra arguments for this account's model calls (e.g. a search allow-list). Default: none."""

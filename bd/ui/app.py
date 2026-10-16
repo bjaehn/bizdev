@@ -44,7 +44,7 @@ from bd.ui.auth import Hosted, Throttle
 from bd.labels import TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
 from bd.settings_store import (INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
-                               reset_discovery, save_discovery)
+                               refresh_enabled, reset_discovery, save_discovery, save_refresh)
 from bd.shortlist import ShortlistError, build_shortlist
 
 MAX_BODY = 64 * 1024
@@ -351,6 +351,8 @@ class App:
             ("GET", "/enrich"): lambda: self.enrich(req, conn),
             ("POST", "/enrich/apply"): lambda: self.enrich_apply(req, conn),
             ("GET", "/candidates"): lambda: self.candidates(conn),
+            ("GET", "/hiring"): lambda: self.hiring(req, conn),
+            ("POST", "/settings/refresh"): lambda: self.refresh_save(req, conn),
             ("GET", "/firms"): lambda: self.firms(conn),
             ("POST", "/firms/add"): lambda: self.firm_add(req, conn),
             ("GET", "/settings"): lambda: self.settings_page(conn),
@@ -436,8 +438,9 @@ class App:
         firms = conn.execute(
             "SELECT f.id, f.name, f.status, l.status AS link_status FROM portfolio_links l JOIN pe_firms f ON f.id = l.firm_id "
             "WHERE l.account_id = ? ORDER BY f.name", (a.id,)).fetchall()
+        postings = conn.execute("SELECT * FROM postings WHERE account_id = ? AND open = 1 ORDER BY posted_date DESC LIMIT 40", (a.id,)).fetchall()
         return dict(page="accounts", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
-                    conf_scored={"High", "Medium"}, firms=firms)
+                    conf_scored={"High", "Medium"}, firms=firms, postings=postings, lead=set(self.cfg.hiring.leadership_levels))
 
     def account_page(self, req: Request, conn: sqlite3.Connection, account_id: int) -> Response:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
@@ -519,7 +522,31 @@ class App:
         d = apply_overrides(self.cfg, conn).discovery
         form = form or {"segments": "\n".join(d.segments), **{k: str(getattr(d, k)) for k in INT_FIELDS}}
         return self.render("settings.html", page="settings", form=form, errors=errors or [], fields=INT_FIELDS,
-                           customized=bool(load_discovery_overrides(conn)), max_segments=MAX_SEGMENTS)
+                           customized=bool(load_discovery_overrides(conn)), max_segments=MAX_SEGMENTS,
+                           refresh_on=refresh_enabled(conn), can_schedule=self.jobs is not None)
+
+    def refresh_save(self, req: Request, conn: sqlite3.Connection) -> Response:
+        save_refresh(conn, bool(req.f("enabled")))
+        self.say("ok", "Daily refresh is on." if req.f("enabled") else "Daily refresh is off. The Monday run is unchanged.")
+        return self.redirect("/settings")
+
+    def hiring(self, req: Request, conn: sqlite3.Connection) -> Response:
+        theme = req.q("theme")
+        themes = list(self.cfg.hiring.theme_keywords)
+        where, args = "p.open = 1 AND p.posted_date >= date(?, ?) ", [date.today().isoformat(), f"-{self.cfg.hiring.window_days} days"]
+        if theme in themes:
+            where, args = where + "AND p.theme = ? ", args + [theme]
+        lead = tuple(self.cfg.hiring.leadership_levels)
+        rows = conn.execute(
+            f"SELECT a.id, a.name, a.status, a.ats_provider, COUNT(*) AS n, MAX(p.posted_date) AS newest, "
+            f"SUM(p.seniority IN ({','.join('?' * len(lead))})) AS leaders, SUM(p.interim) AS interim "
+            f"FROM postings p JOIN accounts a ON a.id = p.account_id WHERE {where}"
+            f"GROUP BY a.id ORDER BY leaders DESC, n DESC, newest DESC LIMIT 200", (*lead, *args)).fetchall()
+        recent = conn.execute(
+            f"SELECT p.*, a.name AS account FROM postings p JOIN accounts a ON a.id = p.account_id WHERE {where}"
+            "ORDER BY p.posted_date DESC, p.id DESC LIMIT 60", args).fetchall()
+        return self.render("hiring.html", page="hiring", rows=rows, recent=recent, themes=themes, theme=theme,
+                           lead=set(lead), window=self.cfg.hiring.window_days)
 
     def settings_save(self, req: Request, conn: sqlite3.Connection) -> Response:
         form = {k: req.f(k) for k in ("segments", *INT_FIELDS)}

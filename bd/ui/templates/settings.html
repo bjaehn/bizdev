@@ -15,5 +15,10 @@
 <p><button type="submit">Save</button></p></form>
 {% if customized %}<form method="post" action="/settings/discovery/reset"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Reset to config.yaml defaults</button></form>{% endif %}
 </div>
+{% if can_schedule %}<div class="card"><h2 style="margin-top:0">Daily light refresh</h2>
+<p class="meta">Every day except Monday at 5:00 AM Chicago, the app reads every known company job board and checks SEC filings it has not read yet, then re-scores. Job boards are free; only new SEC filings cost a model call. It never posts to Teams and never changes the Monday run.</p>
+<form method="post" action="/settings/refresh"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label><input type="checkbox" name="enabled" value="1" {{ 'checked' if refresh_on else '' }}> Run the light refresh daily</label>
+<p><button type="submit">Save</button></p></form></div>{% endif %}
 <p class="meta">Auto-adds are capped per run and marked auto-added; unreviewed accounts are scanned only up to the limit above until you mark them reviewed on the Accounts page.</p>
 {% endblock %}

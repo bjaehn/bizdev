@@ -37,6 +37,8 @@ class Account(BaseModel):
     source_url: str | None = None
     reviewed: int = 1
     discovered_at: str | None = None
+    ats_provider: str | None = None
+    ats_board: str | None = None
 
 
 def list_accounts(conn: sqlite3.Connection, tier: str = "all", status: str | None = "active",

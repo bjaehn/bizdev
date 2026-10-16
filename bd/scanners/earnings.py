@@ -54,7 +54,7 @@ class EarningsScanner(Scanner):
         self.edgar = edgar
 
     @classmethod
-    def create(cls, cfg, web, text, verifier, edgar):  # type: ignore[override]
+    def create(cls, cfg, web, text, verifier, edgar, ats=None):  # type: ignore[override]
         return cls(cfg, text, edgar)
 
     def applies_to(self, account: Account) -> bool:
@@ -63,7 +63,9 @@ class EarningsScanner(Scanner):
     def system_prompt(self) -> str:
         return resources.files("bd.prompts").joinpath("earnings_202.md").read_text(encoding="utf-8")
 
-    def scan(self, account: Account, as_of: date) -> ScanOutcome:
+    reads_filings = True
+
+    def scan(self, account: Account, as_of: date, known_accessions: frozenset[str] = frozenset()) -> ScanOutcome:
         out = ScanOutcome(account=account, scanner=self.name)
         if not account.cik:
             return out
@@ -78,6 +80,8 @@ class EarningsScanner(Scanner):
         seen: set[str] = set()
         errors: list[str] = []
         for f in filings:
+            if f.accession in known_accessions:           # read on an earlier run (found something or not)
+                continue
             out.candidates += 1
             try:
                 url, text = self.edgar.earnings_release(f)
@@ -95,6 +99,7 @@ class EarningsScanner(Scanner):
                 errors.append(f"{type(e).__name__}: {e}")
                 continue
             out.usage.add(res.usage)
+            out.read_filings.append(f.accession)
             if not resp.signals:
                 out.rejections.append(Rejection("no_event_in_release", None, url))
             for item in resp.signals[:MAX_PER_RELEASE]:

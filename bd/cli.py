@@ -58,6 +58,7 @@ def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
 
 def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     """Real scanners with their dependencies. Needs ANTHROPIC_API_KEY and ANTHROPIC_MODEL."""
+    from bd.ats import AtsClient
     from bd.edgar import EdgarClient
     from bd.llm import AnthropicWebSearchClient
     from bd.scanners import SCANNERS
@@ -72,7 +73,8 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     text = AnthropicWebSearchClient(cfg, model=model, api_key=key, web_search=False)
     verifier = UrlVerifier(cfg, settings.user_agent)
     edgar = EdgarClient(cfg, settings.user_agent) if ("edgar" in names or "earnings" in names) else None
-    return [SCANNERS[n].create(cfg, web, text, verifier, edgar) for n in names]
+    ats = AtsClient(cfg, settings.user_agent) if "ats" in names else None
+    return [SCANNERS[n].create(cfg, web, text, verifier, edgar, ats=ats) for n in names]
 
 
 @app.command()
@@ -134,6 +136,7 @@ def scan(
     workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
     force: bool = typer.Option(False, help="Ignore tier cadence"),
     dry_run: bool = typer.Option(False, help="Apply the fit gate and show what would be scanned; no API calls"),
+    light: bool = typer.Option(False, "--light", help="Daily refresh: do not mark accounts as scanned, so the weekly cadence is unaffected"),
 ) -> None:
     """Fit-gate, then scan due accounts that passed (concurrently), logging tokens and cost."""
     from bd.accounts import list_accounts
@@ -172,7 +175,7 @@ def scan(
         return
     objs = _build_scanners(names, cfg, settings)
     summary = run_scans(conn, cfg, objs, accounts, run_date, model=settings.anthropic_model, workers=workers,
-                        force=force, log=typer.echo)
+                        force=force, touch_last_scanned=not light, log=typer.echo)
     typer.echo(f"\nPer account (tokens, est. cost):")
     for r in summary.accounts.values():
         cost = "unpriced" if r.est_cost is None else f"${r.est_cost:.4f}"

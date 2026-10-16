@@ -65,7 +65,8 @@ signals validated by code; none writes outreach.
 | `events` | restructuring_layoffs, ma_divestiture, strategy_rebrand, ai_commitment, activist, ops_failure, cost_program | every account | includes Illinois WARN notices |
 | `press` | leadership_change, leadership_transformation_ai_data, open_exec_search, ma_divestiture, strategy_rebrand, ai_commitment, platform_migration, vendor_deal, cost_program, restructuring_layoffs, ops_failure | accounts with a domain | the company's own announcements: the search tool is restricted to the company's domain, wire services and SEC pages, so every candidate is first-party. Overlaps `events` on purpose; the same event found by both counts once when scoring |
 | `pe` | pe_platform_or_sponsor_exec, pe_addon, pe_hold_2_4 | accounts whose ownership is `pe-backed` | `pe_hold_2_4` is a status signal: valid only while the sponsor's original investment is 2-4 years old, and it stops scoring when the hold passes 4 years |
-| `hiring` | hiring_cluster, hiring_interim, hiring_single | every account | Claude lists postings; **code** verifies each, counts the cluster (3+ related postings within 60 days) and writes the summaries |
+| `hiring` | hiring_cluster, hiring_leadership, hiring_interim, hiring_single | accounts without a known job board | Claude lists postings; **code** verifies each, counts the cluster (3+ related postings within 60 days) and writes the summaries |
+| `ats` | hiring_cluster, hiring_leadership, hiring_interim, hiring_single | accounts whose Greenhouse / Lever / Ashby board is known | **free and daily**: reads the company's own job board JSON (every open posting, no model). The board id is learned from posting URLs the `hiring` scanner verified, never guessed. Titles are classified by the keyword lists in `config.yaml` (`hiring.theme_keywords`): data/AI, transformation/strategy/operations, product/engineering build-out. `hiring_leadership` = a VP-or-above posting in one of those areas. Postings are stored and shown on the Hiring page |
 | `tech_procurement` | platform_migration, vendor_deal, rfp_match, risk_factor | every account | an RFP must have a future due date; a risk factor must be on sec.gov |
 
 ## Commands
@@ -122,6 +123,10 @@ Content-Security-Policy; see SECURITY.md. Stop it with Ctrl-C.
 3. **Dry-run the pipeline.** `bd scan --limit 3`, `bd score`, `bd shortlist`, `bd card --dry-run`, and
    open `card.json`. Check the per-account cost lines before widening.
 4. **Post.** Set `TEAMS_WEBHOOK_URL` and run `bd card`.
+
+## Daily light refresh
+
+Every day except Monday at 05:00 America/Chicago the hosted app runs a *light refresh*: `bd scan --scanners ats,edgar,earnings --force --light`, then `bd score`. Job boards are read for free; only SEC filings not read before cost a model call; it never builds a card or posts, and `--light` leaves the weekly cadence alone. Turn it off on the Settings page. Monday's full run does everything.
 
 ## Hosted app (use it from a browser, no terminal)
 

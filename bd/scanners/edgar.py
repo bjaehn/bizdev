@@ -55,7 +55,7 @@ class EdgarScanner(Scanner):
         self.edgar = edgar
 
     @classmethod
-    def create(cls, cfg, web, text, verifier, edgar):  # type: ignore[override]
+    def create(cls, cfg, web, text, verifier, edgar, ats=None):  # type: ignore[override]
         return cls(cfg, text, edgar)
 
     def applies_to(self, account: Account) -> bool:
@@ -64,7 +64,9 @@ class EdgarScanner(Scanner):
     def system_prompt(self) -> str:
         return resources.files("bd.prompts").joinpath("edgar_502.md").read_text(encoding="utf-8")
 
-    def scan(self, account: Account, as_of: date) -> ScanOutcome:
+    reads_filings = True
+
+    def scan(self, account: Account, as_of: date, known_accessions: frozenset[str] = frozenset()) -> ScanOutcome:
         out = ScanOutcome(account=account, scanner=self.name)
         if not account.cik:
             return out
@@ -80,6 +82,8 @@ class EdgarScanner(Scanner):
         seen: set[str] = set()
         errors: list[str] = []
         for f in filings:
+            if f.accession in known_accessions:           # read on an earlier run (found something or not)
+                continue
             out.candidates += 1
             try:
                 text = self.edgar.filing_text(f)
@@ -97,6 +101,7 @@ class EdgarScanner(Scanner):
                 errors.append(f"{type(e).__name__}: {e}")
                 continue
             out.usage.add(res.usage)
+            out.read_filings.append(f.accession)
             if not resp.relevant:
                 out.rejections.append(Rejection("not_officer_change", None, f.url))
                 continue

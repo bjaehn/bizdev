@@ -21,6 +21,7 @@ TYPE_LABELS = {
     "ai_commitment": "AI commitment",
     "strategy_rebrand": "Strategy / rebrand",
     "hiring_cluster": "Hiring cluster",
+    "hiring_leadership": "Senior leadership hire",
     "hiring_interim": "Interim hiring",
     "hiring_single": "Single senior hire",
     "platform_migration": "Platform migration",

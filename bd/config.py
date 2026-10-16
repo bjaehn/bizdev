@@ -172,7 +172,11 @@ class Hiring(_Strict):
     window_days: int
     cluster_min: int
     senior_levels: list[str]
+    leadership_levels: list[str]
     theme_service_lines: dict[str, list[str]]
+    theme_keywords: dict[str, list[str]]
+    theme_title_gates: dict[str, list[str]] = {}
+    interim_words: list[str]
 
 
 class Edgar(_Strict):
