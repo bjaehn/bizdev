@@ -153,3 +153,26 @@ def test_apply_selected_applies_only_what_was_ticked_and_revalidates(cfg, conn):
 def test_gate_one_for_unknown_account_raises(cfg, conn):
     with pytest.raises(KeyError):
         gate_one(conn, cfg, 404)
+
+
+# ---- bulk apply of an enrich proposals file ---------------------------------------------------------------------------
+def test_apply_all_new_fills_only_unknown_facts_and_audits_evidence(cfg, tmp_path):
+    from bd.curate import apply_all_new
+    from tests.conftest import add_account, make_db
+    conn = make_db(tmp_path)
+    a = add_account(conn, "Acme", domain="acme.com", chicagoland="unknown", revenue=None, ownership=None, hq_city="Chicago, IL")
+    b = add_account(conn, "Beta", domain="beta.com", revenue=900000000, ownership="public")
+    p = tmp_path / "p.csv"
+    p.write_text("name,domain,hq_city,chicagoland,revenue,employees,ownership,evidence_urls\n"
+                 "Acme,,Evanston,yes,500000000,2500,public,il_county=https://acme.com/loc; revenue_usd=https://acme.com/ir; ownership=https://acme.com/ir\n"
+                 "Beta,,,,1,,,revenue_usd=https://beta.com/x\n"
+                 "Ghost Co,,,yes,5,,,\n")
+    r = apply_all_new(conn, cfg, p)
+    assert r == {"accounts": 1, "facts": 4, "conflicts_skipped": 2, "not_in_database": 1, "failed": 0, "file_errors": 0}
+    row = conn.execute("SELECT * FROM accounts WHERE id = ?", (a,)).fetchone()
+    assert (row["chicagoland"], row["revenue"], row["ownership"], row["employees"]) == ("yes", 5e8, "public", 2500)
+    assert row["hq_city"] == "Chicago, IL"                                  # a known fact is never replaced here
+    assert conn.execute("SELECT revenue FROM accounts WHERE id = ?", (b,)).fetchone()[0] == 900000000
+    ev = {r["field"]: r["new"] for r in conn.execute("SELECT field, new FROM audit_log WHERE action = 'evidence'")}
+    assert ev["revenue"] == "https://acme.com/ir" and ev["chicagoland"] == "https://acme.com/loc"
+    assert apply_all_new(conn, cfg, p)["facts"] == 0                         # idempotent

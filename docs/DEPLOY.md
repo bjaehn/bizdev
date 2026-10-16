@@ -31,6 +31,7 @@ UI is exactly what the weekly run uses.
 * **Hiring page**: open postings per company, from each company's own Greenhouse / Lever / Ashby board (read daily) or the weekly search. The first scan that finds a posting on one of those boards identifies it. **Settings** turns the daily light refresh on or off.
 * **Operate → PE firms**: *Sync* (free) creates the firm list from accounts that have a sponsor; *Portfolio research* finds each firm's other Chicagoland companies; *Firm signals* looks for fund, exit and operating-partner news. The **PE firms** page shows each firm's portfolio and signals; the Monday run includes firm signals automatically.
 * **Operate → Enrich** proposes missing facts (revenue, employees, ownership, HQ) from public sources. **Enrich review** shows each proposal with its source; you accept the ones you trust. Nothing is applied automatically.
+* On **Enrich review**, "Apply all new facts" fills every fact the database does not have yet from the proposals file in one click (conflicts are never touched; each fact is logged with its source on the Changes page).
 * **Operate → Scan** (start with 5 accounts to see the cost), then **Score**, then **Build card (dry run)**. Ranked leads appear on the **Opportunities** page (the home page; the **Monday card** page shows the subset that would be posted); cost per run on **Runs & cost**.
 * Monday 05:00 Chicago the service runs scan, score and card by itself. It posts only if `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not `1`. There is no button anywhere that posts.
 

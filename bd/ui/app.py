@@ -34,7 +34,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from bd.accounts import Account, list_accounts
 from bd.brief_core import fallback_brief
 from bd.config import Config
-from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply_selected, create_account, load_proposals,
+from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply_all_new, apply_selected, create_account, load_proposals,
                        mark_reviewed, reject_candidate, remove_exclusion, update_account)
 from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
@@ -352,6 +352,7 @@ class App:
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
             ("GET", "/enrich"): lambda: self.enrich(req, conn),
             ("POST", "/enrich/apply"): lambda: self.enrich_apply(req, conn),
+            ("POST", "/enrich/apply-all"): lambda: self.enrich_apply_all(req, conn),
             ("GET", "/candidates"): lambda: self.candidates(conn),
             ("GET", "/hiring"): lambda: self.hiring(req, conn),
             ("POST", "/settings/refresh"): lambda: self.refresh_save(req, conn),
@@ -535,6 +536,20 @@ class App:
             self.say("ok", f"Applied {len(res.changed)} fact(s) to {prop.name}." + (f" Fit gate: {res.fit.verdict} → {res.fit.status}." if res.fit else ""))  # type: ignore[union-attr]
         else:
             self.say("err", "; ".join(res.errors))
+        return self.redirect(dest)
+
+    def enrich_apply_all(self, req: Request, conn: sqlite3.Connection) -> Response:
+        raw = req.f("file")
+        path = self._proposal_file(raw)
+        dest = f"/enrich?{urlencode({'file': raw})}"
+        if path is None:
+            self.say("err", "That proposals file could not be read.")
+            return self.redirect(dest)
+        r = apply_all_new(conn, self.cfg, path)
+        self.say("ok" if r["facts"] else "info",
+                 f"Applied {r['facts']} new fact(s) to {r['accounts']} account(s). Left alone: {r['conflicts_skipped']} fact(s) that differ from "
+                 f"what is already stored, {r['not_in_database']} row(s) for companies not in the database"
+                 + (f"; {r['failed']} account(s) failed validation" if r["failed"] else "") + ".")
         return self.redirect(dest)
 
     def reviewed(self, conn: sqlite3.Connection, account_id: int | None) -> Response:
