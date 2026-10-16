@@ -39,7 +39,15 @@ def static_problems(cfg: Config, env: Mapping[str, str]) -> list[str]:
     elif model not in cfg.pricing.models:
         out.append(f"The model {model!r} has no price in config.yaml, so costs show as unpriced and the spending limit cannot stop a run. "
                    "Use a priced model such as claude-sonnet-5-5.")
-    if not env.get("BD_USER_AGENT"):
+    ua = env.get("BD_USER_AGENT", "")
+    if not ua.strip():
         out.append("BD_USER_AGENT is not set: the SEC refuses unidentified requests, so company filings cannot be checked. "
                    "Set it to your company name and a contact email.")
+    else:
+        from bd.config import clean_user_agent
+        if clean_user_agent(ua) != ua:
+            out.append("BD_USER_AGENT has stray spaces, a line break, quotes or non-English characters; they are removed "
+                       "automatically, but re-save it as one plain line such as: YourCo BD Research (you@yourco.com)")
+        if "@" not in ua:
+            out.append("BD_USER_AGENT should include a contact email (the SEC asks for one), e.g. YourCo BD Research (you@yourco.com)")
     return out

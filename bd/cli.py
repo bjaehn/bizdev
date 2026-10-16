@@ -562,7 +562,17 @@ def check() -> None:
         client.run("Reply with the single word OK.", [{"role": "user", "content": "ping"}])
     except LLMError as e:
         _fail("The model connection failed: " + explain_error(str(e)))
-    typer.echo("Connection OK: the key, the model and the workspace settings work.")
+    from bd.verify import UrlVerifier
+    verifier = UrlVerifier(cfg, settings.user_agent)
+    try:
+        fetched = verifier.verify("https://www.sec.gov/")
+    finally:
+        verifier.close()
+    if not fetched.ok:
+        _fail(f"The model works, but fetching web pages fails ({fetched.reason}). Every source URL would be rejected, so no "
+              "facts could be added. If the reason mentions the header, re-save BD_USER_AGENT as one plain line, e.g. "
+              "YourCo BD Research (you@yourco.com).")
+    typer.echo("Connection OK: the key, the model, the workspace settings and web fetching work.")
 
 
 @app.command()

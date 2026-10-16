@@ -81,6 +81,8 @@ class UrlVerifier:
                     status, location = r.status_code, r.headers.get("location")
             except httpx.TimeoutException:
                 return VerifyResult(False, "timeout", final_url=current)
+            except httpx.LocalProtocolError:
+                return VerifyResult(False, "bad_request_header (check BD_USER_AGENT)", final_url=current)
             except httpx.HTTPError as e:
                 return VerifyResult(False, f"connect_error:{type(e).__name__}", final_url=current)
             if status in (301, 302, 303, 307, 308) and location:

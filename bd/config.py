@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -252,6 +253,19 @@ def load_config(path: str | os.PathLike[str] | None = None) -> Config:
     return cfg
 
 
+DEFAULT_USER_AGENT = "SEI-BD-Signal-Agent/0.1 (public-source research; set BD_USER_AGENT with a contact address)"
+
+
+def clean_user_agent(raw: str | None) -> str:
+    """Make a pasted BD_USER_AGENT safe as an HTTP header: one ASCII line, no leading/trailing space or stray quotes.
+    A trailing newline or space (easy to paste into a hosting dashboard) makes every request fail before it is sent."""
+    text = re.sub(r"\s+", " ", (raw or "")).strip()
+    text = text.encode("ascii", "replace").decode("ascii").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1].strip()
+    return text or DEFAULT_USER_AGENT
+
+
 @dataclass(frozen=True)
 class Settings:
     """Environment-only settings. Nothing here is ever read from config.yaml."""
@@ -271,11 +285,8 @@ class Settings:
             anthropic_model=e.get("ANTHROPIC_MODEL") or None,
             teams_webhook_url=e.get("TEAMS_WEBHOOK_URL") or None,
             db_path=e.get("BD_DB_PATH", "bd.sqlite"),
-            user_agent=e.get(
-                "BD_USER_AGENT",
-                "SEI-BD-Signal-Agent/0.1 (public-source research; set BD_USER_AGENT with a contact address)",
-            ),
-            user_agent_configured=bool(e.get("BD_USER_AGENT")),
+            user_agent=clean_user_agent(e.get("BD_USER_AGENT")),
+            user_agent_configured=bool((e.get("BD_USER_AGENT") or "").strip()),
         )
 
     def require_llm(self) -> tuple[str, str]:
