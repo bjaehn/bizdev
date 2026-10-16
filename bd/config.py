@@ -182,6 +182,14 @@ class Card(_Strict):
     title: str
 
 
+class Discovery(_Strict):
+    segments: list[str]
+    per_segment: int                   # companies asked for per segment
+    max_candidates_per_run: int        # new companies researched (enriched) per run
+    max_auto_add_per_run: int          # auto-adds per run; the rest go to the review queue
+    scan_unreviewed_per_run: int       # unreviewed auto-added accounts a single scan may include
+
+
 class Config(_Strict):
     scoring: Scoring
     post_gate: PostGate
@@ -196,6 +204,7 @@ class Config(_Strict):
     edgar: Edgar
     briefer: Briefer
     card: Card
+    discovery: Discovery
 
     @model_validator(mode="after")
     def _status_bounds(self) -> "Config":

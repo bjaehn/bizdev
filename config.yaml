@@ -181,3 +181,24 @@ card:
   max_bytes: 28000                # Teams adaptive card payloads are limited to about 28 KB
   max_buttons_per_lead: 3
   title: SEI Chicago BD Signals
+
+# Market research: `bd discover` finds Chicagoland companies by segment, researches their facts with the same
+# verified-evidence rules as `bd enrich`, auto-adds those that clear the fit gate, and queues the rest for a person.
+discovery:
+  per_segment: 8
+  max_candidates_per_run: 30
+  max_auto_add_per_run: 15
+  scan_unreviewed_per_run: 10     # auto-added accounts are scanned only up to this many per run until a person reviews them
+  segments:
+    - manufacturing and industrial products
+    - food, beverage and consumer packaged goods
+    - healthcare services, health systems and life sciences
+    - banking, insurance and asset management
+    - logistics, transportation and distribution
+    - business and professional services
+    - technology, software and data companies
+    - retail, e-commerce and hospitality
+    - energy, utilities, chemicals and materials
+    - construction, engineering and real estate
+    - education, nonprofits and associations
+    - media, marketing and telecommunications

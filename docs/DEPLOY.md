@@ -27,6 +27,7 @@ UI is exactly what the weekly run uses.
 ## First use
 
 * On first boot the 58 target accounts load from `accounts.csv`. Their facts are blank, so every account is **held** by the fit gate.
+* **Operate → Discover** (start with 2 segments) finds new Chicagoland companies; those that pass the fit gate appear on Accounts as *auto-added*, the rest wait on the **Discovery** page. Mark auto-added accounts reviewed once you have looked at them.
 * **Operate → Enrich** proposes missing facts (revenue, employees, ownership, HQ) from public sources. **Enrich review** shows each proposal with its source; you accept the ones you trust. Nothing is applied automatically.
 * **Operate → Scan** (start with 5 accounts to see the cost), then **Score**, then **Build card (dry run)**. Leads appear on the **Leads** page; cost per run on **Runs & cost**.
 * Monday 05:00 Chicago the service runs scan, score and card by itself. It posts only if `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not `1`. There is no button anywhere that posts.

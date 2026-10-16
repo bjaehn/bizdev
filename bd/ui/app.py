@@ -34,8 +34,8 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from bd.accounts import Account, list_accounts
 from bd.brief_core import fallback_brief
 from bd.config import Config
-from bd.curate import (EXCLUSION_REASONS, add_exclusion, apply_selected, create_account, load_proposals,
-                       remove_exclusion, update_account)
+from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply_selected, create_account, load_proposals,
+                       mark_reviewed, reject_candidate, remove_exclusion, update_account)
 from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
 from bd.jobs import KINDS, SCANNER_NAMES, JobError, JobRunner
@@ -347,6 +347,8 @@ class App:
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
             ("GET", "/enrich"): lambda: self.enrich(req, conn),
             ("POST", "/enrich/apply"): lambda: self.enrich_apply(req, conn),
+            ("GET", "/candidates"): lambda: self.candidates(conn),
+            ("POST", "/accounts/reviewed-all"): lambda: self.reviewed(conn, None),
             ("GET", "/exclusions"): lambda: self.exclusions(conn),
             ("POST", "/exclusions/add"): lambda: self.exclusion_add(req, conn),
             ("GET", "/runs"): lambda: self.runs(conn),
@@ -356,6 +358,10 @@ class App:
             return table[(m, p)]()
         if len(parts) == 2 and parts[0] == "accounts" and parts[1].isdigit():
             return self.account_page(req, conn, int(parts[1])) if m == "GET" else self.account_save(req, conn, int(parts[1]))
+        if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
+            return self.reviewed(conn, int(parts[1]))
+        if m == "POST" and len(parts) == 3 and parts[0] == "candidates" and parts[1].isdigit() and parts[2] in ("accept", "reject"):
+            return self.candidate_decide(conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "exclusions" and parts[1].isdigit() and parts[2] == "remove":
             ok = remove_exclusion(conn, self.cfg, int(parts[1]))
             self.say("ok" if ok else "err", "Exclusion removed." if ok else "No such exclusion.")
@@ -396,13 +402,16 @@ class App:
         q = req.q("q").strip().lower()
         accts = list_accounts(conn, status=None)
         counts = {s: sum(a.status == s for a in accts) for s in ("active", "hold_review", "excluded")}
+        unreviewed = sum(not a.reviewed for a in accts)
+        only_new = req.q("origin") == "unreviewed"
         excl = load_exclusions(conn)
         rows = []
         for a in accts:
-            if (status in counts and a.status != status) or (q and q not in a.name.lower()):
+            if (status in counts and a.status != status) or (q and q not in a.name.lower()) or (only_new and a.reviewed):
                 continue
             rows.append({"a": a, "fit": check_fit(a, excl, self.cfg)})
-        return self.render("accounts.html", page="accounts", rows=rows, counts=counts, status=status, q=req.q("q"), total=len(accts))
+        return self.render("accounts.html", page="accounts", rows=rows, counts=counts, status=status, q=req.q("q"), total=len(accts),
+                           unreviewed=unreviewed, only_new=only_new)
 
     def _account_ctx(self, conn: sqlite3.Connection, a: Account, form: dict[str, str], errors: list[str]) -> dict:
         fit = check_fit(a, load_exclusions(conn), self.cfg)
@@ -483,6 +492,27 @@ class App:
             self.say("err", "; ".join(res.errors))
         return self.redirect(dest)
 
+    def reviewed(self, conn: sqlite3.Connection, account_id: int | None) -> Response:
+        n = mark_reviewed(conn, account_id)
+        self.say("ok", f"{n} account(s) marked reviewed; they now scan like any other.")
+        return self.redirect(f"/accounts/{account_id}" if account_id is not None else "/accounts")
+
+    def candidates(self, conn: sqlite3.Connection) -> Response:
+        import json
+        rows = []
+        for r in conn.execute("SELECT * FROM candidates ORDER BY status = 'queued' DESC, id DESC LIMIT 300"):
+            rows.append({"c": r, "facts": json.loads(r["facts_json"] or "{}")})
+        return self.render("candidates.html", page="candidates", rows=rows)
+
+    def candidate_decide(self, conn: sqlite3.Connection, candidate_id: int, action: str) -> Response:
+        if action == "reject":
+            ok = reject_candidate(conn, candidate_id)
+            self.say("ok" if ok else "err", "Candidate rejected." if ok else "No such queued candidate.")
+        else:
+            res = accept_candidate(conn, self.cfg, candidate_id)
+            self.say("ok" if res.ok else "err", "Added to accounts." if res.ok else "; ".join(res.errors))
+        return self.redirect("/candidates")
+
     def exclusions(self, conn: sqlite3.Connection) -> Response:
         rows = conn.execute("SELECT * FROM exclusions ORDER BY lower(name)").fetchall()
         return self.render("exclusions.html", page="exclusions", rows=rows, errors=[], form={})
@@ -500,7 +530,7 @@ class App:
         rows = conn.execute("SELECT r.*, a.name AS account FROM runs r LEFT JOIN accounts a ON a.id = r.account_id ORDER BY r.id DESC LIMIT 300").fetchall()
         steps = conn.execute(
             "SELECT step, COUNT(*) n, SUM(tokens) tokens, SUM(est_cost) cost, SUM(est_cost IS NULL) unpriced "
-            "FROM runs WHERE account_id IS NOT NULL GROUP BY step ORDER BY step").fetchall()
+            "FROM runs WHERE account_id IS NOT NULL OR step LIKE 'discover%' GROUP BY step ORDER BY step").fetchall()
         return self.render("runs.html", page="runs", rows=rows, steps=steps)
 
     def audit(self, conn: sqlite3.Connection) -> Response:

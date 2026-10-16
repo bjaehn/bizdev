@@ -6,6 +6,10 @@
 <div class="row"><div><h1>{{ a.name }}</h1>
 <p class="sub">Fit gate: <span class="badge {{ 'good' if fit.verdict == 'pass' else ('warm' if fit.verdict == 'unknown' else 'bad') }}">{{ fit.verdict }}</span>
 status <b>{{ a.status }}</b>{% if fit.reasons %} · {{ fit.reasons|join('; ') }}{% endif %}</p></div></div>
+{% if a.origin == 'discovered' %}<div class="card"><h2 style="margin-top:0">Found by market research</h2>
+<p class="meta">Discovered {{ a.discovered_at or '' }}{% if a.source_url|safe_url %} via <a href="{{ a.source_url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ a.source_url|host }}</a>{% endif %}.
+{% if not a.reviewed %}Not yet reviewed: it is scanned only up to a per-run limit.{% else %}Reviewed.{% endif %}</p>
+{% if not a.reviewed %}<form method="post" action="/accounts/{{ a.id }}/reviewed"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Mark reviewed</button></form>{% endif %}</div>{% endif %}
 <div class="card">
 <h2 style="margin-top:0">Facts</h2>
 {{ errors_box(errors) }}

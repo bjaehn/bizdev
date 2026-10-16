@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS accounts (
     cik           TEXT,      -- SEC Central Index Key, 10 digits; human-supplied or confirmed via bd enrich
     tier          TEXT NOT NULL DEFAULT 'A' CHECK (tier IN ('A','B')),
     status        TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','hold_review','excluded')),
-    last_scanned  TEXT
+    last_scanned  TEXT,
+    origin        TEXT NOT NULL DEFAULT 'seed' CHECK (origin IN ('seed','manual','discovered')),
+    source_url    TEXT,      -- where discovery found it (provenance, not a fact source)
+    reviewed      INTEGER NOT NULL DEFAULT 1,   -- 0 = auto-added by discovery, not yet looked at by a person
+    discovered_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_name ON accounts(lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_domain ON accounts(domain) WHERE domain IS NOT NULL;
@@ -78,6 +82,22 @@ CREATE TABLE IF NOT EXISTS briefs (
     PRIMARY KEY (account_id, run_date)
 );
 
+-- Companies found by `bd discover` that did not clear the auto-add bar (or were rejected by the fit gate).
+-- status: queued (waiting for a person) | added | rejected. Rows are kept so a company is never researched twice.
+CREATE TABLE IF NOT EXISTS candidates (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    domain     TEXT,
+    segment    TEXT,
+    source_url TEXT NOT NULL,
+    found_date TEXT NOT NULL,
+    status     TEXT NOT NULL CHECK (status IN ('queued','added','rejected')),
+    reason     TEXT,
+    facts_json TEXT NOT NULL DEFAULT '{}',
+    account_id INTEGER REFERENCES accounts(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_candidates_name ON candidates(lower(name));
+
 CREATE TABLE IF NOT EXISTS exclusions (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL,
@@ -114,4 +134,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(accounts)")}
     if "cik" not in cols:
         conn.execute("ALTER TABLE accounts ADD COLUMN cik TEXT")
+    for col, ddl in (("origin", "TEXT NOT NULL DEFAULT 'seed'"), ("source_url", "TEXT"),
+                     ("reviewed", "INTEGER NOT NULL DEFAULT 1"), ("discovered_at", "TEXT")):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")
     conn.commit()

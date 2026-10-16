@@ -148,6 +148,11 @@ def scan(
     init_db(conn)
     _print_gate(apply_fit_gate(conn, cfg))
     accounts = list_accounts(conn, tier=tier, limit=limit)
+    from bd.discover import select_scan_accounts
+    accounts, held_back = select_scan_accounts(accounts, cfg)
+    if held_back:
+        typer.echo(f"{held_back} auto-added account(s) not yet reviewed are held back this run "
+                   f"(limit {cfg.discovery.scan_unreviewed_per_run}); mark them reviewed in the app to scan them all.")
     if not accounts:
         _fail("No accounts passed the fit gate. Fill in the held accounts' facts or run `bd seed accounts.csv`.")
     due = [a for a in accounts if is_due(a, run_date, cfg, force)]
@@ -178,6 +183,57 @@ def scan(
         typer.echo("Every scan call failed (bad API key or model, no network?). Exiting with an error so a scheduled "
                    "run stops before scoring and posting.", err=True)
         raise typer.Exit(code=3)
+
+
+@app.command()
+def discover(
+    segment: Optional[str] = typer.Option(None, help="Research this one segment instead of the configured list"),
+    limit: Optional[int] = typer.Option(None, help="Research at most N segments"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List what would be researched; no API calls"),
+) -> None:
+    """Market research: find Chicagoland companies by segment, research their facts, auto-add those that clear the
+    fit gate (marked unreviewed, scanned only up to a per-run limit), and queue the rest for a person."""
+    from bd.db import connect, init_db
+    from bd.discover import Discoverer, run_discover
+    from bd.edgar import EdgarClient
+    from bd.enrich import Enricher
+    from bd.llm import AnthropicWebSearchClient
+    from bd.verify import UrlVerifier
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    segs = [segment] if segment else cfg.discovery.segments[: limit or None]
+    conn = connect(settings.db_path)
+    init_db(conn)
+    typer.echo(f"{len(segs)} segment(s); up to {cfg.discovery.per_segment} companies each; research at most "
+               f"{cfg.discovery.max_candidates_per_run} new companies, auto-add at most {cfg.discovery.max_auto_add_per_run}.")
+    if dry_run:
+        for s_ in segs:
+            typer.echo(f"  would research: {s_}")
+        return
+    try:
+        key, model = settings.require_llm()
+    except RuntimeError as e:
+        _fail(str(e))
+        raise
+    web = AnthropicWebSearchClient(cfg, model=model, api_key=key)
+    verifier = UrlVerifier(cfg, settings.user_agent)
+    edgar = EdgarClient(cfg, settings.user_agent) if settings.user_agent_configured else None
+    summary = run_discover(conn, cfg, Discoverer(cfg, web, verifier), Enricher(cfg, web, verifier, edgar), run_date,
+                           model=model, segments=segs, workers=workers, log=typer.echo)
+    typer.echo(f"\nFound {summary.found} ({summary.skipped_known} already known, {summary.skipped_source} with an "
+               f"unverifiable source); researched {summary.researched}: {len(summary.added)} auto-added, "
+               f"{len(summary.queued)} queued for review, {len(summary.rejected)} rejected by the fit gate.")
+    note = f" ({summary.unpriced_calls} calls unpriced)" if summary.unpriced_calls else ""
+    typer.echo(f"Total: {summary.tokens:,} tokens, ${summary.est_cost:.4f} estimated{note}, {summary.errors} call errors.")
+    if summary.added:
+        typer.echo("Auto-added (unreviewed, tier B): " + ", ".join(summary.added))
+    if summary.budget_hit:
+        typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}); some candidates were not researched.", err=True)
+    if summary.segments and summary.errors >= summary.segments and not summary.researched:
+        _fail("Every discovery call failed (bad API key or model, no network?).")
 
 
 @app.command()

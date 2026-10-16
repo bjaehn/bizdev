@@ -33,6 +33,10 @@ class Account(BaseModel):
     tier: str = "A"
     status: str = "active"
     last_scanned: str | None = None
+    origin: str = "seed"
+    source_url: str | None = None
+    reviewed: int = 1
+    discovered_at: str | None = None
 
 
 def list_accounts(conn: sqlite3.Connection, tier: str = "all", status: str | None = "active",

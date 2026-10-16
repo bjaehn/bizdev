@@ -172,6 +172,7 @@ shows whether each secret is set, never its value. The container drops root befo
 16. **Login throttle is in memory and keyed on `X-Forwarded-For`.** It resets on restart, and a client that can forge that header gets a fresh per-client counter (the global limit of 60 failures/hour still applies). Single replica only.
 17. **`wsgiref` is not a hardened internet server.** Connections time out after 30 s and bodies are capped at 64 KB, but there is no rate limiting beyond login and no slow-loris protection beyond the timeout; a reverse proxy in front (the host platform's edge) is assumed.
 18. **Docker image not built in CI here.** The Dockerfile and entrypoint were reviewed and the server was run end to end locally, but the image build itself was not exercised in the development sandbox.
+19. **Auto-added companies are not human-reviewed.** `bd discover` adds a company only when the fit gate passes on facts that each have an evidence URL the search tool returned and that resolves, with a verified domain, under a per-run cap. That is as strong as the other pipelines, but a mis-identified company (same name, different entity) is still possible. Mitigations: they are marked auto-added, tier B, and scanned only up to `discovery.scan_unreviewed_per_run` per run until reviewed; every add is audited with its source; the Discovery page and Accounts filter make review quick. Discovery sends company names already in the database to the model (to avoid duplicates), in addition to the data listed in section 1.
 
 ## 6. Decisions for IT
 

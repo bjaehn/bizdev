@@ -20,6 +20,15 @@
 {% if busy %}<div class="flash err">A job is running. Open it below; new jobs wait until it finishes.</div>{% endif %}
 
 <div class="card">
+<h2 style="margin-top:0">Discover companies</h2>
+<p class="meta">Market research: finds Chicagoland companies by segment, verifies their facts, adds those that pass the fit gate (marked auto-added) and queues the rest on the Discovery page. Start with 2 segments to see the cost. Uses paid model calls.</p>
+<form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="discover">
+<div class="grid"><div><label>How many segments (1-12)</label><input type="number" name="limit" value="2" min="1" max="12" required></div></div>
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
+<p><button type="submit">Run discover</button></p></form>
+</div>
+
+<div class="card">
 <h2 style="margin-top:0">Enrich accounts</h2>
 <p class="meta">Looks up missing facts for accounts on hold and writes proposals. Review them on the Enrich review page; nothing is applied automatically. Uses paid model calls.</p>
 <form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="enrich">

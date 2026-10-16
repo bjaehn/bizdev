@@ -9,7 +9,11 @@
 <a class="badge warm" href="/accounts?status=hold_review">{{ counts.hold_review }} held for review</a>
 <a class="badge bad" href="/accounts?status=excluded">{{ counts.excluded }} excluded</a>
 <a class="badge" href="/accounts">all</a>
+{% if unreviewed %}<a class="badge warm" href="/accounts?origin=unreviewed">{{ unreviewed }} auto-added, not reviewed</a>{% endif %}
 </div>
+{% if unreviewed %}<form method="post" action="/accounts/reviewed-all" class="card"><input type="hidden" name="csrf" value="{{ csrf }}">
+<span class="meta">Auto-added companies are scanned only a few per run until you review them.</span>
+<button class="ghost" type="submit">Mark all {{ unreviewed }} as reviewed</button></form>{% endif %}
 <form method="get" action="/accounts" class="filters">
 <input type="text" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
 <select name="status" aria-label="Status"><option value="">any status</option>
@@ -18,7 +22,7 @@
 <div class="wrap"><table>
 <tr><th>Account</th><th>Status</th><th>Why</th><th>Chicagoland</th><th class="num">Revenue</th><th class="num">Employees</th><th>Ownership</th><th>Tier</th><th>Last scanned</th></tr>
 {% for r in rows %}{% set a = r.a %}
-<tr><td><a href="/accounts/{{ a.id }}">{{ a.name }}</a></td>
+<tr><td><a href="/accounts/{{ a.id }}">{{ a.name }}</a>{% if not a.reviewed %} <span class="badge warm">auto-added</span>{% elif a.origin == 'discovered' %} <span class="badge">discovered</span>{% endif %}</td>
 <td><span class="badge {{ 'good' if a.status == 'active' else ('warm' if a.status == 'hold_review' else 'bad') }}">{{ a.status }}</span></td>
 <td class="meta">{{ r.fit.reasons|join('; ') }}</td>
 <td>{{ a.chicagoland }}</td><td class="num">{{ a.revenue|money }}</td><td class="num">{{ a.employees|show }}</td><td>{{ a.ownership|show }}</td><td>{{ a.tier }}</td><td>{{ a.last_scanned or 'never' }}</td></tr>

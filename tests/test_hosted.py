@@ -354,3 +354,36 @@ def test_scheduler_submits_weekly_once_and_waits_when_busy(hosted):
     hosted.runner.wait()
     assert hosted.runner.get(jid).kind == "weekly"
     assert s.check() is None                       # already ran for this Monday
+
+
+# ---- discovery in the app -----------------------------------------------------------------------------------------
+def test_discover_job_is_validated_and_dry_run_free(hosted):
+    assert validate("discover", {"limit": "2"}) == ["discover", "--limit", "2"]
+    for bad in ({}, {"limit": "0"}, {"limit": "13"}, {"limit": "x"}):
+        with pytest.raises(JobError):
+            validate("discover", bad)
+    with pytest.raises(JobError, match="confirm"):
+        hosted.runner.submit("discover", {"limit": "2"})
+    assert sequence_for("discover", ["discover", "--limit", "2"], "2026-01-05") == [["discover", "--limit", "2", "--as-of", "2026-01-05"]]
+
+
+def test_discovery_page_queue_and_review_buttons(hosted):
+    import sqlite3
+    c = sqlite3.connect(hosted.db)
+    c.execute("INSERT INTO accounts(name, domain, chicagoland, ownership, revenue, origin, reviewed, tier) "
+              "VALUES ('Auto Co','auto.com','yes','public',5e8,'discovered',0,'B')")
+    c.execute("INSERT INTO candidates(name,domain,segment,source_url,found_date,status,reason,facts_json) VALUES "
+              "('Queued Co','q.com','mfg','https://src.example/a','2026-10-16','queued','size unverified','{\"chicagoland\":\"yes\"}')")
+    c.commit()
+    s, csrf = session(hosted), hosted.app._csrf
+    page = call(hosted.app, "GET", "/candidates", cookie=s).body
+    assert "Queued Co" in page and "size unverified" in page and "Add</button>" in page
+    accts = call(hosted.app, "GET", "/accounts", cookie=s).body
+    assert "auto-added" in accts and "Mark all 1 as reviewed" in accts
+    assert "Not yet reviewed" in call(hosted.app, "GET", "/accounts/1", cookie=s).body
+    r = call(hosted.app, "POST", "/accounts/1/reviewed", {"csrf": csrf}, cookie=s)
+    assert r.code == 303
+    assert "auto-added" not in call(hosted.app, "GET", "/accounts", cookie=s).body
+    assert call(hosted.app, "POST", "/candidates/1/accept", {"csrf": csrf}, cookie=s).code == 303
+    assert "Queued Co" in call(hosted.app, "GET", "/accounts", cookie=s).body
+    assert call(hosted.app, "POST", "/candidates/1/accept", {}, cookie=s).code == 403      # CSRF still required

@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 # kind -> (label, spends model tokens?, scheduled-only?)
 KINDS: dict[str, tuple[str, bool, bool]] = {
+    "discover": ("Discover companies (market research)", True, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -95,6 +96,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
             raise JobError(f"{key} must be a whole number from {lo} to {hi}.")
         return int(raw)
 
+    if kind == "discover":
+        return ["discover", "--limit", str(num("limit", 1, 12, required=True))]
     if kind == "enrich":
         args = ["enrich", "--limit", str(num("limit", 1, 100, required=True))]
         only = (form.get("only") or "").strip()
@@ -128,7 +131,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
         return [["scan", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
-    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich") else [args]
+    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover") else [args]
 
 
 def redact(text: str, env: dict[str, str] | None = None) -> str:

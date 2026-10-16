@@ -80,7 +80,12 @@ def update_account(conn: sqlite3.Connection, cfg: Config, account_id: int, form:
     return write_facts(conn, cfg, account_id, data, actor)
 
 
-def create_account(conn: sqlite3.Connection, cfg: Config, name: str, form: dict[str, str], actor: str = "ui") -> WriteResult:
+_EXTRA_COLUMNS = {"origin", "source_url", "reviewed", "discovered_at"}
+
+
+def create_account(conn: sqlite3.Connection, cfg: Config, name: str, form: dict[str, str], actor: str = "ui",
+                   extra: dict[str, object] | None = None) -> WriteResult:
+    """`extra` carries provenance columns (origin, source_url, reviewed, discovered_at); facts come from `form`."""
     name = " ".join((name or "").split())
     if not name:
         return WriteResult(False, ["name is required"])
@@ -91,8 +96,9 @@ def create_account(conn: sqlite3.Connection, cfg: Config, name: str, form: dict[
         return WriteResult(False, errs)
     try:
         with conn:
-            cols = ["name", *data]
-            cur = conn.execute(f"INSERT INTO accounts({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", [name, *data.values()])
+            row = {**data, **{k: v for k, v in (extra or {}).items() if k in _EXTRA_COLUMNS}}
+            cols = ["name", *row]
+            cur = conn.execute(f"INSERT INTO accounts({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", [name, *row.values()])
             log_audit(conn, actor, "create", cur.lastrowid, "name", None, name)
     except sqlite3.IntegrityError as e:
         return WriteResult(False, [_friendly(e)])
@@ -199,3 +205,46 @@ def apply_selected(conn: sqlite3.Connection, cfg: Config, account_id: int, selec
     if errs:
         return WriteResult(False, errs, account_id=account_id)
     return write_facts(conn, cfg, account_id, data, actor)
+
+
+# ---- discovery review queue ----------------------------------------------------------------------------------------
+
+def mark_reviewed(conn: sqlite3.Connection, account_id: int | None = None, actor: str = "ui") -> int:
+    """A person has looked at auto-added account(s): they now scan like any other. None = all unreviewed."""
+    where, args = ("AND id = ?", [account_id]) if account_id is not None else ("", [])
+    rows = conn.execute(f"SELECT id FROM accounts WHERE reviewed = 0 {where}", args).fetchall()
+    with conn:
+        for r in rows:
+            conn.execute("UPDATE accounts SET reviewed = 1 WHERE id = ?", (r["id"],))
+            log_audit(conn, actor, "update", r["id"], "reviewed", 0, 1)
+    return len(rows)
+
+
+def accept_candidate(conn: sqlite3.Connection, cfg: Config, candidate_id: int, actor: str = "ui") -> WriteResult:
+    """Create an account from a queued candidate's researched facts. The person accepting is the review, so it is
+    marked reviewed; the fit gate still decides whether it is scanned."""
+    import json
+    from datetime import datetime, timezone
+
+    c = conn.execute("SELECT * FROM candidates WHERE id = ? AND status = 'queued'", (candidate_id,)).fetchone()
+    if c is None:
+        return WriteResult(False, ["no such queued candidate"])
+    facts = {k: v for k, v in json.loads(c["facts_json"]).items() if k in SEED_COLUMNS and k != "name"}
+    facts.setdefault("domain", c["domain"] or "")
+    facts["tier"] = "B"
+    res = create_account(conn, cfg, c["name"], facts, actor,
+                         extra={"origin": "discovered", "source_url": c["source_url"], "reviewed": 1,
+                                "discovered_at": datetime.now(timezone.utc).date().isoformat()})
+    if res.ok:
+        with conn:
+            conn.execute("UPDATE candidates SET status = 'added', account_id = ? WHERE id = ?", (res.account_id, candidate_id))
+    return res
+
+
+def reject_candidate(conn: sqlite3.Connection, candidate_id: int, actor: str = "ui") -> bool:
+    with conn:
+        cur = conn.execute("UPDATE candidates SET status = 'rejected', reason = COALESCE(reason, '') || ' | rejected by a person' "
+                           "WHERE id = ? AND status = 'queued'", (candidate_id,))
+        if cur.rowcount:
+            log_audit(conn, actor, "update", None, "candidate_rejected", None, candidate_id)
+    return bool(cur.rowcount)
