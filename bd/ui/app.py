@@ -129,7 +129,7 @@ class App:
         self._flash: list[tuple[str, str]] = []
         self.env = Environment(loader=PackageLoader("bd.ui", "templates"), autoescape=select_autoescape(["html"]),
                                trim_blocks=True, lstrip_blocks=True)
-        self.env.filters.update(money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
+        self.env.filters.update(status_label=lambda v: {'active': 'Ready to scan', 'hold_review': 'Needs facts', 'excluded': 'Excluded'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
                                 hosted=hosted is not None, operate=jobs is not None)
         init_conn = connect(db_path)
