@@ -198,10 +198,10 @@ def test_there_is_no_posting_job_and_scheduled_only_job_is_not_user_startable():
 
 def test_weekly_posts_only_by_omitting_dry_run_and_honors_bd_dry_run(monkeypatch):
     monkeypatch.delenv("BD_DRY_RUN", raising=False)
-    assert "--dry-run" not in sequence_for("weekly", [], "2026-01-05")[2]
+    assert "--dry-run" not in sequence_for("weekly", [], "2026-01-05")[-1]
     monkeypatch.setenv("BD_DRY_RUN", "1")
-    assert "--dry-run" in sequence_for("weekly", [], "2026-01-05")[2]
-    assert "--dry-run" in sequence_for("weekly_dry", [], "2026-01-05")[2]
+    assert "--dry-run" in sequence_for("weekly", [], "2026-01-05")[-1]
+    assert "--dry-run" in sequence_for("weekly_dry", [], "2026-01-05")[-1]
 
 
 @pytest.mark.parametrize("kind,form", [

@@ -16,6 +16,10 @@ status <b>{{ a.status }}</b>{% if fit.reasons %} · {{ fit.reasons|join('; ') }}
 {{ facts_form(form, '/accounts/' ~ a.id, 'Save facts') }}
 </div>
 
+{% if firms %}<div class="card"><h2 style="margin-top:0">Private equity owner</h2>
+<p>{% for f in firms %}<a href="/firms/{{ f.id }}">{{ f.name }}</a>{% if f.link_status == 'exited' %} <span class="badge">exited</span>{% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
+<p class="meta">The owner's own news (a new fund, an exit, an operating-partner hire) adds a small, capped lift to this account's score, only when the account already has a signal of its own.</p></div>{% endif %}
+
 <h2>Signals ({{ signals|length }})</h2>
 {% if signals %}
 <div class="wrap"><table>

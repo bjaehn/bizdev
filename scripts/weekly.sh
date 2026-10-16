@@ -25,6 +25,7 @@ if [ "${BD_DRY_RUN:-0}" = "1" ]; then card_args+=(--dry-run); fi
 echo "== weekly run for ${as_of} (dry run: ${BD_DRY_RUN:-0})"
 "${bd[@]}" seed "${seed_args[@]}"          # idempotent: keeps the database in step with the reviewed CSVs
 "${bd[@]}" scan --as-of "${as_of}"
+"${bd[@]}" pe-signals --as-of "${as_of}"   # firm-level signals; a no-op when there are no PE firms yet
 "${bd[@]}" score --as-of "${as_of}"
 "${bd[@]}" card --as-of "${as_of}" ${card_args[@]+"${card_args[@]}"}
 echo "== weekly run finished"

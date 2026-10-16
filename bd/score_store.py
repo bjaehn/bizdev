@@ -13,6 +13,7 @@ from datetime import date
 from bd.accounts import Account, list_accounts
 from bd.config import Config
 from bd.models import ScoringSignal
+from bd.pe_store import firm_signals_for_account
 from bd.scoring import ScoreResult, score_account
 
 
@@ -68,7 +69,7 @@ def drop_lapsed_status_signals(signals: list[ScoringSignal], as_of: date, cfg: C
 def score_one(conn: sqlite3.Connection, cfg: Config, account: Account, as_of: date) -> ScoredAccount:
     rows = load_signal_rows(conn, account.id)
     signals = drop_lapsed_status_signals(dedupe_same_event([to_scoring_signal(r) for r in rows]), as_of, cfg)
-    return ScoredAccount(account, {r["id"]: r for r in rows}, signals, score_account(signals, as_of, cfg))
+    return ScoredAccount(account, {r["id"]: r for r in rows}, signals, score_account(signals, as_of, cfg, firm_signals_for_account(conn, account.id)))
 
 
 def score_accounts(conn: sqlite3.Connection, cfg: Config, as_of: date) -> list[ScoredAccount]:

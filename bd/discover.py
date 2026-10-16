@@ -61,6 +61,9 @@ class DiscoverResponse(BaseModel):
 class Found:
     company: Company
     segment: str
+    firm_id: int | None = None       # set when the company came from a PE firm's portfolio page
+    link_source: str | None = None   # verified portfolio listing (on the firm's own site) to record as a link
+    exited: bool = False
 
 
 @dataclass
@@ -186,18 +189,35 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
 
     # ---- phase 2: research each new candidate's facts with the enrich rules ------------------------------------
     new = new[: dc.max_candidates_per_run]
+    if not out.budget_hit:
+        research_and_add(conn, cfg, discoverer.verifier, enricher, new, as_of, workers, out, spend, log)
+    if cap is not None and out.est_cost >= cap:
+        out.budget_hit = True
+    return out
+
+
+def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifier, enricher: Enricher, new: list[Found],
+                     as_of: date, workers: int, out: DiscoverSummary,
+                     spend: Callable[[Usage], float | None],
+                     log: Callable[[str], None] = lambda s: None) -> dict[str, int | None]:
+    """Research each new company's facts (verified evidence only), then auto-add / queue / reject it. Shared by market
+    discovery and PE portfolio research. Returns {company name: account id or None}."""
+    from bd.pe_store import link_company
+
+    dc = cfg.discovery
     exclusions = load_exclusions(conn)
 
     def research(f: Found):
         dom = normalize_domain(f.company.domain) if f.company.domain else ""
         hint = dom if dom and is_valid_domain(dom) and not host_in(dom, cfg.sources.blocked_domains) \
-            and discoverer.verifier.verify(f"https://{dom}").ok else None
+            and verifier.verify(f"https://{dom}").ok else None
         city = ", ".join(x for x in (f.company.hq_city, f.company.hq_state) if x) or None
         return hint, enricher.enrich(Account(id=0, name=f.company.name, domain=hint, hq_city=city), as_of)
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        researched = list(ex.map(research, new)) if not out.budget_hit else []
+        researched = list(ex.map(research, new))
     auto_added = 0
+    ids: dict[str, int | None] = {}
     for f, (hint, r) in zip(new, researched):
         out.researched += 1
         cost = spend(r.usage)
@@ -210,8 +230,6 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
         if not r.error and not errs:
             verdict = check_fit(Account(id=0, name=f.company.name, **{k: v for k, v in data.items()}), exclusions, cfg)
         reason = r.error or "; ".join(errs) or "; ".join(verdict.reasons if verdict else [])
-        row = {"name": f.company.name, "domain": data.get("domain"), "segment": f.segment,
-               "source_url": f.company.source_url, "found_date": as_of.isoformat()}
         status = "queued"
         account_id = None
         if verdict and verdict.verdict == "fail":
@@ -230,17 +248,19 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
         if r.error:
             out.errors += 1
         (out.added if status == "added" else out.rejected if status == "rejected" else out.queued).append(f.company.name)
+        ids[f.company.name] = account_id
         _log(conn, as_of, "discover_enrich", account_id, r.usage.total_tokens, cost, r.error)
         with conn:
             conn.execute("INSERT OR IGNORE INTO candidates(name,domain,segment,source_url,found_date,status,reason,facts_json,account_id) "
                          "VALUES (?,?,?,?,?,?,?,?,?)",
-                         (row["name"], row["domain"], row["segment"], row["source_url"], row["found_date"], status,
+                         (f.company.name, data.get("domain"), f.segment, f.company.source_url, as_of.isoformat(), status,
                           reason or None, json.dumps({**form, **{k: v for k, v in r.row.items() if k in ("evidence_urls", "notes")}}),
                           account_id))
+            if f.firm_id is not None and f.link_source:
+                link_company(conn, f.firm_id, f.company.name, data.get("domain"), f.link_source, as_of, account_id,
+                             "exited" if f.exited else "current")
         log(f"  {f.company.name}: {status}" + (f" ({reason})" if reason and status != 'added' else ""))
-    if cap is not None and out.est_cost >= cap:
-        out.budget_hit = True
-    return out
+    return ids
 
 
 def select_scan_accounts(accounts: list[Account], cfg: Config) -> tuple[list[Account], int]:

@@ -240,6 +240,107 @@ def discover(
         _fail("Every discovery call failed (bad API key or model, no network?).")
 
 
+def _pe_deps(settings, cfg):
+    from bd.edgar import EdgarClient
+    from bd.enrich import Enricher
+    from bd.llm import AnthropicWebSearchClient
+    from bd.verify import UrlVerifier
+
+    try:
+        key, model = settings.require_llm()
+    except RuntimeError as e:
+        _fail(str(e))
+        raise
+    web = AnthropicWebSearchClient(cfg, model=model, api_key=key)
+    verifier = UrlVerifier(cfg, settings.user_agent)
+    edgar = EdgarClient(cfg, settings.user_agent) if settings.user_agent_configured else None
+    return web, verifier, Enricher(cfg, web, verifier, edgar), model
+
+
+@app.command(name="pe-sync")
+def pe_sync() -> None:
+    """Derive PE firms and portfolio links from accounts that have a sponsor (no API calls)."""
+    from bd.db import connect, init_db
+    from bd.pe_store import sync_from_accounts
+
+    settings = Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    r = sync_from_accounts(conn)
+    n = conn.execute("SELECT COUNT(*) FROM pe_firms").fetchone()[0]
+    typer.echo(f"{n} PE firm(s) known: {r.firms_added} added, {r.links_added} portfolio link(s) added, {r.links_exited} marked exited.")
+
+
+@app.command(name="pe-portfolio")
+def pe_portfolio(
+    firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
+    limit: Optional[int] = typer.Option(None, help="At most N firms (least recently researched first)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List the firms that would be researched; no API calls"),
+) -> None:
+    """Find each PE firm's Chicagoland portfolio companies from its own site; research and auto-add the new ones."""
+    from bd.db import connect, init_db
+    from bd.pe_firms import PortfolioFinder, run_portfolio, select_firms
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    sync_from_accounts(conn)
+    firms = select_firms(conn, firm, limit or cfg.pe_firms.max_firms_per_run, "last_portfolio")
+    typer.echo(f"{len(firms)} PE firm(s) to research.")
+    if dry_run or not firms:
+        for f in firms:
+            typer.echo(f"  would research: {f['name']}")
+        return
+    web, verifier, enricher, model = _pe_deps(settings, cfg)
+    s = run_portfolio(conn, cfg, PortfolioFinder(cfg, web, verifier), enricher, firms, run_date, model, workers, log=typer.echo)
+    typer.echo(f"\nFound {s.found} portfolio companies ({s.skipped_known} already known, {s.skipped_source} with an unverifiable "
+               f"source); researched {s.researched}: {len(s.added)} auto-added, {len(s.queued)} queued, {len(s.rejected)} rejected.")
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.errors} call errors.")
+    sync_from_accounts(conn)
+    if s.segments and s.errors >= s.segments and not s.found:
+        _fail("Every portfolio call failed (bad API key or model, no network?).")
+
+
+@app.command(name="pe-signals")
+def pe_signals(
+    firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
+    limit: Optional[int] = typer.Option(None, help="At most N firms (least recently scanned first)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List the firms that would be scanned; no API calls"),
+) -> None:
+    """Look for firm-level signals (new fund, exit, operating-partner hire) that lift its portfolio companies' scores."""
+    from bd.db import connect, init_db
+    from bd.pe_firms import FirmScanner, run_firm_scans, select_firms
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    sync_from_accounts(conn)
+    firms = select_firms(conn, firm, limit or cfg.pe_firms.max_firms_per_run)
+    typer.echo(f"{len(firms)} PE firm(s) to scan.")
+    if dry_run or not firms:
+        for f in firms:
+            typer.echo(f"  would scan: {f['name']}")
+        return
+    web, verifier, _enricher, model = _pe_deps(settings, cfg)
+    s = run_firm_scans(conn, cfg, FirmScanner(cfg, web, verifier), firms, run_date, model, workers, log=typer.echo)
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.new_signals} new firm signals, {s.errors} call errors.")
+    if s.firms and s.errors == s.firms:
+        typer.echo("Every firm call failed (bad API key or model, no network?).", err=True)
+        raise typer.Exit(code=3)
+
+
 @app.command()
 def ui(
     port: int = typer.Option(8765, help="Port on 127.0.0.1 (0 = pick a free one)"),
@@ -420,6 +521,8 @@ def score(
     cfg, settings = load_config(), Settings.from_env()
     conn = connect(settings.db_path)
     init_db(conn)
+    from bd.pe_store import sync_from_accounts
+    sync_from_accounts(conn)                      # so a sponsor's activity reaches its portfolio companies
     scored = score_accounts(conn, cfg, run_date)
     if not scored:
         _fail("No active accounts to score. Seed accounts and fill in their fit-gate facts first.")

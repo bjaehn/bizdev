@@ -37,12 +37,13 @@ def weekly(fakebd, **env):
     return sh([str(SCRIPTS / "weekly.sh")], {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_MODEL": "m", "BD_BIN": str(exe), **env})
 
 
-def test_weekly_runs_the_four_steps_in_order_with_the_chicago_run_date(fakebd):
+def test_weekly_runs_its_steps_in_order_with_the_chicago_run_date(fakebd):
     r = weekly(fakebd, BD_AS_OF="2026-10-19")
     assert r.returncode == 0, r.stderr
     calls = fakebd[1].read_text().splitlines()
     assert calls == ["seed accounts.csv --exclusions exclusions.csv",
-                     "scan --as-of 2026-10-19", "score --as-of 2026-10-19", "card --as-of 2026-10-19"]
+                     "scan --as-of 2026-10-19", "pe-signals --as-of 2026-10-19", "score --as-of 2026-10-19",
+                     "card --as-of 2026-10-19"]
 
 
 def test_weekly_default_run_date_is_the_chicago_date(fakebd):

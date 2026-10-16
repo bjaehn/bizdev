@@ -105,6 +105,51 @@ CREATE TABLE IF NOT EXISTS settings (
     updated    TEXT NOT NULL
 );
 
+-- Private equity firms and the companies they own. Firms are derived from accounts with a sponsor, or found by
+-- portfolio research; a link with account_id NULL is a portfolio company that is not (yet) an account.
+CREATE TABLE IF NOT EXISTS pe_firms (
+    id             INTEGER PRIMARY KEY,
+    name           TEXT NOT NULL,
+    domain         TEXT,
+    hq_city        TEXT,
+    portfolio_url  TEXT,
+    origin         TEXT NOT NULL DEFAULT 'derived' CHECK (origin IN ('derived','manual')),
+    status         TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','excluded')),
+    created        TEXT NOT NULL,
+    last_scanned   TEXT,
+    last_portfolio TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_pe_firms_name ON pe_firms(lower(name));
+
+CREATE TABLE IF NOT EXISTS portfolio_links (
+    id             INTEGER PRIMARY KEY,
+    firm_id        INTEGER NOT NULL REFERENCES pe_firms(id),
+    account_id     INTEGER REFERENCES accounts(id),
+    company_name   TEXT NOT NULL,
+    company_domain TEXT,
+    status         TEXT NOT NULL DEFAULT 'current' CHECK (status IN ('current','exited')),
+    origin         TEXT NOT NULL DEFAULT 'account' CHECK (origin IN ('account','portfolio','manual')),
+    source_url     TEXT,
+    found_date     TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_portfolio_firm_company ON portfolio_links(firm_id, lower(company_name));
+
+-- Firm-level signals (new fund, operating-partner hire, exit). They never score a company by themselves; see
+-- bd.scoring.sponsor_lift.
+CREATE TABLE IF NOT EXISTS firm_signals (
+    id            INTEGER PRIMARY KEY,
+    firm_id       INTEGER NOT NULL REFERENCES pe_firms(id),
+    type          TEXT NOT NULL,
+    event_date    TEXT NOT NULL,
+    detected_date TEXT NOT NULL,
+    summary       TEXT NOT NULL,
+    source_url    TEXT NOT NULL,
+    source_type   TEXT NOT NULL,
+    confidence    TEXT NOT NULL CHECK (confidence IN ('High','Medium','Low')),
+    hash          TEXT NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS ix_firm_signals_firm ON firm_signals(firm_id, event_date);
+
 CREATE TABLE IF NOT EXISTS exclusions (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL,

@@ -238,6 +238,8 @@ def accept_candidate(conn: sqlite3.Connection, cfg: Config, candidate_id: int, a
     if res.ok:
         with conn:
             conn.execute("UPDATE candidates SET status = 'added', account_id = ? WHERE id = ?", (res.account_id, candidate_id))
+            conn.execute("UPDATE portfolio_links SET account_id = ? WHERE account_id IS NULL AND lower(company_name) = lower(?)",
+                         (res.account_id, c["name"]))
     return res
 
 

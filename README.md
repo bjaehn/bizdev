@@ -74,6 +74,7 @@ signals validated by code; none writes outreach.
 | `bd export [--accounts accounts.csv] [--exclusions exclusions.csv]` | Write the database's accounts and exclusions back to CSV (for git or backup). Overwrites those files, so review with `git diff` |
 | `bd ui` | Open the local review-and-curate UI (see **Local UI** below) |
 | `bd discover [--segment TEXT] [--limit N] [--dry-run]` | **Market research.** Finds Chicagoland companies by segment (`discovery.segments` in config), researches each one's facts with the same verified-evidence rules as `enrich`, **auto-adds** those that pass the fit gate (tier B, marked *auto-added*), queues uncertain ones on the Discovery page and records fit-gate failures so they are never researched twice. Auto-added accounts are scanned only up to `discovery.scan_unreviewed_per_run` per run until you mark them reviewed |
+| `bd pe-sync` / `bd pe-portfolio [--firm T] [--limit N]` / `bd pe-signals [--firm T] [--limit N]` | **Private equity.** `pe-sync` (free) derives PE firms and portfolio links from accounts that have a sponsor. `pe-portfolio` reads each firm's own site and finds its other Chicagoland companies, which go through the same verify / fit-gate / auto-add path as `discover`; a company is linked to the firm only when the firm's own site lists it. `pe-signals` looks for firm-level news (new fund, exit, operating-partner hire) with the same source rules as company signals. A firm's signals add a small, **capped** lift (`scoring.sponsor`) to portfolio companies that already have a signal of their own; the lift is shown separately and can never make a company postable by itself |
 | `bd enrich` | **Proposes** missing facts (domain, Chicagoland, size, ownership, CIK) with an evidence URL each, into `enrich_proposals.csv`. Never writes to the database. Review, then `bd seed enrich_proposals.csv` |
 | `bd scan [--tier A\|B\|all] [--dry-run] [--force] [--scanners leadership,events,pe,hiring,tech_procurement,edgar]` | Fit-gate, then scan accounts that are due (A weekly, B every other week) concurrently, logging tokens and cost per account. `--dry-run` shows what would run with no API calls |
 | `bd score` | Deterministic scores for fit-gated accounts |
@@ -133,7 +134,7 @@ deploy it (Dockerfile, `railway.json`) is in the repo; the steps and variables a
 (If you use the hosted app, the schedule is already built in and you can skip this section.)
 
 
-`scripts/weekly.sh` runs `seed → scan → score → card`, stops at the first failing step (`bd scan` exits 3
+`scripts/weekly.sh` runs `seed → scan → pe-signals → score → card`, stops at the first failing step (`bd scan` exits 3
 if every call failed, so nothing is posted on a broken run), and honours `BD_DRY_RUN=1`. Two ways to
 schedule it:
 

@@ -42,6 +42,7 @@ from bd.jobs import KINDS, SCANNER_NAMES, JobError, JobRunner
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.labels import TYPE_LABELS, fmt_date
+from bd.pe_store import add_firm, set_firm_status
 from bd.settings_store import (INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
                                reset_discovery, save_discovery)
 from bd.shortlist import ShortlistError, build_shortlist
@@ -350,6 +351,8 @@ class App:
             ("GET", "/enrich"): lambda: self.enrich(req, conn),
             ("POST", "/enrich/apply"): lambda: self.enrich_apply(req, conn),
             ("GET", "/candidates"): lambda: self.candidates(conn),
+            ("GET", "/firms"): lambda: self.firms(conn),
+            ("POST", "/firms/add"): lambda: self.firm_add(req, conn),
             ("GET", "/settings"): lambda: self.settings_page(conn),
             ("POST", "/settings/discovery"): lambda: self.settings_save(req, conn),
             ("POST", "/settings/discovery/reset"): lambda: self.settings_reset(conn),
@@ -363,6 +366,12 @@ class App:
             return table[(m, p)]()
         if len(parts) == 2 and parts[0] == "accounts" and parts[1].isdigit():
             return self.account_page(req, conn, int(parts[1])) if m == "GET" else self.account_save(req, conn, int(parts[1]))
+        if parts[0] == "firms" and len(parts) == 2 and parts[1].isdigit() and m == "GET":
+            return self.firm_page(conn, int(parts[1]))
+        if m == "POST" and len(parts) == 3 and parts[0] == "firms" and parts[1].isdigit() and parts[2] == "status":
+            ok = set_firm_status(conn, int(parts[1]), req.f("status"))
+            self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
+            return self.redirect(f"/firms/{int(parts[1])}")
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
             return self.reviewed(conn, int(parts[1]))
         if m == "POST" and len(parts) == 3 and parts[0] == "candidates" and parts[1].isdigit() and parts[2] in ("accept", "reject"):
@@ -396,6 +405,7 @@ class App:
                 "service_line": (b["best_service_line"] if b else fb.best_service_line) or "not determined",
                 "families": lead.result.components.get("families", {}),
                 "bonus": lead.result.components.get("stacking_bonus", 0),
+                "sponsor": lead.result.components.get("sponsor", {}),
                 "posted": posted[lead.account.id]["posted"] if lead.account.id in posted else 0,
             })
         tracked = sorted((s for s in sl.skipped if s.score >= self.cfg.scoring.bands.watch), key=lambda s: -s.score)
@@ -423,8 +433,11 @@ class App:
         signals = conn.execute("SELECT * FROM signals WHERE account_id = ? ORDER BY event_date DESC, id DESC", (a.id,)).fetchall()
         scores = conn.execute("SELECT run_date, score, band, posted, cooldown_until, rationale FROM scores WHERE account_id = ? ORDER BY run_date DESC LIMIT 12", (a.id,)).fetchall()
         history = conn.execute("SELECT ts, actor, action, field, old, new FROM audit_log WHERE account_id = ? ORDER BY id DESC LIMIT 25", (a.id,)).fetchall()
+        firms = conn.execute(
+            "SELECT f.id, f.name, f.status, l.status AS link_status FROM portfolio_links l JOIN pe_firms f ON f.id = l.firm_id "
+            "WHERE l.account_id = ? ORDER BY f.name", (a.id,)).fetchall()
         return dict(page="accounts", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
-                    conf_scored={"High", "Medium"})
+                    conf_scored={"High", "Medium"}, firms=firms)
 
     def account_page(self, req: Request, conn: sqlite3.Connection, account_id: int) -> Response:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
@@ -520,6 +533,34 @@ class App:
         reset_discovery(conn)
         self.say("ok", "Discovery settings reset to the defaults in config.yaml.")
         return self.redirect("/settings")
+
+    def firms(self, conn: sqlite3.Connection, form: dict[str, str] | None = None, errors: list[str] | None = None) -> Response:
+        rows = conn.execute(
+            "SELECT f.*, "
+            "(SELECT COUNT(*) FROM portfolio_links l WHERE l.firm_id = f.id AND l.status = 'current') AS companies, "
+            "(SELECT COUNT(*) FROM portfolio_links l WHERE l.firm_id = f.id AND l.status = 'current' AND l.account_id IS NOT NULL) AS accounts, "
+            "(SELECT COUNT(*) FROM firm_signals s WHERE s.firm_id = f.id) AS signals, "
+            "(SELECT MAX(event_date) FROM firm_signals s WHERE s.firm_id = f.id) AS last_signal "
+            "FROM pe_firms f ORDER BY f.status, companies DESC, f.name").fetchall()
+        return self.render("firms.html", page="firms", rows=rows, form=form or {}, errors=errors or [])
+
+    def firm_add(self, req: Request, conn: sqlite3.Connection) -> Response:
+        form = {k: req.f(k) for k in ("name", "domain", "hq_city", "portfolio_url")}
+        errs = add_firm(conn, form["name"], form["domain"], form["hq_city"], form["portfolio_url"])
+        if errs:
+            return self.firms(conn, form, errs)
+        self.say("ok", f"Added {form['name'].strip()}. Run PE portfolio research from Operate to find its companies.")
+        return self.redirect("/firms")
+
+    def firm_page(self, conn: sqlite3.Connection, firm_id: int) -> Response:
+        firm = conn.execute("SELECT * FROM pe_firms WHERE id = ?", (firm_id,)).fetchone()
+        if firm is None:
+            return self.error("404 Not Found", "No such firm.")
+        links = conn.execute(
+            "SELECT l.*, a.status AS account_status FROM portfolio_links l LEFT JOIN accounts a ON a.id = l.account_id "
+            "WHERE l.firm_id = ? ORDER BY l.status, l.company_name", (firm_id,)).fetchall()
+        sigs = conn.execute("SELECT * FROM firm_signals WHERE firm_id = ? ORDER BY event_date DESC, id DESC", (firm_id,)).fetchall()
+        return self.render("firm.html", page="firms", firm=firm, links=links, sigs=sigs, conf_scored={"High", "Medium"})
 
     def candidates(self, conn: sqlite3.Connection) -> Response:
         import json

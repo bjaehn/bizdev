@@ -40,6 +40,8 @@
 {% endfor %}{% endfor %}
 </table></div>
 <p class="meta">Stacking bonus: +{{ c.bonus|round|int }} (10 per extra family, max 30). Computed by plain code from the stored signals; no model is involved.</p>
+{% if c.sponsor and c.sponsor.lift %}<p class="meta"><b>Sponsor activity: +{{ c.sponsor.lift|round(1) }}</b> (capped at {{ c.sponsor.cap|round|int }}), from the owner's own news, not this company's:
+{% for x in c.sponsor.signals %}{{ x.firm }} {{ x.type|replace('firm_', '')|replace('_', ' ') }} ({{ x.event_date|fdate }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
 </details>
 </div>
 {% else %}

@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS jobs (
 # kind -> (label, spends model tokens?, scheduled-only?)
 KINDS: dict[str, tuple[str, bool, bool]] = {
     "discover": ("Discover companies (market research)", True, False),
+    "pe_sync": ("Sync PE firms from accounts", False, False),
+    "pe_portfolio": ("Research PE portfolios", True, False),
+    "pe_signals": ("Scan PE firms for signals", True, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -96,6 +99,10 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
             raise JobError(f"{key} must be a whole number from {lo} to {hi}.")
         return int(raw)
 
+    if kind == "pe_sync":
+        return ["pe-sync"]
+    if kind in ("pe_portfolio", "pe_signals"):
+        return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
     if kind == "discover":
         return ["discover", "--limit", str(num("limit", 1, 30, required=True))]
     if kind == "enrich":
@@ -129,9 +136,9 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
     """The `bd` invocations (after the executable) a job runs, in order."""
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
-        return [["scan", "--as-of", as_of], ["score", "--as-of", as_of],
+        return [["scan", "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
-    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover") else [args]
+    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals") else [args]
 
 
 def redact(text: str, env: dict[str, str] | None = None) -> str:

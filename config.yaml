@@ -62,6 +62,12 @@ scoring:
   # Bands that are posted to Teams.
   posted_bands: [Hot, Warm]
 
+  # Sponsor activity: events at a private equity firm lift the score of its current portfolio companies. A lift is
+  # added only to a company that already has its own scoring signal, it is capped, and it is shown separately.
+  sponsor:
+    base_points: {firm_new_fund: 8, firm_exit: 6, firm_operating_partner: 8}
+    lift_max: 10
+
 post_gate:
   require_high_confidence_within_days: 90
   max_leads_per_post: 10
@@ -202,3 +208,9 @@ discovery:
     - construction, engineering and real estate
     - education, nonprofits and associations
     - media, marketing and telecommunications
+
+# Private equity firms: derived from accounts that have a sponsor; `bd pe-portfolio` finds their other Chicagoland
+# companies, `bd pe-signals` looks for firm-level news (new fund, operating-partner hire, exit).
+pe_firms:
+  max_firms_per_run: 25
+  portfolio_max_per_firm: 25
