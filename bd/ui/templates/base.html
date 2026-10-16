@@ -12,9 +12,18 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-app
 header{background:var(--panel);border-bottom:1px solid var(--line)}
 .bar{max-width:1100px;margin:0 auto;padding:0 16px;display:flex;gap:4px;align-items:center;flex-wrap:wrap}
 .brand{font-weight:700;margin-right:12px;padding:12px 0}
-nav a{display:inline-block;padding:14px 10px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent}
-nav a:hover{color:var(--ink)}
-nav a.on{color:var(--ink);border-bottom-color:var(--accent)}
+nav{display:flex;flex-wrap:wrap;align-items:center}
+nav a.top,.menu .trigger{display:inline-block;padding:14px 10px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;cursor:pointer}
+nav a.top:hover,.menu:hover .trigger,.menu:focus-within .trigger{color:var(--ink)}
+nav a.top.on,.menu.on .trigger{color:var(--ink);border-bottom-color:var(--accent)}
+.menu{position:relative}
+.menu-list{display:none;position:absolute;z-index:5;top:100%;left:0;min-width:260px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:6px}
+.menu:hover .menu-list,.menu:focus-within .menu-list{display:block}
+.menu-list a{display:block;padding:8px 10px;border-radius:8px;color:var(--ink);text-decoration:none;font-weight:600}
+.menu-list a small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.menu-list a:hover,.menu-list a.on{background:var(--chip)}
+.trigger:focus-visible,nav a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+@media (max-width:640px){.menu-list{position:fixed;left:16px;right:16px;top:auto;min-width:0}}
 main{max-width:1100px;margin:0 auto;padding:20px 16px 48px}
 h1{font-size:22px;margin:0 0 4px}
 h2{font-size:17px;margin:28px 0 8px}
@@ -60,9 +69,25 @@ footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);fon
 <span class="brand">BD Signals</span>
 {% if nav is not defined or nav %}
 <nav>
-{% for key, href, label in [('opportunities','/','Opportunities'),('card','/monday','Monday card'),('accounts','/accounts','Accounts'),('hiring','/hiring','Hiring'),('candidates','/candidates','Discovery'),('firms','/firms','PE firms'),('enrich','/enrich','Enrich review'),('exclusions','/exclusions','Exclusions'),('runs','/runs','Runs &amp; cost'),('settings','/settings','Settings'),('audit','/audit','Changes')] + ([('operate','/operate','Operate')] if operate else []) %}
-<a href="{{ href }}" class="{{ 'on' if page == key else '' }}">{{ label|safe }}</a>
-{% endfor %}
+{% set top_before = [('opportunities', '/', 'Opportunities', 'Ranked companies and why')] %}
+{% set companies = [
+ ('accounts', '/accounts', 'All companies', 'Every company on your list and its facts'),
+ ('candidates', '/candidates', 'New companies to review', 'Found by research; add or reject'),
+ ('enrich', '/enrich', 'Researched facts to review', 'Accept facts the research found'),
+ ('firms', '/firms', 'Private equity firms', 'Owners and their portfolio companies'),
+ ('exclusions', '/exclusions', 'Do-not-pursue list', 'Clients and companies to skip')] %}
+{% set tools = ([('operate', '/operate', 'Run research and scans', 'Start jobs; see the Monday schedule')] if operate else [])
+ + [('runs', '/runs', 'Runs &amp; cost', 'What ran and what it cost'),
+    ('audit', '/audit', 'Change log', 'Who changed what, with sources'),
+    ('settings', '/settings', 'Settings', 'Research limits and the daily refresh')] %}
+{% macro item(key, href, label, hint) %}<a href="{{ href }}" class="{{ 'on' if page == key else '' }}">{{ label|safe }}<small>{{ hint }}</small></a>{% endmacro %}
+{% macro menu(title, entries) %}<div class="menu {{ 'on' if page in entries|map(attribute=0)|list else '' }}"><span class="trigger" tabindex="0" role="button" aria-haspopup="true">{{ title }} <span aria-hidden="true">▾</span></span>
+<div class="menu-list">{% for e in entries %}{{ item(*e) }}{% endfor %}</div></div>{% endmacro %}
+{% for e in top_before %}<a class="top {{ 'on' if page == e[0] else '' }}" href="{{ e[1] }}">{{ e[2] }}</a>{% endfor %}
+<a class="top {{ 'on' if page == 'card' else '' }}" href="/monday">Monday card</a>
+<a class="top {{ 'on' if page == 'hiring' else '' }}" href="/hiring">Hiring</a>
+{{ menu('Companies', companies) }}
+{{ menu('Tools' if not operate else 'Operate', tools) }}
 </nav>
 {% if hosted %}<form method="post" action="/logout" style="margin-left:auto"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Sign out</button></form>{% endif %}
 {% endif %}

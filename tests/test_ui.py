@@ -275,7 +275,7 @@ def test_posted_leads_are_marked(world):
 
 def test_accounts_list_filters_and_explains_holds(world):
     b = world.c.get("/accounts").body
-    assert "Hotco" in b and "Heldco" in b and "1 held for review" in b
+    assert "Hotco" in b and "Heldco" in b and "1 need facts" in b
     assert "Chicagoland status unverified" in b
     only_held = world.c.get("/accounts?status=hold_review").body
     assert "Heldco" in only_held and ">Hotco<" not in only_held
