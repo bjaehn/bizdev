@@ -69,25 +69,26 @@ footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);fon
 <span class="brand">BD Signals</span>
 {% if nav is not defined or nav %}
 <nav>
-{% set top_before = [('opportunities', '/', 'Opportunities', 'Ranked companies and why')] %}
 {% set companies = [
  ('accounts', '/accounts', 'All companies', 'Every company on your list and its facts'),
  ('candidates', '/candidates', 'New companies to review', 'Found by research; add or reject'),
- ('enrich', '/enrich', 'Researched facts to review', 'Accept facts the research found'),
- ('firms', '/firms', 'Private equity firms', 'Owners and their portfolio companies'),
+ ('enrich', '/enrich', 'Researched facts to review', 'Check facts before applying them by hand'),
  ('exclusions', '/exclusions', 'Do-not-pursue list', 'Clients and companies to skip')] %}
-{% set tools = ([('operate', '/operate', 'Run research and scans', 'Start jobs; see the Monday schedule')] if operate else [])
- + [('runs', '/runs', 'Runs &amp; cost', 'What ran and what it cost'),
-    ('audit', '/audit', 'Change log', 'Who changed what, with sources'),
-    ('settings', '/settings', 'Settings', 'Research limits and the daily refresh')] %}
+{% set more = [
+ ('card', '/monday', 'Monday card', 'What the weekly post would contain'),
+ ('firms', '/firms', 'Private equity firms', 'Owners and their portfolio companies'),
+ ('runs', '/runs', 'Run history and cost', 'What ran and what it cost'),
+ ('audit', '/audit', 'Change log', 'Who changed what, with sources'),
+ ('settings', '/settings', 'Settings', 'Numbers behind the Update button')]
+ + ([('operate', '/operate', 'Advanced tools', 'Run one step at a time')] if operate else []) %}
 {% macro item(key, href, label, hint) %}<a href="{{ href }}" class="{{ 'on' if page == key else '' }}">{{ label|safe }}<small>{{ hint }}</small></a>{% endmacro %}
 {% macro menu(title, entries) %}<div class="menu {{ 'on' if page in entries|map(attribute=0)|list else '' }}"><span class="trigger" tabindex="0" role="button" aria-haspopup="true">{{ title }} <span aria-hidden="true">▾</span></span>
 <div class="menu-list">{% for e in entries %}{{ item(*e) }}{% endfor %}</div></div>{% endmacro %}
-{% for e in top_before %}<a class="top {{ 'on' if page == e[0] else '' }}" href="{{ e[1] }}">{{ e[2] }}</a>{% endfor %}
-<a class="top {{ 'on' if page == 'card' else '' }}" href="/monday">Monday card</a>
-<a class="top {{ 'on' if page == 'hiring' else '' }}" href="/hiring">Hiring</a>
+{% if operate %}<a class="top {{ 'on' if page == 'home' else '' }}" href="/">Home</a>{% endif %}
+<a class="top {{ 'on' if page == 'opportunities' else '' }}" href="{{ '/opportunities' if operate else '/' }}">Opportunities</a>
 {{ menu('Companies', companies) }}
-{{ menu('Tools' if not operate else 'Operate', tools) }}
+<a class="top {{ 'on' if page == 'hiring' else '' }}" href="/hiring">Hiring</a>
+{{ menu('More', more) }}
 </nav>
 {% if hosted %}<form method="post" action="/logout" style="margin-left:auto"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Sign out</button></form>{% endif %}
 {% endif %}

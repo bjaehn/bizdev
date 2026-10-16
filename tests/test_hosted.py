@@ -125,7 +125,7 @@ def test_login_wrong_then_right(hosted):
     assert "HttpOnly" in c and "SameSite=Lax" in c and "Secure" not in c
     assert "Secure" in login(hosted, headers={"X-Forwarded-Proto": "https"}).h["Set-Cookie"]
     page = call(hosted.app, "GET", "/", cookie=session(hosted))
-    assert page.code == 200 and "Sign out" in page.body and "Operate" in page.body
+    assert page.code == 200 and "Sign out" in page.body and "Update my list" in page.body
     assert call(hosted.app, "GET", "/login", cookie=session(hosted)).code == 303
 
 
@@ -191,7 +191,7 @@ def test_there_is_no_posting_job_and_scheduled_only_job_is_not_user_startable():
         validate("weekly", {})
     assert validate("weekly", {}, scheduled=True) == []
     for kind in KINDS:
-        for step in sequence_for(kind, validate(kind, {"limit": "5"}, scheduled=True), "2026-01-05"):
+        for step in sequence_for(kind, validate(kind, {"limit": "5", "research": "5", "segments": "1", "scan": "5", "budget": "5"}, scheduled=True), "2026-01-05"):
             if step[0] == "card" and kind != "weekly":
                 assert "--dry-run" in step
 

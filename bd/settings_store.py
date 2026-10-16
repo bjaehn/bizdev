@@ -106,3 +106,52 @@ def save_refresh(conn: sqlite3.Connection, enabled: bool, actor: str = "ui") -> 
                      (json.dumps({"enabled": enabled}), datetime.now(timezone.utc).isoformat(timespec="seconds")))
         if old != enabled:
             log_audit(conn, actor, "update", None, "settings.refresh", old, enabled)
+
+
+# ---- "Update my list": the numbers behind the one button ---------------------------------------------------------------
+UPDATE_DEFAULTS = {"research": 25, "segments": 2, "scan": 25, "budget": 8}
+UPDATE_FIELDS = {  # name -> (label, min, max)
+    "research": ("Companies to research per update", 0, 100),
+    "segments": ("Industry segments to search for new companies", 0, 30),
+    "scan": ("Companies to scan for signals per update", 1, 100),
+    "budget": ("Spending limit per update (US dollars)", 1, 100),
+}
+
+
+def load_update(conn: sqlite3.Connection) -> dict[str, int]:
+    r = conn.execute("SELECT value_json FROM settings WHERE key = 'update'").fetchone()
+    out = dict(UPDATE_DEFAULTS)
+    try:
+        saved = json.loads(r["value_json"]) if r else {}
+    except ValueError:
+        saved = {}
+    for k, (_, lo, hi) in UPDATE_FIELDS.items():
+        v = saved.get(k)
+        if isinstance(v, int) and lo <= v <= hi:
+            out[k] = v
+    return out
+
+
+def parse_update(form: dict[str, str]) -> tuple[dict[str, int], list[str]]:
+    out, errs = {}, []
+    for k, (label, lo, hi) in UPDATE_FIELDS.items():
+        raw = (form.get(k) or "").strip()
+        if not raw.isdigit() or not lo <= int(raw) <= hi:
+            errs.append(f"{label} must be a whole number from {lo} to {hi}")
+        else:
+            out[k] = int(raw)
+    return out, errs
+
+
+def save_update(conn: sqlite3.Connection, form: dict[str, str], actor: str = "ui") -> list[str]:
+    data, errs = parse_update(form)
+    if errs:
+        return errs
+    old = load_update(conn)
+    with conn:
+        conn.execute("INSERT INTO settings(key, value_json, updated) VALUES ('update', ?, ?) "
+                     "ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated = excluded.updated",
+                     (json.dumps(data), datetime.now(timezone.utc).isoformat(timespec="seconds")))
+        if old != data:
+            log_audit(conn, actor, "update", None, "settings.update", json.dumps(old), json.dumps(data))
+    return []

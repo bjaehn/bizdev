@@ -27,14 +27,14 @@ UI is exactly what the weekly run uses.
 
 ## First use
 
-* On first boot the 58 target accounts load from `accounts.csv`. Their facts are blank, so every account is **held** by the fit gate.
-* **Operate → Discover** (start with 2 segments) finds new Chicagoland companies; those that pass the fit gate appear on Accounts as *auto-added*, the rest wait on the **Discovery** page. Mark auto-added accounts reviewed once you have looked at them.
-* **Hiring page**: open postings per company, from each company's own Greenhouse / Lever / Ashby board (read daily) or the weekly search. The first scan that finds a posting on one of those boards identifies it. **Settings** turns the daily light refresh on or off.
-* **Operate → PE firms**: *Sync* (free) creates the firm list from accounts that have a sponsor; *Portfolio research* finds each firm's other Chicagoland companies; *Firm signals* looks for fund, exit and operating-partner news. The **PE firms** page shows each firm's portfolio and signals; the Monday run includes firm signals automatically.
-* **Operate → Enrich** proposes missing facts (revenue, employees, ownership, HQ) from public sources. **Enrich review** shows each proposal with its source; you accept the ones you trust. Nothing is applied automatically.
-* On **Enrich review**, "Apply all new facts" fills every fact the database does not have yet from the proposals file in one click (conflicts are never touched; each fact is logged with its source on the Changes page).
-* **Operate → Scan** (start with 5 accounts to see the cost), then **Score**, then **Build card (dry run)**. Ranked leads appear on the **Opportunities** page (the home page; the **Monday card** page shows the subset that would be posted); cost per run on **Runs & cost**.
-* Monday 05:00 Chicago the service runs scan, score and card by itself. It posts only if `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not `1`. There is no button anywhere that posts.
+1. Open the app and sign in. **Home** tells you the state and the one next click, and its **Setup** card lists anything missing in the Railway variables. Press **Test the connection** once: it tells you in plain words if the key, model or workspace needs fixing.
+2. Press **Update my list** (tick the paid-calls box). One press researches the companies that need facts and applies the facts whose source checked out, searches new industry segments for Chicagoland companies, scans the ready companies (news, leadership, job boards, SEC filings, PE owners), and scores everything. It stops at the spending limit shown on the button.
+3. Open **Opportunities** for the ranked list and the reasons behind each score. The numbers behind the button (companies to research, segments to search, companies to scan, spending limit) are on **Settings**.
+4. Press the button again any time to refresh. Nothing runs by itself except the schedule below.
+
+Every fact the update applies is on the **Change log** with its source link. **More → Advanced tools** still lets you run one step at a time.
+
+The Monday 05:00 Chicago run (and the daily light refresh on other days) is separate and unchanged: it re-scans and re-scores, and posts to Teams only if `TEAMS_WEBHOOK_URL` is set.
 
 ## Operating notes
 

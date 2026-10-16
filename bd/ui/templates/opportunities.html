@@ -3,7 +3,7 @@
 {% block body %}
 <div class="row"><div><h1>Opportunities</h1>
 <p class="sub">Every active account that scored at least Watch, ranked. Each score is the sum of what the account's own signals earned, plus a capped lift from its private equity owner's news. The Monday card is the top of this list that also passes the posting gates.</p></div>
-{% if dates %}<form method="get" action="/" class="filters"><label for="date" style="margin:0">Scored on</label>
+{% if dates %}<form method="get" action="/opportunities" class="filters"><label for="date" style="margin:0">Scored on</label>
 <select id="date" name="date">{% for d in dates %}<option value="{{ d }}" {{ 'selected' if d == run_date else '' }}>{{ d }}</option>{% endfor %}</select>
 <button class="ghost" type="submit">Show</button></form>{% endif %}</div>
 
@@ -12,7 +12,7 @@
 {% elif error %}<div class="errors"><b>{{ error }}</b></div>
 {% else %}
 {% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} account(s) ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). Run Score again; statuses below are not shown until then.</div>{% endif %}
-<form method="get" action="/" class="filters">
+<form method="get" action="/opportunities" class="filters">
 <input type="hidden" name="date" value="{{ run_date }}">
 <input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name">
 <select name="band" aria-label="Band"><option value="">any band</option>{% for b in bands %}<option {{ 'selected' if q.band == b else '' }}>{{ b }}</option>{% endfor %}</select>

@@ -23,6 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
+PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "card"})
 SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement")
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
@@ -44,6 +45,8 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 # kind -> (label, spends model tokens?, scheduled-only?)
 KINDS: dict[str, tuple[str, bool, bool]] = {
+    "update": ("Update my list (research, find, scan, score)", True, False),
+    "check": ("Test the model connection", False, False),
     "discover": ("Discover companies (market research)", True, False),
     "pe_sync": ("Sync PE firms from accounts", False, False),
     "pe_portfolio": ("Research PE portfolios", True, False),
@@ -105,6 +108,12 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return ["pe-sync"]
     if kind in ("pe_portfolio", "pe_signals"):
         return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
+    if kind == "check":
+        return ["check"]
+    if kind == "update":
+        research, segs = num("research", 0, 100, required=True), num("segments", 0, 30, required=True)
+        scan, budget = num("scan", 1, 100, required=True), num("budget", 1, 100, required=True)
+        return ["update", "--research", str(research), "--segments", str(segs), "--scan", str(scan), "--budget", str(budget)]
     if kind in ("refresh", "refresh_now"):
         return []   # steps are fixed in sequence_for()
     if kind == "discover":
@@ -144,6 +153,15 @@ def refresh_scanners() -> str:
 
 def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
     """The `bd` invocations (after the executable) a job runs, in order."""
+    if kind == "update":
+        a = dict(zip(args[1::2], args[2::2]))
+        steps = [["check"]]
+        if int(a["--research"]):
+            steps += [["enrich", "--limit", a["--research"], "--allow-empty", "--as-of", as_of], ["apply-proposals", "enrich_proposals.csv"]]
+        if int(a["--segments"]):
+            steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
+        return steps + [["pe-sync"], ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of],
+                        ["score", "--allow-empty", "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
@@ -254,6 +272,16 @@ class JobRunner:
             t.join(max(0, end - time.time()))
 
     # ---- run -------------------------------------------------------------------------------------------------
+    def _max_run_id(self) -> int:
+        with self._conn() as c:
+            return c.execute("SELECT COALESCE(MAX(id), 0) FROM runs").fetchone()[0]
+
+    def _spent_since(self, run_id: int) -> float:
+        """Estimated cost logged since `run_id`. The scan total row repeats the per-call rows, so it is left out; calls to a model
+        with no price log NULL and count as 0 (the Home page warns when the model is unpriced)."""
+        with self._conn() as c:
+            return c.execute("SELECT COALESCE(SUM(est_cost), 0) FROM runs WHERE id > ? AND step != 'scan:total'", (run_id,)).fetchone()[0]
+
     def _set(self, job_id: int, **cols) -> None:
         sets = ", ".join(f"{k}=?" for k in cols)
         with self._conn() as c:
@@ -266,19 +294,34 @@ class JobRunner:
         try:
             self._set(job_id, status="running", started=_now())
             as_of = chicago_today()
+            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind == "update" else None
+            start_id = self._max_run_id() if budget else 0
+            skipped_for_budget = False
             with (self.log_dir / f"{job_id}.log").open("ab") as log:
                 for step in sequence_for(kind, args, as_of):
+                    step_env = env
+                    if budget and step[0] in PAID_STEPS:
+                        remaining = budget - self._spent_since(start_id)
+                        if remaining <= 0:
+                            log.write(f"\n(skipped `bd {step[0]}`: the ${budget} spending limit for this update is used up)\n".encode())
+                            skipped_for_budget = True
+                            continue
+                        step_env = {**env, "BD_MAX_COST_USD": f"{remaining:.4f}"}
                     log.write(f"\n$ bd {' '.join(step)}\n".encode())
                     log.flush()
                     left = deadline - time.monotonic()
                     if left <= 0:
                         raise subprocess.TimeoutExpired(step, self.timeout)
-                    p = subprocess.run([*self.bd_cmd, *step], cwd=self.data_dir, env=env, stdout=log,
+                    p = subprocess.run([*self.bd_cmd, *step], cwd=self.data_dir, env=step_env, stdout=log,
                                        stderr=subprocess.STDOUT, timeout=left, stdin=subprocess.DEVNULL)
                     if p.returncode != 0:
                         status, code = "failed", p.returncode
                         note = f"`bd {step[0]}` exited with {p.returncode}; later steps were not run."
                         break
+                if budget:
+                    spent = self._spent_since(start_id)
+                    extra = f"Spent about ${spent:.2f} of the ${budget} limit." + (" Some steps were skipped: the limit was used up." if skipped_for_budget else "")
+                    note = f"{note} {extra}" if note else extra
         except subprocess.TimeoutExpired:
             status, code, note = "failed", -1, f"Stopped after {self.timeout // 60} minutes."
         except Exception as e:      # never let the thread die silently with the job stuck on "running"

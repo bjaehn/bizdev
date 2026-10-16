@@ -4,8 +4,14 @@
 <h1>Settings</h1>
 <p class="sub">Market-research settings. Saved here, they override the defaults in <code>config.yaml</code> for the next run. Scoring weights, fit-gate floors and secrets are not editable here.</p>
 {% if errors %}<div class="errors">Not saved:<ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+{% if can_schedule %}<div class="card">
+<h2 style="margin-top:0">Update my list</h2>
+<p class="meta">What the Update button does each time you press it. The spending limit is a hard stop for the whole update, not per step.</p>
+<form method="post" action="/settings/update"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="grid">{% for name, (label, lo, hi) in update_fields.items() %}<div><label for="u_{{ name }}">{{ label }} ({{ lo }}-{{ hi }})</label><input id="u_{{ name }}" type="number" name="{{ name }}" min="{{ lo }}" max="{{ hi }}" value="{{ update[name] }}" required></div>{% endfor %}</div>
+<p><button type="submit">Save</button></p></form></div>{% endif %}
 <div class="card">
-<h2 style="margin-top:0">Discovery</h2>
+<h2 style="margin-top:0">Finding new companies (advanced)</h2>
 <form method="post" action="/settings/discovery"><input type="hidden" name="csrf" value="{{ csrf }}">
 <label for="segments">Segments to research (one per line, up to {{ max_segments }})</label>
 <textarea id="segments" name="segments" rows="12" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit">{{ form.segments }}</textarea>
