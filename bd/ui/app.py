@@ -42,6 +42,8 @@ from bd.jobs import KINDS, SCANNER_NAMES, JobError, JobRunner
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.labels import TYPE_LABELS, fmt_date
+from bd.settings_store import (INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
+                               reset_discovery, save_discovery)
 from bd.shortlist import ShortlistError, build_shortlist
 
 MAX_BODY = 64 * 1024
@@ -348,6 +350,9 @@ class App:
             ("GET", "/enrich"): lambda: self.enrich(req, conn),
             ("POST", "/enrich/apply"): lambda: self.enrich_apply(req, conn),
             ("GET", "/candidates"): lambda: self.candidates(conn),
+            ("GET", "/settings"): lambda: self.settings_page(conn),
+            ("POST", "/settings/discovery"): lambda: self.settings_save(req, conn),
+            ("POST", "/settings/discovery/reset"): lambda: self.settings_reset(conn),
             ("POST", "/accounts/reviewed-all"): lambda: self.reviewed(conn, None),
             ("GET", "/exclusions"): lambda: self.exclusions(conn),
             ("POST", "/exclusions/add"): lambda: self.exclusion_add(req, conn),
@@ -496,6 +501,25 @@ class App:
         n = mark_reviewed(conn, account_id)
         self.say("ok", f"{n} account(s) marked reviewed; they now scan like any other.")
         return self.redirect(f"/accounts/{account_id}" if account_id is not None else "/accounts")
+
+    def settings_page(self, conn: sqlite3.Connection, form: dict[str, str] | None = None, errors: list[str] | None = None) -> Response:
+        d = apply_overrides(self.cfg, conn).discovery
+        form = form or {"segments": "\n".join(d.segments), **{k: str(getattr(d, k)) for k in INT_FIELDS}}
+        return self.render("settings.html", page="settings", form=form, errors=errors or [], fields=INT_FIELDS,
+                           customized=bool(load_discovery_overrides(conn)), max_segments=MAX_SEGMENTS)
+
+    def settings_save(self, req: Request, conn: sqlite3.Connection) -> Response:
+        form = {k: req.f(k) for k in ("segments", *INT_FIELDS)}
+        errs = save_discovery(conn, form)
+        if errs:
+            return self.settings_page(conn, form, errs)
+        self.say("ok", "Discovery settings saved. They apply to the next run.")
+        return self.redirect("/settings")
+
+    def settings_reset(self, conn: sqlite3.Connection) -> Response:
+        reset_discovery(conn)
+        self.say("ok", "Discovery settings reset to the defaults in config.yaml.")
+        return self.redirect("/settings")
 
     def candidates(self, conn: sqlite3.Connection) -> Response:
         import json

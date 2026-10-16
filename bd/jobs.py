@@ -97,7 +97,7 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return int(raw)
 
     if kind == "discover":
-        return ["discover", "--limit", str(num("limit", 1, 12, required=True))]
+        return ["discover", "--limit", str(num("limit", 1, 30, required=True))]
     if kind == "enrich":
         args = ["enrich", "--limit", str(num("limit", 1, 100, required=True))]
         only = (form.get("only") or "").strip()

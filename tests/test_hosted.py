@@ -359,7 +359,7 @@ def test_scheduler_submits_weekly_once_and_waits_when_busy(hosted):
 # ---- discovery in the app -----------------------------------------------------------------------------------------
 def test_discover_job_is_validated_and_dry_run_free(hosted):
     assert validate("discover", {"limit": "2"}) == ["discover", "--limit", "2"]
-    for bad in ({}, {"limit": "0"}, {"limit": "13"}, {"limit": "x"}):
+    for bad in ({}, {"limit": "0"}, {"limit": "31"}, {"limit": "x"}):
         with pytest.raises(JobError):
             validate("discover", bad)
     with pytest.raises(JobError, match="confirm"):
@@ -387,3 +387,25 @@ def test_discovery_page_queue_and_review_buttons(hosted):
     assert call(hosted.app, "POST", "/candidates/1/accept", {"csrf": csrf}, cookie=s).code == 303
     assert "Queued Co" in call(hosted.app, "GET", "/accounts", cookie=s).body
     assert call(hosted.app, "POST", "/candidates/1/accept", {}, cookie=s).code == 403      # CSRF still required
+
+
+def test_settings_page_saves_validates_and_resets(hosted):
+    from bd.db import connect
+    from bd.settings_store import apply_overrides
+    s, csrf = session(hosted), hosted.app._csrf
+    page = call(hosted.app, "GET", "/settings", cookie=s).body
+    assert "manufacturing and industrial products" in page and "Reset to config.yaml" not in page
+    good = {"csrf": csrf, "segments": "pharma distribution\n\n Pharma Distribution \nlogistics in Illinois", "per_segment": "5",
+            "max_candidates_per_run": "10", "max_auto_add_per_run": "3", "scan_unreviewed_per_run": "4"}
+    assert call(hosted.app, "POST", "/settings/discovery", good, cookie=s).code == 303
+    page = call(hosted.app, "GET", "/settings", cookie=s).body
+    assert "logistics in Illinois" in page and "Reset to config.yaml" in page
+    d = apply_overrides(hosted.app.cfg, connect(hosted.db)).discovery
+    assert d.segments == ["pharma distribution", "logistics in Illinois"] and (d.per_segment, d.max_auto_add_per_run) == (5, 3)
+    assert hosted.app.cfg.discovery.per_segment == 8                       # the config object itself is untouched
+    bad = call(hosted.app, "POST", "/settings/discovery", {**good, "segments": "", "per_segment": "999"}, cookie=s)
+    assert bad.code == 200 and "Not saved" in bad.body and "at least one segment" in bad.body
+    assert call(hosted.app, "POST", "/settings/discovery", {k: v for k, v in good.items() if k != "csrf"}, cookie=s).code == 403
+    assert call(hosted.app, "POST", "/settings/discovery/reset", {"csrf": csrf}, cookie=s).code == 303
+    assert "pharma distribution" not in call(hosted.app, "GET", "/settings", cookie=s).body
+    assert connect(hosted.db).execute("SELECT COUNT(*) FROM audit_log WHERE field='settings.discovery'").fetchone()[0] == 2

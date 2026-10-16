@@ -146,6 +146,8 @@ def scan(
     names = _resolve_scanner_names(scanners, settings)
     conn = connect(settings.db_path)
     init_db(conn)
+    from bd.settings_store import apply_overrides
+    cfg = apply_overrides(cfg, conn)
     _print_gate(apply_fit_gate(conn, cfg))
     accounts = list_accounts(conn, tier=tier, limit=limit)
     from bd.discover import select_scan_accounts
@@ -204,9 +206,11 @@ def discover(
 
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
-    segs = [segment] if segment else cfg.discovery.segments[: limit or None]
     conn = connect(settings.db_path)
     init_db(conn)
+    from bd.settings_store import apply_overrides
+    cfg = apply_overrides(cfg, conn)          # limits and segments edited in the app
+    segs = [segment] if segment else cfg.discovery.segments[: limit or None]
     typer.echo(f"{len(segs)} segment(s); up to {cfg.discovery.per_segment} companies each; research at most "
                f"{cfg.discovery.max_candidates_per_run} new companies, auto-add at most {cfg.discovery.max_auto_add_per_run}.")
     if dry_run:

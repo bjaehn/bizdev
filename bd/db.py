@@ -98,6 +98,13 @@ CREATE TABLE IF NOT EXISTS candidates (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_candidates_name ON candidates(lower(name));
 
+-- Settings edited in the app (overrides of config.yaml defaults). Only whitelisted keys; see bd/settings_store.py.
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS exclusions (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL,
