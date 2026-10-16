@@ -165,8 +165,19 @@ def test_check_command_explains_failures_and_reports_success(cli_env, monkeypatc
         def run(self, *a, **k):
             return llm.LLMResult(text="OK")
     monkeypatch.setattr(llm, "AnthropicWebSearchClient", Good)
+    import bd.verify as vmod
+
+    class Fetch:
+        result = vmod.VerifyResult(True, "ok", status=200)
+        def __init__(self, *a, **k): pass
+        def verify(self, url): return Fetch.result
+        def close(self): pass
+    monkeypatch.setattr(vmod, "UrlVerifier", Fetch)
     r = runner.invoke(app, ["check"])
     assert r.exit_code == 0 and "Connection OK" in r.output and "BD_USER_AGENT is not set" in r.output
+    Fetch.result = vmod.VerifyResult(False, "bad_request_header (check BD_USER_AGENT)")
+    r = runner.invoke(app, ["check"])
+    assert r.exit_code == 1 and "fetching web pages fails" in r.output and "BD_USER_AGENT" in r.output
     monkeypatch.delenv("ANTHROPIC_MODEL")
     assert runner.invoke(app, ["check"]).exit_code == 1
 
@@ -296,3 +307,37 @@ def test_navigation_is_short_and_local_mode_is_unchanged(app_env, cfg, tmp_path)
     out = {}
     page = b"".join(local(env, lambda s, h: out.update(s=s))).decode()
     assert out["s"].startswith("200") and "Opportunities" in page and "Update my list" not in page
+
+
+def test_user_agent_is_cleaned_into_a_legal_header():
+    from bd.config import DEFAULT_USER_AGENT, clean_user_agent
+    assert clean_user_agent(" YourCo BD (a@b.com)\n") == "YourCo BD (a@b.com)"
+    assert clean_user_agent('"YourCo BD (a@b.com)"') == "YourCo BD (a@b.com)"
+    assert clean_user_agent("YourCo \u2014 a@b.com\r\nX: y") == "YourCo ? a@b.com X: y"
+    assert clean_user_agent("  \n") == DEFAULT_USER_AGENT and clean_user_agent(None) == DEFAULT_USER_AGENT
+
+
+def test_messy_user_agent_is_flagged_and_real_requests_work(cfg):
+    import http.server, threading
+    from bd.setup_check import static_problems
+    from bd.verify import UrlVerifier
+    env = {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_MODEL": "claude-sonnet-5-5", "BD_USER_AGENT": " YourCo (a@b.com)\n"}
+    assert any("stray spaces" in p for p in static_problems(cfg, env))
+    assert any("contact email" in p for p in static_problems(cfg, {**env, "BD_USER_AGENT": "YourCo"}))
+    assert not static_problems(cfg, {**env, "BD_USER_AGENT": "YourCo (a@b.com)"})
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self): self.send_response(200); self.end_headers()
+        def log_message(self, *a): pass
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_port}/"
+    try:
+        c = cfg.model_copy(deep=True); c.verify.block_private_addresses = False
+        bad = UrlVerifier(c, " YourCo (a@b.com)\n")                  # raw, uncleaned: the failure seen live
+        assert bad.verify(url).reason.startswith("bad_request_header")
+        from bd.config import clean_user_agent
+        good = UrlVerifier(c, clean_user_agent(" YourCo (a@b.com)\n"))
+        assert good.verify(url).ok
+    finally:
+        srv.shutdown()
