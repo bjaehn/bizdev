@@ -94,6 +94,10 @@ class Scanner:
         """Build a scanner from the shared dependencies (web-search LLM, text-only LLM, URL verifier, EDGAR)."""
         return cls(cfg, web, verifier)
 
+    def llm_kwargs(self, account: Account) -> dict:
+        """Extra arguments for this account's model calls (e.g. a search allow-list). Default: none."""
+        return {}
+
     def applies_to(self, account: Account) -> bool:
         """False when this scanner has nothing to do for the account (no calls are made or billed)."""
         return True
@@ -124,6 +128,7 @@ class Scanner:
             resp, result = generate_validated(
                 self.llm, self.system_prompt(), self.user_prompt(account, as_of),
                 self.response_model, retries=self.cfg.llm.json_retries,
+                llm_kwargs=self.llm_kwargs(account) or None,
             )
         except LLMError as e:  # InvalidJSON and LLMRefusal are LLMErrors
             out.error = f"{type(e).__name__}: {e}"

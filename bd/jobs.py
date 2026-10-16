@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
-SCANNER_NAMES = ("leadership", "edgar", "events", "pe", "hiring", "tech_procurement")
+SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "tech_procurement")
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
 LOG_TAIL_BYTES = 20_000

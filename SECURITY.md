@@ -31,6 +31,8 @@ The request body is the only thing sent; the API key travels in the standard hea
   Anthropic. Search results (public pages) come back into the model context.
 * **1b. SEC filing reader (`edgar`)**: company name, form type, filing and report dates, and an excerpt of
   the filing (at most 8,000 characters, starting at Item 5.02). Public SEC text. No web search.
+* **1b-2. Earnings reader (`earnings`)**: as 1b, but the text is the earnings press release (exhibit 99) of an Item 2.02 8-K, at most 8,000 characters. Public SEC text. No web search.
+* **1b-3. `press` scanner**: as 1a, but the search tool is restricted to an allow-list: the company's own domain, the configured wire services and SEC domains (the API does not allow an allow-list together with the blocked-domain list, so LinkedIn and paywalled sites are excluded by construction rather than by the block list).
 * **1c. `bd enrich`**: company name, known domain, known HQ city, today's date. Web search enabled.
 * **1d. Briefer (`bd card`)**: company name, industry, and up to 4 signals (type, event date, days ago,
   confidence, the stored 25-word summary, role/person name, service lines) for leads already chosen for

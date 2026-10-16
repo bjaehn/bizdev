@@ -39,17 +39,20 @@ def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
 
     implemented = [n for n, c in SCANNERS.items() if c.implemented]
     if opt == "all":
-        if "edgar" in implemented and not settings.user_agent_configured:
-            typer.echo("edgar scanner skipped: set BD_USER_AGENT (company name and contact email), as the SEC requires.",
-                       err=True)
-            implemented.remove("edgar")
+        if not settings.user_agent_configured:
+            skipped = [n for n in ("edgar", "earnings") if n in implemented]
+            for n in skipped:
+                implemented.remove(n)
+            if skipped:
+                typer.echo(f"{', '.join(skipped)} scanner(s) skipped: set BD_USER_AGENT (company name and contact email), "
+                           "as the SEC requires.", err=True)
         return implemented
     names = [n.strip() for n in opt.split(",") if n.strip()]
     bad = [n for n in names if n not in SCANNERS or not SCANNERS[n].implemented]
     if bad:
         _fail(f"unknown or unimplemented scanner(s): {bad}")
-    if "edgar" in names and not settings.user_agent_configured:
-        _fail("The edgar scanner needs BD_USER_AGENT set to your company name and contact email (SEC fair access).")
+    if ("edgar" in names or "earnings" in names) and not settings.user_agent_configured:
+        _fail("The edgar and earnings scanners need BD_USER_AGENT set to your company name and contact email (SEC fair access).")
     return names
 
 
@@ -68,7 +71,7 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     web = AnthropicWebSearchClient(cfg, model=model, api_key=key)
     text = AnthropicWebSearchClient(cfg, model=model, api_key=key, web_search=False)
     verifier = UrlVerifier(cfg, settings.user_agent)
-    edgar = EdgarClient(cfg, settings.user_agent) if "edgar" in names else None
+    edgar = EdgarClient(cfg, settings.user_agent) if ("edgar" in names or "earnings" in names) else None
     return [SCANNERS[n].create(cfg, web, text, verifier, edgar) for n in names]
 
 
