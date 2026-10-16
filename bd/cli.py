@@ -39,22 +39,26 @@ def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
 
     implemented = [n for n, c in SCANNERS.items() if c.implemented]
     if opt == "all":
-        if "edgar" in implemented and not settings.user_agent_configured:
-            typer.echo("edgar scanner skipped: set BD_USER_AGENT (company name and contact email), as the SEC requires.",
-                       err=True)
-            implemented.remove("edgar")
+        if not settings.user_agent_configured:
+            skipped = [n for n in ("edgar", "earnings") if n in implemented]
+            for n in skipped:
+                implemented.remove(n)
+            if skipped:
+                typer.echo(f"{', '.join(skipped)} scanner(s) skipped: set BD_USER_AGENT (company name and contact email), "
+                           "as the SEC requires.", err=True)
         return implemented
     names = [n.strip() for n in opt.split(",") if n.strip()]
     bad = [n for n in names if n not in SCANNERS or not SCANNERS[n].implemented]
     if bad:
         _fail(f"unknown or unimplemented scanner(s): {bad}")
-    if "edgar" in names and not settings.user_agent_configured:
-        _fail("The edgar scanner needs BD_USER_AGENT set to your company name and contact email (SEC fair access).")
+    if ("edgar" in names or "earnings" in names) and not settings.user_agent_configured:
+        _fail("The edgar and earnings scanners need BD_USER_AGENT set to your company name and contact email (SEC fair access).")
     return names
 
 
 def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     """Real scanners with their dependencies. Needs ANTHROPIC_API_KEY and ANTHROPIC_MODEL."""
+    from bd.ats import AtsClient
     from bd.edgar import EdgarClient
     from bd.llm import AnthropicWebSearchClient
     from bd.scanners import SCANNERS
@@ -68,8 +72,9 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     web = AnthropicWebSearchClient(cfg, model=model, api_key=key)
     text = AnthropicWebSearchClient(cfg, model=model, api_key=key, web_search=False)
     verifier = UrlVerifier(cfg, settings.user_agent)
-    edgar = EdgarClient(cfg, settings.user_agent) if "edgar" in names else None
-    return [SCANNERS[n].create(cfg, web, text, verifier, edgar) for n in names]
+    edgar = EdgarClient(cfg, settings.user_agent) if ("edgar" in names or "earnings" in names) else None
+    ats = AtsClient(cfg, settings.user_agent) if "ats" in names else None
+    return [SCANNERS[n].create(cfg, web, text, verifier, edgar, ats=ats) for n in names]
 
 
 @app.command()
@@ -131,6 +136,7 @@ def scan(
     workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
     force: bool = typer.Option(False, help="Ignore tier cadence"),
     dry_run: bool = typer.Option(False, help="Apply the fit gate and show what would be scanned; no API calls"),
+    light: bool = typer.Option(False, "--light", help="Daily refresh: do not mark accounts as scanned, so the weekly cadence is unaffected"),
 ) -> None:
     """Fit-gate, then scan due accounts that passed (concurrently), logging tokens and cost."""
     from bd.accounts import list_accounts
@@ -146,8 +152,15 @@ def scan(
     names = _resolve_scanner_names(scanners, settings)
     conn = connect(settings.db_path)
     init_db(conn)
+    from bd.settings_store import apply_overrides
+    cfg = apply_overrides(cfg, conn)
     _print_gate(apply_fit_gate(conn, cfg))
     accounts = list_accounts(conn, tier=tier, limit=limit)
+    from bd.discover import select_scan_accounts
+    accounts, held_back = select_scan_accounts(accounts, cfg)
+    if held_back:
+        typer.echo(f"{held_back} auto-added account(s) not yet reviewed are held back this run "
+                   f"(limit {cfg.discovery.scan_unreviewed_per_run}); mark them reviewed in the app to scan them all.")
     if not accounts:
         _fail("No accounts passed the fit gate. Fill in the held accounts' facts or run `bd seed accounts.csv`.")
     due = [a for a in accounts if is_due(a, run_date, cfg, force)]
@@ -162,7 +175,7 @@ def scan(
         return
     objs = _build_scanners(names, cfg, settings)
     summary = run_scans(conn, cfg, objs, accounts, run_date, model=settings.anthropic_model, workers=workers,
-                        force=force, log=typer.echo)
+                        force=force, touch_last_scanned=not light, log=typer.echo)
     typer.echo(f"\nPer account (tokens, est. cost):")
     for r in summary.accounts.values():
         cost = "unpriced" if r.est_cost is None else f"${r.est_cost:.4f}"
@@ -177,6 +190,160 @@ def scan(
     if summary.calls and summary.errors == summary.calls:
         typer.echo("Every scan call failed (bad API key or model, no network?). Exiting with an error so a scheduled "
                    "run stops before scoring and posting.", err=True)
+        raise typer.Exit(code=3)
+
+
+@app.command()
+def discover(
+    segment: Optional[str] = typer.Option(None, help="Research this one segment instead of the configured list"),
+    limit: Optional[int] = typer.Option(None, help="Research at most N segments"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List what would be researched; no API calls"),
+) -> None:
+    """Market research: find Chicagoland companies by segment, research their facts, auto-add those that clear the
+    fit gate (marked unreviewed, scanned only up to a per-run limit), and queue the rest for a person."""
+    from bd.db import connect, init_db
+    from bd.discover import Discoverer, run_discover
+    from bd.edgar import EdgarClient
+    from bd.enrich import Enricher
+    from bd.llm import AnthropicWebSearchClient
+    from bd.verify import UrlVerifier
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    from bd.settings_store import apply_overrides
+    cfg = apply_overrides(cfg, conn)          # limits and segments edited in the app
+    segs = [segment] if segment else cfg.discovery.segments[: limit or None]
+    typer.echo(f"{len(segs)} segment(s); up to {cfg.discovery.per_segment} companies each; research at most "
+               f"{cfg.discovery.max_candidates_per_run} new companies, auto-add at most {cfg.discovery.max_auto_add_per_run}.")
+    if dry_run:
+        for s_ in segs:
+            typer.echo(f"  would research: {s_}")
+        return
+    try:
+        key, model = settings.require_llm()
+    except RuntimeError as e:
+        _fail(str(e))
+        raise
+    web = AnthropicWebSearchClient(cfg, model=model, api_key=key)
+    verifier = UrlVerifier(cfg, settings.user_agent)
+    edgar = EdgarClient(cfg, settings.user_agent) if settings.user_agent_configured else None
+    summary = run_discover(conn, cfg, Discoverer(cfg, web, verifier), Enricher(cfg, web, verifier, edgar), run_date,
+                           model=model, segments=segs, workers=workers, log=typer.echo)
+    typer.echo(f"\nFound {summary.found} ({summary.skipped_known} already known, {summary.skipped_source} with an "
+               f"unverifiable source); researched {summary.researched}: {len(summary.added)} auto-added, "
+               f"{len(summary.queued)} queued for review, {len(summary.rejected)} rejected by the fit gate.")
+    note = f" ({summary.unpriced_calls} calls unpriced)" if summary.unpriced_calls else ""
+    typer.echo(f"Total: {summary.tokens:,} tokens, ${summary.est_cost:.4f} estimated{note}, {summary.errors} call errors.")
+    if summary.added:
+        typer.echo("Auto-added (unreviewed, tier B): " + ", ".join(summary.added))
+    if summary.budget_hit:
+        typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}); some candidates were not researched.", err=True)
+    if summary.segments and summary.errors >= summary.segments and not summary.researched:
+        _fail("Every discovery call failed (bad API key or model, no network?).")
+
+
+def _pe_deps(settings, cfg):
+    from bd.edgar import EdgarClient
+    from bd.enrich import Enricher
+    from bd.llm import AnthropicWebSearchClient
+    from bd.verify import UrlVerifier
+
+    try:
+        key, model = settings.require_llm()
+    except RuntimeError as e:
+        _fail(str(e))
+        raise
+    web = AnthropicWebSearchClient(cfg, model=model, api_key=key)
+    verifier = UrlVerifier(cfg, settings.user_agent)
+    edgar = EdgarClient(cfg, settings.user_agent) if settings.user_agent_configured else None
+    return web, verifier, Enricher(cfg, web, verifier, edgar), model
+
+
+@app.command(name="pe-sync")
+def pe_sync() -> None:
+    """Derive PE firms and portfolio links from accounts that have a sponsor (no API calls)."""
+    from bd.db import connect, init_db
+    from bd.pe_store import sync_from_accounts
+
+    settings = Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    r = sync_from_accounts(conn)
+    n = conn.execute("SELECT COUNT(*) FROM pe_firms").fetchone()[0]
+    typer.echo(f"{n} PE firm(s) known: {r.firms_added} added, {r.links_added} portfolio link(s) added, {r.links_exited} marked exited.")
+
+
+@app.command(name="pe-portfolio")
+def pe_portfolio(
+    firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
+    limit: Optional[int] = typer.Option(None, help="At most N firms (least recently researched first)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List the firms that would be researched; no API calls"),
+) -> None:
+    """Find each PE firm's Chicagoland portfolio companies from its own site; research and auto-add the new ones."""
+    from bd.db import connect, init_db
+    from bd.pe_firms import PortfolioFinder, run_portfolio, select_firms
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    sync_from_accounts(conn)
+    firms = select_firms(conn, firm, limit or cfg.pe_firms.max_firms_per_run, "last_portfolio")
+    typer.echo(f"{len(firms)} PE firm(s) to research.")
+    if dry_run or not firms:
+        for f in firms:
+            typer.echo(f"  would research: {f['name']}")
+        return
+    web, verifier, enricher, model = _pe_deps(settings, cfg)
+    s = run_portfolio(conn, cfg, PortfolioFinder(cfg, web, verifier), enricher, firms, run_date, model, workers, log=typer.echo)
+    typer.echo(f"\nFound {s.found} portfolio companies ({s.skipped_known} already known, {s.skipped_source} with an unverifiable "
+               f"source); researched {s.researched}: {len(s.added)} auto-added, {len(s.queued)} queued, {len(s.rejected)} rejected.")
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.errors} call errors.")
+    sync_from_accounts(conn)
+    if s.segments and s.errors >= s.segments and not s.found:
+        _fail("Every portfolio call failed (bad API key or model, no network?).")
+
+
+@app.command(name="pe-signals")
+def pe_signals(
+    firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
+    limit: Optional[int] = typer.Option(None, help="At most N firms (least recently scanned first)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List the firms that would be scanned; no API calls"),
+) -> None:
+    """Look for firm-level signals (new fund, exit, operating-partner hire) that lift its portfolio companies' scores."""
+    from bd.db import connect, init_db
+    from bd.pe_firms import FirmScanner, run_firm_scans, select_firms
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    sync_from_accounts(conn)
+    firms = select_firms(conn, firm, limit or cfg.pe_firms.max_firms_per_run)
+    typer.echo(f"{len(firms)} PE firm(s) to scan.")
+    if dry_run or not firms:
+        for f in firms:
+            typer.echo(f"  would scan: {f['name']}")
+        return
+    web, verifier, _enricher, model = _pe_deps(settings, cfg)
+    s = run_firm_scans(conn, cfg, FirmScanner(cfg, web, verifier), firms, run_date, model, workers, log=typer.echo)
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.new_signals} new firm signals, {s.errors} call errors.")
+    if s.firms and s.errors == s.firms:
+        typer.echo("Every firm call failed (bad API key or model, no network?).", err=True)
         raise typer.Exit(code=3)
 
 
@@ -201,6 +368,86 @@ def ui(
         serve(load_config(), settings.db_path, port=port, open_browser=not no_open)
     except OSError as e:
         _fail(f"Could not start the UI on 127.0.0.1:{port}: {e}")
+
+
+@app.command()
+def serve(
+    port: Optional[int] = typer.Option(None, help="Port (default: $PORT, else 8080)"),
+    host: str = typer.Option("0.0.0.0", help="Interface to listen on"),
+) -> None:
+    """Run the hosted app: password login, review UI, Operate page, and the Monday 05:00 Chicago run.
+
+    Needs BD_UI_PASSWORD (16+ characters); refuses to start without it. Data lives in $BD_DATA_DIR (default /data)."""
+    import os
+
+    try:
+        from bd.ui.auth import AuthConfigError
+        from bd.ui.server import build_hosted
+    except ImportError as e:
+        _fail(f"The hosted app needs Jinja2 ({e.name}). Install it with: pip install '.[ui]'")
+        raise
+    from bd.db import connect, init_db
+
+    from bd.ui.auth import Hosted
+
+    try:
+        Hosted(os.environ.get("BD_UI_PASSWORD", ""))    # fail closed before touching any data
+    except AuthConfigError as e:
+        _fail(str(e))
+        raise
+    data_dir = Path(os.environ.get("BD_DATA_DIR", "/data"))
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        _fail(f"Cannot use BD_DATA_DIR {data_dir}: {e}")
+    db_path = str(data_dir / "bd.sqlite")
+    os.environ["BD_DB_PATH"] = db_path                 # child jobs and Settings.from_env() use the same file
+    conn = connect(db_path)
+    init_db(conn)
+    _first_boot_seed(conn)
+    conn.close()
+    the_port = port if port is not None else int(os.environ.get("PORT", "8080"))
+    try:
+        httpd, _app, scheduler = build_hosted(load_config(), db_path, str(data_dir),
+                                              os.environ.get("BD_UI_PASSWORD", ""), the_port, host)
+    except AuthConfigError as e:
+        _fail(str(e))
+        raise
+    except OSError as e:
+        _fail(f"Could not listen on {host}:{the_port}: {e}")
+        raise
+    scheduler.start()
+    typer.echo(f"BD Signals listening on {host}:{httpd.server_port}; data in {data_dir}; "
+               "weekly run Mondays 05:00 America/Chicago.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("Stopped.")
+    finally:
+        scheduler.stop()
+        httpd.server_close()
+
+
+def _first_boot_seed(conn) -> None:
+    """On a brand-new volume, load the reviewed account/exclusion lists shipped with the image. After that the
+    database is the master copy and is never reseeded automatically."""
+    import os
+
+    from bd.accounts import list_accounts, seed_csv
+    from bd.fit_gate import apply_fit_gate, seed_exclusions
+
+    if list_accounts(conn, status=None):
+        return
+    base = Path(os.environ.get("BD_CONFIG", "config.yaml")).resolve().parent
+    if (base / "accounts.csv").exists():
+        res = seed_csv(conn, base / "accounts.csv")
+        typer.echo(f"First boot: seeded {res.inserted} account(s) from accounts.csv." if not res.errors
+                   else "First boot: accounts.csv had errors; nothing seeded: " + "; ".join(res.errors[:3]), err=bool(res.errors))
+    if (base / "exclusions.csv").exists():
+        n, errs = seed_exclusions(conn, base / "exclusions.csv")
+        if errs:
+            typer.echo("First boot: exclusions.csv had errors; nothing added: " + "; ".join(errs[:3]), err=True)
+    apply_fit_gate(conn, load_config())
 
 
 @app.command()
@@ -280,6 +527,8 @@ def score(
     cfg, settings = load_config(), Settings.from_env()
     conn = connect(settings.db_path)
     init_db(conn)
+    from bd.pe_store import sync_from_accounts
+    sync_from_accounts(conn)                      # so a sponsor's activity reaches its portfolio companies
     scored = score_accounts(conn, cfg, run_date)
     if not scored:
         _fail("No active accounts to score. Seed accounts and fill in their fit-gate facts first.")

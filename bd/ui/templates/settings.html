@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+<p class="sub">Market-research settings. Saved here, they override the defaults in <code>config.yaml</code> for the next run. Scoring weights, fit-gate floors and secrets are not editable here.</p>
+{% if errors %}<div class="errors">Not saved:<ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<div class="card">
+<h2 style="margin-top:0">Discovery</h2>
+<form method="post" action="/settings/discovery"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="segments">Segments to research (one per line, up to {{ max_segments }})</label>
+<textarea id="segments" name="segments" rows="12" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit">{{ form.segments }}</textarea>
+<div class="grid">
+{% for name, (label, lo, hi) in fields.items() %}<div><label for="{{ name }}">{{ label }} ({{ lo }}-{{ hi }})</label><input id="{{ name }}" type="number" name="{{ name }}" min="{{ lo }}" max="{{ hi }}" value="{{ form[name] }}" required></div>{% endfor %}
+</div>
+<p><button type="submit">Save</button></p></form>
+{% if customized %}<form method="post" action="/settings/discovery/reset"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Reset to config.yaml defaults</button></form>{% endif %}
+</div>
+{% if can_schedule %}<div class="card"><h2 style="margin-top:0">Daily light refresh</h2>
+<p class="meta">Every day except Monday at 5:00 AM Chicago, the app reads every known company job board and checks SEC filings it has not read yet, then re-scores. Job boards are free; only new SEC filings cost a model call. It never posts to Teams and never changes the Monday run.</p>
+<form method="post" action="/settings/refresh"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label><input type="checkbox" name="enabled" value="1" {{ 'checked' if refresh_on else '' }}> Run the light refresh daily</label>
+<p><button type="submit">Save</button></p></form></div>{% endif %}
+<p class="meta">Auto-adds are capped per run and marked auto-added; unreviewed accounts are scanned only up to the limit above until you mark them reviewed on the Accounts page.</p>
+{% endblock %}

@@ -44,3 +44,27 @@ def serve(cfg: Config, db_path: str, port: int = 8765, open_browser: bool = True
         print("\nStopped.")
     finally:
         httpd.server_close()
+
+
+class _HostedHandler(WSGIRequestHandler):
+    timeout = 30            # per-connection socket timeout: a stalled client cannot hold a thread forever
+
+    def log_message(self, format, *args):   # noqa: A002
+        line = (self.requestline or "").split("?")[0]
+        print(f"  {line} -> {args[1] if len(args) > 1 else ''}", flush=True)
+
+
+def build_hosted(cfg: Config, db_path: str, data_dir: str, password: str, port: int, host: str = "0.0.0.0"):
+    """The internet-facing variant: password login, Operate page, Monday scheduler. Returns (httpd, app, scheduler)."""
+    from pathlib import Path
+
+    from bd.jobs import JobRunner
+    from bd.scheduler import Scheduler
+    from bd.ui.auth import Hosted
+
+    hosted = Hosted(password)                       # raises AuthConfigError for a weak/missing password
+    runner = JobRunner(db_path, data_dir)
+    app = App(cfg, db_path, root=Path(data_dir), hosted=hosted, jobs=runner)
+    httpd = make_server(host, port, app, server_class=_Server, handler_class=_HostedHandler)
+    app.port = httpd.server_port
+    return httpd, app, Scheduler(runner)

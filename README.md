@@ -61,9 +61,12 @@ signals validated by code; none writes outreach.
 |---|---|---|---|
 | `leadership` | leadership_change, leadership_transformation_ai_data, open_exec_search | every account | web search |
 | `edgar` | leadership_change, leadership_transformation_ai_data | accounts with a CIK | SEC 8-K Item 5.02 from EDGAR; Claude only reads the excerpt |
+| `earnings` | cost_program, restructuring_layoffs, ma_divestiture, ai_commitment, ops_failure, strategy_rebrand | accounts with a CIK | SEC 8-K Item 2.02 earnings releases (the exhibit 99 press release) from EDGAR; EDGAR supplies the date and URL, Claude only reads the release text and reports events it states. Routine results are not signals; earnings-call transcripts are not used (paywalled) |
 | `events` | restructuring_layoffs, ma_divestiture, strategy_rebrand, ai_commitment, activist, ops_failure, cost_program | every account | includes Illinois WARN notices |
+| `press` | leadership_change, leadership_transformation_ai_data, open_exec_search, ma_divestiture, strategy_rebrand, ai_commitment, platform_migration, vendor_deal, cost_program, restructuring_layoffs, ops_failure | accounts with a domain | the company's own announcements: the search tool is restricted to the company's domain, wire services and SEC pages, so every candidate is first-party. Overlaps `events` on purpose; the same event found by both counts once when scoring |
 | `pe` | pe_platform_or_sponsor_exec, pe_addon, pe_hold_2_4 | accounts whose ownership is `pe-backed` | `pe_hold_2_4` is a status signal: valid only while the sponsor's original investment is 2-4 years old, and it stops scoring when the hold passes 4 years |
-| `hiring` | hiring_cluster, hiring_interim, hiring_single | every account | Claude lists postings; **code** verifies each, counts the cluster (3+ related postings within 60 days) and writes the summaries |
+| `hiring` | hiring_cluster, hiring_leadership, hiring_interim, hiring_single | accounts without a known job board | Claude lists postings; **code** verifies each, counts the cluster (3+ related postings within 60 days) and writes the summaries |
+| `ats` | hiring_cluster, hiring_leadership, hiring_interim, hiring_single | accounts whose Greenhouse / Lever / Ashby board is known | **free and daily**: reads the company's own job board JSON (every open posting, no model). The board id is learned from posting URLs the `hiring` scanner verified, never guessed. Titles are classified by the keyword lists in `config.yaml` (`hiring.theme_keywords`): data/AI, transformation/strategy/operations, product/engineering build-out. `hiring_leadership` = a VP-or-above posting in one of those areas. Postings are stored and shown on the Hiring page |
 | `tech_procurement` | platform_migration, vendor_deal, rfp_match, risk_factor | every account | an RFP must have a future due date; a risk factor must be on sec.gov |
 
 ## Commands
@@ -73,8 +76,10 @@ signals validated by code; none writes outreach.
 | `bd seed accounts.csv [--exclusions exclusions.csv] [--overwrite]` | Load accounts and exclusions, then run the fit gate. **The database is the master copy**: for an account that already exists, a CSV value only fills a fact that is still unknown; differences are reported and the database value is kept unless you pass `--overwrite`. Blank cells stay *unknown*, never guessed. Also loads a reviewed `bd enrich` file |
 | `bd export [--accounts accounts.csv] [--exclusions exclusions.csv]` | Write the database's accounts and exclusions back to CSV (for git or backup). Overwrites those files, so review with `git diff` |
 | `bd ui` | Open the local review-and-curate UI (see **Local UI** below) |
+| `bd discover [--segment TEXT] [--limit N] [--dry-run]` | **Market research.** Finds Chicagoland companies by segment (`discovery.segments` in config), researches each one's facts with the same verified-evidence rules as `enrich`, **auto-adds** those that pass the fit gate (tier B, marked *auto-added*), queues uncertain ones on the Discovery page and records fit-gate failures so they are never researched twice. Auto-added accounts are scanned only up to `discovery.scan_unreviewed_per_run` per run until you mark them reviewed |
+| `bd pe-sync` / `bd pe-portfolio [--firm T] [--limit N]` / `bd pe-signals [--firm T] [--limit N]` | **Private equity.** `pe-sync` (free) derives PE firms and portfolio links from accounts that have a sponsor. `pe-portfolio` reads each firm's own site and finds its other Chicagoland companies, which go through the same verify / fit-gate / auto-add path as `discover`; a company is linked to the firm only when the firm's own site lists it. `pe-signals` looks for firm-level news (new fund, exit, operating-partner hire) with the same source rules as company signals. A firm's signals add a small, **capped** lift (`scoring.sponsor`) to portfolio companies that already have a signal of their own; the lift is shown separately and can never make a company postable by itself |
 | `bd enrich` | **Proposes** missing facts (domain, Chicagoland, size, ownership, CIK) with an evidence URL each, into `enrich_proposals.csv`. Never writes to the database. Review, then `bd seed enrich_proposals.csv` |
-| `bd scan [--tier A\|B\|all] [--dry-run] [--force] [--scanners leadership,events,pe,hiring,tech_procurement,edgar]` | Fit-gate, then scan accounts that are due (A weekly, B every other week) concurrently, logging tokens and cost per account. `--dry-run` shows what would run with no API calls |
+| `bd scan [--tier A\|B\|all] [--dry-run] [--force] [--scanners leadership,events,press,earnings,pe,hiring,tech_procurement,edgar]` | Fit-gate, then scan accounts that are due (A weekly, B every other week) concurrently, logging tokens and cost per account. `--dry-run` shows what would run with no API calls |
 | `bd score` | Deterministic scores for fit-gated accounts |
 | `bd shortlist` | Read-only preview of who would be posted, and why others were not |
 | `bd card [--dry-run] [--no-llm]` | Brief the shortlist, write `card.json`, post to Teams **only if `TEAMS_WEBHOOK_URL` is set** |
@@ -94,7 +99,8 @@ on the command line.
 
 | Page | What you can do |
 |---|---|
-| **Leads** | See what the weekly run would post: score, the one-line why-now, every source link, and a "how the score was calculated" table. Also who is tracked but not posted, and why |
+| **Opportunities** (home) | Every active account scored Watch or better, ranked, each with the points by source (leadership, hiring, company events, private equity, technology, procurement, filings, and the PE owner's own activity shown separately), the one-line why-now, open job postings, change since the last run, and whether it is on the Monday card or why it is held back. Filters: band, signal group, service line, PE-backed, new since last run, status |
+| **Monday card** | The part of Opportunities the weekly run would post (Hot or Warm, a High-confidence signal in the last 90 days, not in cooldown, capped): score, why-now, every source link, and a "how the score was calculated" table |
 | **Accounts** | List and search; see why an account is held; edit its facts (blank = unknown) and see the fit-gate verdict at once; add an account |
 | **Enrich review** | Go through `bd enrich`'s proposals fact by fact, each with its evidence link. New facts are ticked, ones that would replace a known value are not. **Apply** writes only the ticked facts, using the values in the file (not the page) |
 | **Exclusions** | Add or remove clients and do-not-pursue companies; every account's status is re-checked immediately |
@@ -119,9 +125,24 @@ Content-Security-Policy; see SECURITY.md. Stop it with Ctrl-C.
    open `card.json`. Check the per-account cost lines before widening.
 4. **Post.** Set `TEAMS_WEBHOOK_URL` and run `bd card`.
 
+## Daily light refresh
+
+Every day except Monday at 05:00 America/Chicago the hosted app runs a *light refresh*: `bd scan --scanners ats,edgar,earnings --force --light`, then `bd score`. Job boards are read for free; only SEC filings not read before cost a model call; it never builds a card or posts, and `--light` leaves the weekly cadence alone. Turn it off on the Settings page. Monday's full run does everything.
+
+## Hosted app (use it from a browser, no terminal)
+
+`bd serve` is the internet-facing version of the UI: password sign-in, an **Operate** page with buttons for enrich,
+scan, score and dry runs (spend-confirmed, one at a time, never posting), and the Monday 05:00 America/Chicago run
+built in, all on one database. It refuses to start without `BD_UI_PASSWORD` (16+ characters). Everything needed to
+deploy it (Dockerfile, `railway.json`) is in the repo; the steps and variables are in [docs/DEPLOY.md](docs/DEPLOY.md).
+`bd ui` remains the local, loopback-only variant.
+
 ## Weekly schedule: Monday 05:00 America/Chicago
 
-`scripts/weekly.sh` runs `seed → scan → score → card`, stops at the first failing step (`bd scan` exits 3
+(If you use the hosted app, the schedule is already built in and you can skip this section.)
+
+
+`scripts/weekly.sh` runs `seed → scan → pe-signals → score → card`, stops at the first failing step (`bd scan` exits 3
 if every call failed, so nothing is posted on a broken run), and honours `BD_DRY_RUN=1`. Two ways to
 schedule it:
 

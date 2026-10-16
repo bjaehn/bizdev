@@ -6,11 +6,29 @@
 <div class="row"><div><h1>{{ a.name }}</h1>
 <p class="sub">Fit gate: <span class="badge {{ 'good' if fit.verdict == 'pass' else ('warm' if fit.verdict == 'unknown' else 'bad') }}">{{ fit.verdict }}</span>
 status <b>{{ a.status }}</b>{% if fit.reasons %} · {{ fit.reasons|join('; ') }}{% endif %}</p></div></div>
+{% if a.origin == 'discovered' %}<div class="card"><h2 style="margin-top:0">Found by market research</h2>
+<p class="meta">Discovered {{ a.discovered_at or '' }}{% if a.source_url|safe_url %} via <a href="{{ a.source_url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ a.source_url|host }}</a>{% endif %}.
+{% if not a.reviewed %}Not yet reviewed: it is scanned only up to a per-run limit.{% else %}Reviewed.{% endif %}</p>
+{% if not a.reviewed %}<form method="post" action="/accounts/{{ a.id }}/reviewed"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Mark reviewed</button></form>{% endif %}</div>{% endif %}
 <div class="card">
 <h2 style="margin-top:0">Facts</h2>
 {{ errors_box(errors) }}
 {{ facts_form(form, '/accounts/' ~ a.id, 'Save facts') }}
 </div>
+
+{% if firms %}<div class="card"><h2 style="margin-top:0">Private equity owner</h2>
+<p>{% for f in firms %}<a href="/firms/{{ f.id }}">{{ f.name }}</a>{% if f.link_status == 'exited' %} <span class="badge">exited</span>{% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
+<p class="meta">The owner's own news (a new fund, an exit, an operating-partner hire) adds a small, capped lift to this account's score, only when the account already has a signal of its own.</p></div>{% endif %}
+
+<h2>Open job postings ({{ postings|length }})</h2>
+{% if postings %}<div class="wrap"><table>
+<tr><th>Posted</th><th>Title</th><th>Area</th><th>Level</th></tr>
+{% for p in postings %}<tr><td>{{ p['posted_date']|fdate }}</td>
+<td>{% if p['url']|safe_url %}<a href="{{ p['url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ p['title'] }}</a>{% else %}{{ p['title'] }}{% endif %}{% if p['interim'] %} <span class="badge warm">interim</span>{% endif %}</td>
+<td>{{ p['theme']|replace('_', ' ') }}</td><td>{{ p['seniority']|replace('_', ' ') }}{% if p['seniority'] in lead %} <span class="badge hot">leadership</span>{% endif %}</td></tr>{% endfor %}
+</table></div>
+<p class="meta">{% if a.ats_board %}Read daily from the company's own {{ a.ats_provider }} job board.{% else %}Found by search; the job board has not been identified yet.{% endif %}</p>
+{% else %}<div class="card empty">No open postings recorded.{% if not a.ats_board %} The job board is identified the first time a scan finds a posting on Greenhouse, Lever or Ashby.{% endif %}</div>{% endif %}
 
 <h2>Signals ({{ signals|length }})</h2>
 {% if signals %}

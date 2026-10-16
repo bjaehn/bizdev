@@ -68,7 +68,7 @@ def test_scan_dry_run_needs_no_key_and_lists_only_gated_in_accounts(tmp_path):
     r = runner.invoke(app, ["scan", "--dry-run"])
     assert r.exit_code == 0 and "would scan: Acme" in r.output
     assert "Beta" not in r.output.split("due")[1] and "Gamma" not in r.output.split("due")[1]
-    assert "1 of 1 accounts due" in r.output and "= 4 calls" in r.output   # leadership, events, hiring, tech_procurement (pe: not PE-backed)
+    assert "1 of 1 accounts due" in r.output and "= 5 calls" in r.output   # leadership, events, press, hiring, tech_procurement (pe: not PE-backed)
     assert runner.invoke(app, ["scan", "--dry-run", "--tier", "B"]).exit_code == 1  # Beta is held, so none
 
 
@@ -247,7 +247,7 @@ def test_scan_all_skips_edgar_without_a_user_agent_and_explicit_edgar_fails(tmp_
     seeded(tmp_path)
     monkeypatch.delenv("BD_USER_AGENT", raising=False)
     r = runner.invoke(app, ["scan", "--dry-run"])
-    assert r.exit_code == 0 and "edgar scanner skipped: set BD_USER_AGENT" in r.output
+    assert r.exit_code == 0 and "edgar, earnings scanner(s) skipped: set BD_USER_AGENT" in r.output
     r = runner.invoke(app, ["scan", "--dry-run", "--scanners", "edgar"])
     assert r.exit_code == 1 and "BD_USER_AGENT" in r.output
 
@@ -261,7 +261,7 @@ def test_edgar_counts_only_accounts_with_a_cik_in_the_dry_run(tmp_path, monkeypa
     monkeypatch.setenv("BD_USER_AGENT", "SEI BD ops@example.com")
     r = runner.invoke(app, ["scan", "--dry-run"])
     assert r.exit_code == 0 and "2 of 2 accounts due" in r.output
-    assert "= 9 calls" in r.output            # 4 scanners for each of 2 accounts (8) + edgar for Acme only (1)
+    assert "= 12 calls" in r.output           # 5 scanners for each of 2 accounts (10) + edgar and earnings for Acme only (2)
 
 
 def test_enrich_needs_accounts_and_a_key(tmp_path):

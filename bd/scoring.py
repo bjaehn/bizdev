@@ -45,6 +45,7 @@ class ScoreResult:
     signals: tuple[SignalPoints, ...]
     rationale: str
     components: dict = field(default_factory=dict)
+    sponsor_lift: float = 0.0
 
     def components_json(self) -> str:
         return json.dumps(self.components, sort_keys=True)
@@ -111,7 +112,30 @@ def band_for(score: int, cfg: Scoring) -> str:
     return BAND_STORED
 
 
-def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config) -> ScoreResult:
+def sponsor_lift(firm_signals: Sequence[tuple[ScoringSignal, str]], as_of: date, cfg: Config) -> tuple[float, list[dict]]:
+    """Points a company gets from its sponsor's own activity. Same recency and confidence rules as company signals
+    (Low confidence and old events are worth 0); the strongest counts in full, the rest at the within-family decay;
+    the total is capped at scoring.sponsor.lift_max. Returns (lift, per-signal details for the audit trail)."""
+    s = cfg.scoring
+    rows = []
+    for sig, firm in firm_signals:
+        if sig.type not in s.sponsor.base_points:
+            raise KeyError(f"unknown firm signal type: {sig.type}")
+        pts = (s.sponsor.base_points[sig.type] * recency_multiplier(sig.type, sig.event_date, as_of, s)
+               * s.confidence_multiplier[sig.confidence])
+        if pts > 0:
+            rows.append({"type": sig.type, "firm": firm, "event_date": sig.event_date.isoformat(),
+                         "confidence": sig.confidence, "points": pts, "ref": sig.ref})
+    rows.sort(key=lambda r: (-r["points"], r["event_date"], r["type"], r["firm"]))
+    total = 0.0
+    for i, r in enumerate(rows):
+        r["weight"] = 1.0 if i == 0 else s.within_family_decay
+        total += r["points"] * r["weight"]
+    return min(s.sponsor.lift_max, total), rows
+
+
+def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config,
+                  firm_signals: Sequence[tuple[ScoringSignal, str]] = ()) -> ScoreResult:
     s = cfg.scoring
     # Signals worth 0 points (Low confidence, older than the last recency band) are dropped
     # before grouping so they can never count as a family for the stacking bonus.
@@ -135,7 +159,9 @@ def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config) ->
 
     n_fam = len(family_totals)
     bonus = min(s.stacking_bonus_max, s.stacking_bonus_per_family * max(0, n_fam - 1))
-    raw = sum(family_totals.values()) + bonus
+    # Sponsor activity only lifts a company that already has a scoring signal of its own; it never creates a lead.
+    lift, lift_rows = sponsor_lift(firm_signals, as_of, cfg) if family_totals else (0.0, [])
+    raw = sum(family_totals.values()) + bonus + lift
     score = min(s.score_max, _half_up(raw))
     band = band_for(score, s)
     families = tuple(sorted(family_totals))
@@ -150,6 +176,7 @@ def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config) ->
             for fam in families
         },
         "stacking_bonus": bonus,
+        "sponsor": {"lift": round(lift, 4), "cap": s.sponsor.lift_max, "signals": lift_rows},
         "raw_total": round(raw, 4),
         "score_cap": s.score_max,
     }
@@ -161,8 +188,9 @@ def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config) ->
         stacking_bonus=bonus,
         raw_total=raw,
         signals=tuple(weighted),
-        rationale=_rationale(family_totals, bonus, score, s.score_max),
+        rationale=_rationale(family_totals, bonus, score, s.score_max, lift),
         components=components,
+        sponsor_lift=lift,
     )
 
 
@@ -170,13 +198,15 @@ def _neg_date(iso: str) -> int:
     return -date.fromisoformat(iso).toordinal()
 
 
-def _rationale(family_totals: dict[str, float], bonus: float, score: int, cap: int) -> str:
+def _rationale(family_totals: dict[str, float], bonus: float, score: int, cap: int, lift: float = 0.0) -> str:
     if not family_totals:
         return "No scoreable signals."
     parts = [f"{fam} {tot:.1f}" for fam, tot in family_totals.items()]
     text = " + ".join(parts)
     if bonus:
         text += f" + stacking bonus {bonus:g}"
+    if lift:
+        text += f" + sponsor activity {lift:.1f}"
     text += f" = {score}"
     if score == cap:
         text += " (capped)"

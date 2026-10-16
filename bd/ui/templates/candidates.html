@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Discovery{% endblock %}
+{% block body %}
+<h1>Discovery</h1>
+<p class="sub">Companies found by market research. Those that cleared the fit gate with verified evidence were added to Accounts automatically (marked auto-added). The rest wait here for you; rejected ones are kept so they are never researched twice.</p>
+<div class="wrap"><table>
+<tr><th>Company</th><th>Status</th><th>Segment</th><th>Facts found</th><th>Why not auto-added</th><th>Found via</th><th></th></tr>
+{% for r in rows %}{% set c = r.c %}{% set f = r.facts %}
+<tr><td>{{ c['name'] }}{% if c['domain'] %}<br><span class="meta">{{ c['domain'] }}</span>{% endif %}</td>
+<td><span class="badge {{ 'good' if c['status'] == 'added' else ('warm' if c['status'] == 'queued' else 'bad') }}">{{ c['status'] }}</span>{% if c['account_id'] %}<br><a href="/accounts/{{ c['account_id'] }}">account</a>{% endif %}</td>
+<td class="meta">{{ c['segment'] }}</td>
+<td class="meta">{% if f %}Chicagoland {{ f.get('chicagoland')|show }} · revenue {{ f.get('revenue')|fact('revenue') }} · employees {{ f.get('employees')|fact('employees') }} · {{ f.get('ownership')|show }}{% else %}none{% endif %}</td>
+<td class="meta">{{ c['reason'] or '' }}</td>
+<td>{% if c['source_url']|safe_url %}<a href="{{ c['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ c['source_url']|host }}</a>{% endif %}<br><span class="meta">{{ c['found_date'] }}</span></td>
+<td>{% if c['status'] == 'queued' %}
+<form method="post" action="/candidates/{{ c['id'] }}/accept"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Add</button></form>
+<form method="post" action="/candidates/{{ c['id'] }}/reject" style="margin-top:6px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Reject</button></form>{% endif %}</td></tr>
+{% else %}<tr><td colspan="7" class="empty">Nothing found yet. Run Discover from the Operate page.</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

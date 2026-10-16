@@ -18,6 +18,7 @@ from bd.accounts import Account
 from bd.config import Config
 from bd.cost import estimate_cost
 from bd.llm import Usage
+from bd.postings import known_accessions, learn_board, record_filings, store_postings
 from bd.scanners.base import ScanOutcome, Scanner, store_signals
 
 
@@ -58,7 +59,7 @@ def is_due(acc: Account, as_of: date, cfg: Config, force: bool = False) -> bool:
 
 def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], accounts: list[Account],
               as_of: date, model: str | None, workers: int | None = None, force: bool = False,
-              max_cost: float | None = None,
+              max_cost: float | None = None, touch_last_scanned: bool = True,
               log: Callable[[str], None] = lambda s: None) -> RunSummary:
     workers = max(1, workers or cfg.llm.concurrency)
     cap = cfg.llm.max_cost_per_run_usd if max_cost is None else max_cost
@@ -76,6 +77,15 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
     def finish(acc: Account, sc: Scanner, out: ScanOutcome) -> None:
         run = summary.accounts.setdefault(acc.id, AccountRun(acc))
         ins, known = store_signals(conn, acc.id, out.signals, as_of)
+        with conn:
+            if out.postings and not out.error:
+                store_postings(conn, acc.id, out.postings, as_of, acc.ats_provider if sc.name == "ats" else "search",
+                               out.postings_complete)
+            elif out.postings_complete and not out.error:        # a complete empty board: everything was taken down
+                store_postings(conn, acc.id, [], as_of, acc.ats_provider or "", True)
+            if out.learned_board and not out.error:
+                learn_board(conn, acc.id, out.learned_board)
+            record_filings(conn, acc.id, sc.name, out.read_filings, as_of)
         cost = estimate_cost(out.usage, model, cfg)
         if cost is None:
             run.est_cost = None
@@ -103,7 +113,7 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
                 "VALUES (?,?,?,?,?,?,?,?)",
                 (as_of.isoformat(), f"scan:{sc.name}", acc.id, 1, ins, out.usage.total_tokens, cost, notes or None))
             remaining[acc.id] -= 1
-            if remaining[acc.id] == 0 and acc.id not in failed:
+            if touch_last_scanned and remaining[acc.id] == 0 and acc.id not in failed:
                 conn.execute("UPDATE accounts SET last_scanned = ? WHERE id = ?", (as_of.isoformat(), acc.id))
         log(f"  {acc.name} [{sc.name}]: {ins} new, {known} known, {len(out.rejections)} rejected, "
             f"{out.usage.total_tokens:,} tokens, " + ("unpriced" if cost is None else f"${cost:.4f}")
@@ -113,7 +123,10 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
         while queue or inflight:
             while queue and len(inflight) < workers and not summary.budget_hit:
                 acc, sc = queue.popleft()
-                inflight[ex.submit(sc.scan, acc, as_of)] = (acc, sc)
+                if sc.reads_filings:
+                    inflight[ex.submit(sc.scan, acc, as_of, known_accessions(conn, acc.id, sc.name))] = (acc, sc)
+                else:
+                    inflight[ex.submit(sc.scan, acc, as_of)] = (acc, sc)
             if not inflight:
                 break
             done, _ = wait(inflight, return_when=FIRST_COMPLETED)

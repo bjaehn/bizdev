@@ -23,7 +23,8 @@ import hmac
 import json
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
+import os
 from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode, urlparse
@@ -33,11 +34,18 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from bd.accounts import Account, list_accounts
 from bd.brief_core import fallback_brief
 from bd.config import Config
-from bd.curate import (EXCLUSION_REASONS, add_exclusion, apply_selected, create_account, load_proposals,
-                       remove_exclusion, update_account)
+from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply_selected, create_account, load_proposals,
+                       mark_reviewed, reject_candidate, remove_exclusion, update_account)
 from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
-from bd.labels import TYPE_LABELS, fmt_date
+from bd.jobs import KINDS, SCANNER_NAMES, JobError, JobRunner
+from bd.scheduler import next_run
+from bd.ui.auth import Hosted, Throttle
+from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
+from bd.pe_store import add_firm, set_firm_status
+from bd.opportunities import build_opportunities, filter_opportunities, score_dates
+from bd.settings_store import (INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
+                               refresh_enabled, reset_discovery, save_discovery, save_refresh)
 from bd.shortlist import ShortlistError, build_shortlist
 
 MAX_BODY = 64 * 1024
@@ -109,16 +117,21 @@ def safe_url(u: object) -> str:
 
 
 class App:
-    def __init__(self, cfg: Config, db_path: str, token: str, root: Path | None = None) -> None:
+    def __init__(self, cfg: Config, db_path: str, token: str = "", root: Path | None = None,
+                 hosted: Hosted | None = None, jobs: JobRunner | None = None,
+                 throttle: Throttle | None = None) -> None:
         self.cfg, self.db_path, self._token = cfg, db_path, token
+        self.hosted, self.jobs = hosted, jobs
+        self.throttle = throttle or Throttle()
         self.root = (root or Path.cwd()).resolve()
         self.port: int | None = None
-        self._csrf = hmac.new(token.encode(), b"csrf", hashlib.sha256).hexdigest()
+        self._csrf = hosted.csrf if hosted else hmac.new(token.encode(), b"csrf", hashlib.sha256).hexdigest()
         self._flash: list[tuple[str, str]] = []
         self.env = Environment(loader=PackageLoader("bd.ui", "templates"), autoescape=select_autoescape(["html"]),
                                trim_blocks=True, lstrip_blocks=True)
         self.env.filters.update(money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
-        self.env.globals.update(csrf=self._csrf, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS)
+        self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
+                                hosted=hosted is not None, operate=jobs is not None)
         init_conn = connect(db_path)
         init_db(init_conn)
         init_conn.close()
@@ -133,17 +146,20 @@ class App:
         except _BadRequest as e:
             resp = self.error("400 Bad Request", str(e))
         except Exception:                                   # never leak a traceback (paths, SQL) to the page
-            resp = self.error("500 Internal Server Error", "Something went wrong. Check the terminal running `bd ui`.")
+            resp = self.error("500 Internal Server Error", "Something went wrong. Check the server log.")
             import traceback
             traceback.print_exc()
         resp.headers += [("Content-Security-Policy", CSP), ("X-Content-Type-Options", "nosniff"),
-                         ("Referrer-Policy", "no-referrer"), ("Cache-Control", "no-store"),
+                         ("Referrer-Policy", "same-origin"), ("Cache-Control", "no-store"),
                          ("X-Frame-Options", "DENY")]
+        if self.hosted and environ.get("HTTP_X_FORWARDED_PROTO", "") == "https":
+            resp.headers.append(("Strict-Transport-Security", "max-age=31536000"))
         start_response(resp.status, resp.headers)
         return [resp.body]
 
     def _request(self, environ) -> Request:
         headers = {k[5:].replace("_", "-").lower(): v for k, v in environ.items() if k.startswith("HTTP_")}
+        headers["remote-addr"] = environ.get("REMOTE_ADDR", "")
         cookies = {k: m.value for k, m in SimpleCookie(headers.get("cookie", "")).items()}
         req = Request(environ["REQUEST_METHOD"], environ.get("PATH_INFO", "/"),
                       parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True), headers, cookies)
@@ -162,8 +178,8 @@ class App:
         body = self.env.get_template(template).render(flash=flash, **ctx).encode()
         return Response(http_status, body, [("Content-Type", "text/html; charset=utf-8")])
 
-    def error(self, status: str, message: str) -> Response:
-        body = self.env.get_template("error.html").render(status=status, message=message, flash=[]).encode()
+    def error(self, status: str, message: str, nav: bool = True) -> Response:
+        body = self.env.get_template("error.html").render(status=status, message=message, flash=[], nav=nav).encode()
         return Response(status, body, [("Content-Type", "text/html; charset=utf-8")])
 
     def redirect(self, to: str, extra: list[tuple[str, str]] | None = None) -> Response:
@@ -174,6 +190,8 @@ class App:
 
     # ---- guard + routing ---------------------------------------------------------------------------------------
     def handle(self, req: Request) -> Response:
+        if self.hosted:
+            return self.handle_hosted(req)
         if req.headers.get("host", "") not in self.allowed_hosts():
             return self.error("403 Forbidden", "Unexpected Host header. This UI only answers on 127.0.0.1 or localhost.")
         if req.path == "/auth" and req.method == "GET":
@@ -185,7 +203,10 @@ class App:
             return self.error("403 Forbidden", "Not signed in. Open the URL printed by `bd ui` in your terminal.")
         if req.method == "POST":
             origin = req.headers.get("origin")
-            if origin and urlparse(origin).netloc not in self.allowed_hosts():
+            if origin == "null":
+                if req.headers.get("sec-fetch-site") != "same-origin":
+                    return self.error("403 Forbidden", "Cross-origin request refused.")
+            elif origin and urlparse(origin).netloc not in self.allowed_hosts():
                 return self.error("403 Forbidden", "Cross-origin request refused.")
             if req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
                 return self.error("403 Forbidden", "Cross-site request refused.")
@@ -200,16 +221,146 @@ class App:
         finally:
             conn.close()
 
+    # ---- hosted mode ------------------------------------------------------------------------------------------
+    @staticmethod
+    def client_id(req: Request) -> str:
+        """The caller's address as the platform proxy reports it (first X-Forwarded-For hop)."""
+        return (req.headers.get("x-forwarded-for", "").split(",")[0].strip() or req.headers.get("x-real-ip", "")
+                or req.headers.get("remote-addr", "") or "unknown")[:64]
+
+    @staticmethod
+    def same_origin(req: Request) -> bool:
+        """Origin must match our Host. Some browsers send `Origin: null` on form posts; that is accepted only when
+        the browser itself says the request is same-origin (Sec-Fetch-Site), and the CSRF token still applies."""
+        origin = req.headers.get("origin")
+        if not origin:
+            return True
+        if origin == "null":
+            return req.headers.get("sec-fetch-site") == "same-origin"
+        return urlparse(origin).netloc == req.headers.get("host", "")
+
+    def _secure(self, req: Request) -> bool:
+        return req.headers.get("x-forwarded-proto", "") == "https"
+
+    def _cookie(self, req: Request, value: str, max_age: int) -> str:
+        return (f"bd_session={value}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}"
+                + ("; Secure" if self._secure(req) else ""))
+
+    def login_page(self, error: str = "", status: str = "200 OK") -> Response:
+        # Public page: never touches the shared flash list (that belongs to the signed-in user).
+        body = self.env.get_template("login.html").render(error=error, flash=[], nav=False, csrf="").encode()
+        return Response(status, body, [("Content-Type", "text/html; charset=utf-8")])
+
+    def handle_hosted(self, req: Request) -> Response:
+        assert self.hosted is not None
+        if req.path == "/healthz" and req.method in ("GET", "HEAD"):
+            return Response("200 OK", b"ok", [("Content-Type", "text/plain; charset=utf-8")])
+        if req.method not in ("GET", "POST"):
+            return self.error("405 Method Not Allowed", "Only GET and POST are used.", nav=False)
+        signed_in = self.hosted.session_ok(req.cookies.get("bd_session", ""))
+        if req.path == "/login":
+            if req.method == "GET":
+                return self.redirect("/") if signed_in else self.login_page()
+            return self.login(req)
+        if not signed_in:
+            if req.method == "GET":
+                return self.redirect("/login")
+            return self.error("403 Forbidden", "Not signed in.", nav=False)
+        if req.method == "POST":
+            if not self.same_origin(req):
+                return self.error("403 Forbidden", "Cross-origin request refused.")
+            if req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+                return self.error("403 Forbidden", "Cross-site request refused.")
+            if not hmac.compare_digest(req.f("csrf"), self._csrf):
+                return self.error("403 Forbidden", "Form token missing or wrong. Reload the page and try again.")
+            if req.path == "/logout":
+                return self.redirect("/login", [("Set-Cookie", self._cookie(req, "", 0))])
+        conn = connect(self.db_path)
+        try:
+            return self.route(req, conn)
+        finally:
+            conn.close()
+
+    def login(self, req: Request) -> Response:
+        assert self.hosted is not None
+        if not self.same_origin(req) or \
+                req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+            return self.error("403 Forbidden", "Cross-origin request refused.", nav=False)
+        client = self.client_id(req)
+        wait = self.throttle.retry_after(client)
+        if wait:
+            return self.login_page(f"Too many attempts. Try again in {wait} seconds.", "429 Too Many Requests")
+        if self.hosted.check_password(req.f("password")):
+            self.throttle.succeeded(client)
+            return self.redirect("/", [("Set-Cookie", self._cookie(req, self.hosted.make_session(),
+                                                                   self.hosted.session_hours * 3600))])
+        self.throttle.failed(client)
+        import time
+        time.sleep(self.fail_delay)
+        return self.login_page("That password is not right.", "401 Unauthorized")
+
+    fail_delay = 1.0
+
+    # ---- operate (hosted only) --------------------------------------------------------------------------------
+    def operate(self, conn: sqlite3.Connection) -> Response:
+        assert self.jobs is not None
+        env = os.environ
+        ready = [("Model access (ANTHROPIC_API_KEY, ANTHROPIC_MODEL)", bool(env.get("ANTHROPIC_API_KEY") and env.get("ANTHROPIC_MODEL"))),
+                 ("SEC contact (BD_USER_AGENT), needed for the edgar scanner", bool(env.get("BD_USER_AGENT"))),
+                 ("Teams webhook (TEAMS_WEBHOOK_URL), needed for the Monday post", bool(env.get("TEAMS_WEBHOOK_URL")))]
+        last = self.jobs.last_scheduled()
+        return self.render("operate.html", page="operate", ready=ready, kinds=KINDS, scanners=SCANNER_NAMES,
+                           jobs=self.jobs.recent(), busy=self.jobs.busy(), cap=self.cfg.llm.max_cost_per_run_usd,
+                           next_run=next_run(datetime.now(timezone.utc)),
+                           posts=bool(env.get("TEAMS_WEBHOOK_URL")) and env.get("BD_DRY_RUN") != "1", last=last)
+
+    def job_start(self, req: Request) -> Response:
+        assert self.jobs is not None
+        kind = req.f("kind")
+        form = {k: req.f(k) for k in ("limit", "only", "tier", "no_llm")}
+        form["scanners"] = ",".join(req.flist("scanners"))
+        try:
+            job_id = self.jobs.submit(kind, form, confirmed=bool(req.f("confirm")))
+        except JobError as e:
+            self.say("err", str(e))
+            return self.redirect("/operate")
+        return self.redirect(f"/jobs/{job_id}")
+
+    def job_page(self, job_id: int) -> Response:
+        assert self.jobs is not None
+        job = self.jobs.get(job_id)
+        if job is None:
+            return self.error("404 Not Found", "No such job.")
+        return self.render("job.html", page="operate", job=job, log=self.jobs.log_tail(job_id),
+                           running=job.status in ("queued", "running"), label=KINDS.get(job.kind, (job.kind,))[0])
+
     def route(self, req: Request, conn: sqlite3.Connection) -> Response:
         p, m = req.path.rstrip("/") or "/", req.method
+        if self.jobs is not None and self.hosted:
+            if (m, p) == ("GET", "/operate"):
+                return self.operate(conn)
+            if (m, p) == ("POST", "/operate/run"):
+                return self.job_start(req)
+            if m == "GET" and p.startswith("/jobs/") and p[6:].isdigit():
+                return self.job_page(int(p[6:]))
         parts = p.strip("/").split("/")
         table = {
-            ("GET", "/"): lambda: self.leads(req, conn),
+            ("GET", "/"): lambda: self.opportunities(req, conn),
+            ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
             ("GET", "/accounts/new"): lambda: self.render("account_new.html", page="accounts", form={}, errors=[]),
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
             ("GET", "/enrich"): lambda: self.enrich(req, conn),
             ("POST", "/enrich/apply"): lambda: self.enrich_apply(req, conn),
+            ("GET", "/candidates"): lambda: self.candidates(conn),
+            ("GET", "/hiring"): lambda: self.hiring(req, conn),
+            ("POST", "/settings/refresh"): lambda: self.refresh_save(req, conn),
+            ("GET", "/firms"): lambda: self.firms(conn),
+            ("POST", "/firms/add"): lambda: self.firm_add(req, conn),
+            ("GET", "/settings"): lambda: self.settings_page(conn),
+            ("POST", "/settings/discovery"): lambda: self.settings_save(req, conn),
+            ("POST", "/settings/discovery/reset"): lambda: self.settings_reset(conn),
+            ("POST", "/accounts/reviewed-all"): lambda: self.reviewed(conn, None),
             ("GET", "/exclusions"): lambda: self.exclusions(conn),
             ("POST", "/exclusions/add"): lambda: self.exclusion_add(req, conn),
             ("GET", "/runs"): lambda: self.runs(conn),
@@ -219,6 +370,16 @@ class App:
             return table[(m, p)]()
         if len(parts) == 2 and parts[0] == "accounts" and parts[1].isdigit():
             return self.account_page(req, conn, int(parts[1])) if m == "GET" else self.account_save(req, conn, int(parts[1]))
+        if parts[0] == "firms" and len(parts) == 2 and parts[1].isdigit() and m == "GET":
+            return self.firm_page(conn, int(parts[1]))
+        if m == "POST" and len(parts) == 3 and parts[0] == "firms" and parts[1].isdigit() and parts[2] == "status":
+            ok = set_firm_status(conn, int(parts[1]), req.f("status"))
+            self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
+            return self.redirect(f"/firms/{int(parts[1])}")
+        if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
+            return self.reviewed(conn, int(parts[1]))
+        if m == "POST" and len(parts) == 3 and parts[0] == "candidates" and parts[1].isdigit() and parts[2] in ("accept", "reject"):
+            return self.candidate_decide(conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "exclusions" and parts[1].isdigit() and parts[2] == "remove":
             ok = remove_exclusion(conn, self.cfg, int(parts[1]))
             self.say("ok" if ok else "err", "Exclusion removed." if ok else "No such exclusion.")
@@ -226,15 +387,37 @@ class App:
         return self.error("404 Not Found", "No such page.")
 
     # ---- pages ------------------------------------------------------------------------------------------------
+    def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
+        dates = score_dates(conn)
+        if not dates:
+            return self.render("opportunities.html", page="opportunities", dates=[], run_date=None, items=[], total=0, error=None,
+                               q={}, families=[], lines=[], stale=[], prev_date=None)
+        chosen = req.q("date") if req.q("date") in dates else dates[0]
+        try:
+            ol = build_opportunities(conn, self.cfg, date.fromisoformat(chosen), include_tracked_only=req.q("tracked") == "1")
+        except ShortlistError as e:
+            return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=[], total=0, error=str(e),
+                               q={}, families=[], lines=[], stale=[], prev_date=None)
+        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked")}
+        q["pe"] = req.q("pe") == "1"
+        q["new"] = req.q("new") == "1"
+        items = filter_opportunities(ol.items, band=q["band"], family=q["family"], service_line=q["service_line"], pe_only=q["pe"],
+                                     q=q["q"], new_only=q["new"], status=q["status"], sort=q["sort"] or "score")
+        families = sorted({r.kind for o in ol.items for r in o.reasons})
+        return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=items, total=len(ol.items),
+                           error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale,
+                           prev_date=ol.prev_date.isoformat() if ol.prev_date else None, bands=["Hot", "Warm", "Watch", "Stored"],
+                           statuses=["card", "over_cap", "held", "tracking"])
+
     def leads(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = [r[0] for r in conn.execute("SELECT DISTINCT run_date FROM scores ORDER BY run_date DESC")]
         if not dates:
-            return self.render("leads.html", page="leads", dates=[], run_date=None, leads=[], skipped=[], overflow=0, error=None)
+            return self.render("leads.html", page="card", dates=[], run_date=None, leads=[], skipped=[], overflow=0, error=None)
         chosen = req.q("date") if req.q("date") in dates else dates[0]
         try:
             sl = build_shortlist(conn, self.cfg, date.fromisoformat(chosen))
         except ShortlistError as e:
-            return self.render("leads.html", page="leads", dates=dates, run_date=chosen, leads=[], skipped=[], overflow=0, error=str(e))
+            return self.render("leads.html", page="card", dates=dates, run_date=chosen, leads=[], skipped=[], overflow=0, error=str(e))
         briefs = {r["account_id"]: r for r in conn.execute("SELECT * FROM briefs WHERE run_date = ?", (chosen,))}
         posted = {r["account_id"]: r for r in conn.execute("SELECT account_id, posted, cooldown_until FROM scores WHERE run_date = ?", (chosen,))}
         cards = []
@@ -248,10 +431,11 @@ class App:
                 "service_line": (b["best_service_line"] if b else fb.best_service_line) or "not determined",
                 "families": lead.result.components.get("families", {}),
                 "bonus": lead.result.components.get("stacking_bonus", 0),
+                "sponsor": lead.result.components.get("sponsor", {}),
                 "posted": posted[lead.account.id]["posted"] if lead.account.id in posted else 0,
             })
         tracked = sorted((s for s in sl.skipped if s.score >= self.cfg.scoring.bands.watch), key=lambda s: -s.score)
-        return self.render("leads.html", page="leads", dates=dates, run_date=chosen, leads=cards, skipped=tracked,
+        return self.render("leads.html", page="card", dates=dates, run_date=chosen, leads=cards, skipped=tracked,
                            overflow=len(sl.overflow), error=None)
 
     def accounts(self, req: Request, conn: sqlite3.Connection) -> Response:
@@ -259,21 +443,28 @@ class App:
         q = req.q("q").strip().lower()
         accts = list_accounts(conn, status=None)
         counts = {s: sum(a.status == s for a in accts) for s in ("active", "hold_review", "excluded")}
+        unreviewed = sum(not a.reviewed for a in accts)
+        only_new = req.q("origin") == "unreviewed"
         excl = load_exclusions(conn)
         rows = []
         for a in accts:
-            if (status in counts and a.status != status) or (q and q not in a.name.lower()):
+            if (status in counts and a.status != status) or (q and q not in a.name.lower()) or (only_new and a.reviewed):
                 continue
             rows.append({"a": a, "fit": check_fit(a, excl, self.cfg)})
-        return self.render("accounts.html", page="accounts", rows=rows, counts=counts, status=status, q=req.q("q"), total=len(accts))
+        return self.render("accounts.html", page="accounts", rows=rows, counts=counts, status=status, q=req.q("q"), total=len(accts),
+                           unreviewed=unreviewed, only_new=only_new)
 
     def _account_ctx(self, conn: sqlite3.Connection, a: Account, form: dict[str, str], errors: list[str]) -> dict:
         fit = check_fit(a, load_exclusions(conn), self.cfg)
         signals = conn.execute("SELECT * FROM signals WHERE account_id = ? ORDER BY event_date DESC, id DESC", (a.id,)).fetchall()
         scores = conn.execute("SELECT run_date, score, band, posted, cooldown_until, rationale FROM scores WHERE account_id = ? ORDER BY run_date DESC LIMIT 12", (a.id,)).fetchall()
         history = conn.execute("SELECT ts, actor, action, field, old, new FROM audit_log WHERE account_id = ? ORDER BY id DESC LIMIT 25", (a.id,)).fetchall()
+        firms = conn.execute(
+            "SELECT f.id, f.name, f.status, l.status AS link_status FROM portfolio_links l JOIN pe_firms f ON f.id = l.firm_id "
+            "WHERE l.account_id = ? ORDER BY f.name", (a.id,)).fetchall()
+        postings = conn.execute("SELECT * FROM postings WHERE account_id = ? AND open = 1 ORDER BY posted_date DESC LIMIT 40", (a.id,)).fetchall()
         return dict(page="accounts", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
-                    conf_scored={"High", "Medium"})
+                    conf_scored={"High", "Medium"}, firms=firms, postings=postings, lead=set(self.cfg.hiring.leadership_levels))
 
     def account_page(self, req: Request, conn: sqlite3.Connection, account_id: int) -> Response:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
@@ -346,6 +537,98 @@ class App:
             self.say("err", "; ".join(res.errors))
         return self.redirect(dest)
 
+    def reviewed(self, conn: sqlite3.Connection, account_id: int | None) -> Response:
+        n = mark_reviewed(conn, account_id)
+        self.say("ok", f"{n} account(s) marked reviewed; they now scan like any other.")
+        return self.redirect(f"/accounts/{account_id}" if account_id is not None else "/accounts")
+
+    def settings_page(self, conn: sqlite3.Connection, form: dict[str, str] | None = None, errors: list[str] | None = None) -> Response:
+        d = apply_overrides(self.cfg, conn).discovery
+        form = form or {"segments": "\n".join(d.segments), **{k: str(getattr(d, k)) for k in INT_FIELDS}}
+        return self.render("settings.html", page="settings", form=form, errors=errors or [], fields=INT_FIELDS,
+                           customized=bool(load_discovery_overrides(conn)), max_segments=MAX_SEGMENTS,
+                           refresh_on=refresh_enabled(conn), can_schedule=self.jobs is not None)
+
+    def refresh_save(self, req: Request, conn: sqlite3.Connection) -> Response:
+        save_refresh(conn, bool(req.f("enabled")))
+        self.say("ok", "Daily refresh is on." if req.f("enabled") else "Daily refresh is off. The Monday run is unchanged.")
+        return self.redirect("/settings")
+
+    def hiring(self, req: Request, conn: sqlite3.Connection) -> Response:
+        theme = req.q("theme")
+        themes = list(self.cfg.hiring.theme_keywords)
+        where, args = "p.open = 1 AND p.posted_date >= date(?, ?) ", [date.today().isoformat(), f"-{self.cfg.hiring.window_days} days"]
+        if theme in themes:
+            where, args = where + "AND p.theme = ? ", args + [theme]
+        lead = tuple(self.cfg.hiring.leadership_levels)
+        rows = conn.execute(
+            f"SELECT a.id, a.name, a.status, a.ats_provider, COUNT(*) AS n, MAX(p.posted_date) AS newest, "
+            f"SUM(p.seniority IN ({','.join('?' * len(lead))})) AS leaders, SUM(p.interim) AS interim "
+            f"FROM postings p JOIN accounts a ON a.id = p.account_id WHERE {where}"
+            f"GROUP BY a.id ORDER BY leaders DESC, n DESC, newest DESC LIMIT 200", (*lead, *args)).fetchall()
+        recent = conn.execute(
+            f"SELECT p.*, a.name AS account FROM postings p JOIN accounts a ON a.id = p.account_id WHERE {where}"
+            "ORDER BY p.posted_date DESC, p.id DESC LIMIT 60", args).fetchall()
+        return self.render("hiring.html", page="hiring", rows=rows, recent=recent, themes=themes, theme=theme,
+                           lead=set(lead), window=self.cfg.hiring.window_days)
+
+    def settings_save(self, req: Request, conn: sqlite3.Connection) -> Response:
+        form = {k: req.f(k) for k in ("segments", *INT_FIELDS)}
+        errs = save_discovery(conn, form)
+        if errs:
+            return self.settings_page(conn, form, errs)
+        self.say("ok", "Discovery settings saved. They apply to the next run.")
+        return self.redirect("/settings")
+
+    def settings_reset(self, conn: sqlite3.Connection) -> Response:
+        reset_discovery(conn)
+        self.say("ok", "Discovery settings reset to the defaults in config.yaml.")
+        return self.redirect("/settings")
+
+    def firms(self, conn: sqlite3.Connection, form: dict[str, str] | None = None, errors: list[str] | None = None) -> Response:
+        rows = conn.execute(
+            "SELECT f.*, "
+            "(SELECT COUNT(*) FROM portfolio_links l WHERE l.firm_id = f.id AND l.status = 'current') AS companies, "
+            "(SELECT COUNT(*) FROM portfolio_links l WHERE l.firm_id = f.id AND l.status = 'current' AND l.account_id IS NOT NULL) AS accounts, "
+            "(SELECT COUNT(*) FROM firm_signals s WHERE s.firm_id = f.id) AS signals, "
+            "(SELECT MAX(event_date) FROM firm_signals s WHERE s.firm_id = f.id) AS last_signal "
+            "FROM pe_firms f ORDER BY f.status, companies DESC, f.name").fetchall()
+        return self.render("firms.html", page="firms", rows=rows, form=form or {}, errors=errors or [])
+
+    def firm_add(self, req: Request, conn: sqlite3.Connection) -> Response:
+        form = {k: req.f(k) for k in ("name", "domain", "hq_city", "portfolio_url")}
+        errs = add_firm(conn, form["name"], form["domain"], form["hq_city"], form["portfolio_url"])
+        if errs:
+            return self.firms(conn, form, errs)
+        self.say("ok", f"Added {form['name'].strip()}. Run PE portfolio research from Operate to find its companies.")
+        return self.redirect("/firms")
+
+    def firm_page(self, conn: sqlite3.Connection, firm_id: int) -> Response:
+        firm = conn.execute("SELECT * FROM pe_firms WHERE id = ?", (firm_id,)).fetchone()
+        if firm is None:
+            return self.error("404 Not Found", "No such firm.")
+        links = conn.execute(
+            "SELECT l.*, a.status AS account_status FROM portfolio_links l LEFT JOIN accounts a ON a.id = l.account_id "
+            "WHERE l.firm_id = ? ORDER BY l.status, l.company_name", (firm_id,)).fetchall()
+        sigs = conn.execute("SELECT * FROM firm_signals WHERE firm_id = ? ORDER BY event_date DESC, id DESC", (firm_id,)).fetchall()
+        return self.render("firm.html", page="firms", firm=firm, links=links, sigs=sigs, conf_scored={"High", "Medium"})
+
+    def candidates(self, conn: sqlite3.Connection) -> Response:
+        import json
+        rows = []
+        for r in conn.execute("SELECT * FROM candidates ORDER BY status = 'queued' DESC, id DESC LIMIT 300"):
+            rows.append({"c": r, "facts": json.loads(r["facts_json"] or "{}")})
+        return self.render("candidates.html", page="candidates", rows=rows)
+
+    def candidate_decide(self, conn: sqlite3.Connection, candidate_id: int, action: str) -> Response:
+        if action == "reject":
+            ok = reject_candidate(conn, candidate_id)
+            self.say("ok" if ok else "err", "Candidate rejected." if ok else "No such queued candidate.")
+        else:
+            res = accept_candidate(conn, self.cfg, candidate_id)
+            self.say("ok" if res.ok else "err", "Added to accounts." if res.ok else "; ".join(res.errors))
+        return self.redirect("/candidates")
+
     def exclusions(self, conn: sqlite3.Connection) -> Response:
         rows = conn.execute("SELECT * FROM exclusions ORDER BY lower(name)").fetchall()
         return self.render("exclusions.html", page="exclusions", rows=rows, errors=[], form={})
@@ -363,7 +646,7 @@ class App:
         rows = conn.execute("SELECT r.*, a.name AS account FROM runs r LEFT JOIN accounts a ON a.id = r.account_id ORDER BY r.id DESC LIMIT 300").fetchall()
         steps = conn.execute(
             "SELECT step, COUNT(*) n, SUM(tokens) tokens, SUM(est_cost) cost, SUM(est_cost IS NULL) unpriced "
-            "FROM runs WHERE account_id IS NOT NULL GROUP BY step ORDER BY step").fetchall()
+            "FROM runs WHERE account_id IS NOT NULL OR step LIKE 'discover%' GROUP BY step ORDER BY step").fetchall()
         return self.render("runs.html", page="runs", rows=rows, steps=steps)
 
     def audit(self, conn: sqlite3.Connection) -> Response:

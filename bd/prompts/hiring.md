@@ -7,6 +7,7 @@ Using the web_search tool, find current job postings for this company dated insi
 - `data_analytics` - data strategy, data platforms, data engineering leadership, analytics leadership.
 - `strategy_operations` - corporate strategy, operations excellence, operating model, performance, cost.
 - `transformation_change` - business transformation, program or portfolio management offices, change management.
+- `product_engineering` - product management and digital product, platform and engineering leadership: build-out of a new product or platform team (managers, directors, heads, principals; not routine individual-contributor engineering hires).
 
 List each posting separately. Do not count or summarize postings yourself; code does that.
 

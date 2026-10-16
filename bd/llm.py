@@ -46,7 +46,7 @@ class LLMResult:
 
 
 class LLM(Protocol):
-    def run(self, system: str, messages: list[dict[str, Any]]) -> LLMResult: ...
+    def run(self, system: str, messages: list[dict[str, Any]], **kwargs: Any) -> LLMResult: ...
 
 
 def _dump(block: Any) -> dict[str, Any]:
@@ -106,21 +106,25 @@ class AnthropicWebSearchClient:
         self._web_search = web_search  # False = plain text call (used by the briefer)
         self._client = client or anthropic.Anthropic(api_key=api_key)
 
-    def _tools(self) -> list[dict[str, Any]]:
-        return [{
+    def _tools(self, allowed_domains: list[str] | None = None) -> list[dict[str, Any]]:
+        tool: dict[str, Any] = {
             "type": self._cfg.llm.web_search_tool_type,
             "name": "web_search",
             "max_uses": self._cfg.llm.web_search_max_uses,
-            "blocked_domains": list(self._cfg.sources.blocked_domains),
-        }]
+        }
+        if allowed_domains:      # the API accepts either an allow list or a block list, not both
+            tool["allowed_domains"] = list(allowed_domains)
+        else:
+            tool["blocked_domains"] = list(self._cfg.sources.blocked_domains)
+        return [tool]
 
-    def run(self, system: str, messages: list[dict[str, Any]]) -> LLMResult:
+    def run(self, system: str, messages: list[dict[str, Any]], allowed_domains: list[str] | None = None) -> LLMResult:
         convo = list(messages)
         usage, urls = Usage(), set()
         resp = None
         for attempt in range(self._cfg.llm.max_continuations + 1):
             try:
-                extra: dict[str, Any] = {"tools": self._tools()} if self._web_search else {}
+                extra: dict[str, Any] = {"tools": self._tools(allowed_domains)} if self._web_search else {}
                 resp = self._client.messages.create(
                     model=self._model, max_tokens=self._cfg.llm.max_tokens,
                     system=system, messages=convo, **extra,
@@ -163,10 +167,12 @@ def extract_json(text: str, key: str = "signals") -> Any:
 
 
 def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], retries: int = 1,
-                       key: str = "signals", context: dict[str, Any] | None = None) -> tuple[M, LLMResult]:
+                       key: str = "signals", context: dict[str, Any] | None = None,
+                       llm_kwargs: dict[str, Any] | None = None) -> tuple[M, LLMResult]:
     """Ask, parse, validate; on invalid JSON re-ask `retries` times with the error. Returns the
     model plus a merged LLMResult (usage summed, retrieved URLs unioned). Raises InvalidJSON."""
-    result = llm.run(system, [{"role": "user", "content": user}])
+    kw = llm_kwargs or {}
+    result = llm.run(system, [{"role": "user", "content": user}], **kw)
     merged = LLMResult(result.text, set(result.retrieved_urls), Usage(), result.conversation)
     merged.usage.add(result.usage)
     last_err = ""
@@ -181,7 +187,7 @@ def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], ret
                    "Reply again with ONLY the corrected JSON object, no other text. "
                    "Do not add any signal you did not already find.")
             try:
-                result = llm.run(system, result.conversation + [{"role": "user", "content": fix}])
+                result = llm.run(system, result.conversation + [{"role": "user", "content": fix}], **kw)
             except LLMError as e:
                 merged.usage.add(e.usage)
                 e.usage = merged.usage

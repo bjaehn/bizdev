@@ -24,6 +24,7 @@ SignalType = Literal[
     "ai_commitment",
     "strategy_rebrand",
     "hiring_cluster",
+    "hiring_leadership",
     "hiring_interim",
     "hiring_single",
     "platform_migration",
@@ -32,6 +33,11 @@ SignalType = Literal[
     "risk_factor",
 ]
 SIGNAL_TYPES: tuple[str, ...] = get_args(SignalType)
+
+# Signals about a private equity firm itself (not about one of its companies). They only ever lift the score of a
+# portfolio company that already has its own signal; see bd.scoring.sponsor_lift.
+FirmSignalType = Literal["firm_new_fund", "firm_exit", "firm_operating_partner"]
+FIRM_SIGNAL_TYPES: tuple[str, ...] = get_args(FirmSignalType)
 
 Confidence = Literal["High", "Medium", "Low"]
 
@@ -64,9 +70,8 @@ class SignalExtract(BaseModel):
     service_lines: list[str] = Field(default_factory=list)
     role_or_person: str | None = None
 
-    @field_validator("summary")
-    @classmethod
-    def _summary_len(cls, v: str) -> str:
+    @staticmethod
+    def _check_summary(v: str) -> str:
         v = " ".join(v.split())
         if not v:
             raise ValueError("summary is empty")
@@ -74,13 +79,45 @@ class SignalExtract(BaseModel):
             raise ValueError(f"summary exceeds {MAX_SUMMARY_WORDS} words")
         return v
 
-    @field_validator("source_url")
-    @classmethod
-    def _url_shape(cls, v: str) -> str:
+    @staticmethod
+    def _check_url(v: str) -> str:
         p = urlparse(v.strip())
         if p.scheme not in ("http", "https") or not p.netloc:
             raise ValueError("source_url must be an absolute http(s) URL")
         return v.strip()
+
+    @field_validator("summary")
+    @classmethod
+    def _summary_len(cls, v: str) -> str:
+        return cls._check_summary(v)
+
+    @field_validator("source_url")
+    @classmethod
+    def _url_shape(cls, v: str) -> str:
+        return cls._check_url(v)
+
+
+class FirmSignalExtract(BaseModel):
+    type: FirmSignalType
+    event_date: date  # from the source, never the detection date
+    summary: str
+    source_url: str
+    source_type: SourceType
+    confidence: Confidence
+
+    @field_validator("summary")
+    @classmethod
+    def _summary_len(cls, v: str) -> str:
+        return SignalExtract._check_summary(v)
+
+    @field_validator("source_url")
+    @classmethod
+    def _url_shape(cls, v: str) -> str:
+        return SignalExtract._check_url(v)
+
+
+class FirmScanResponse(BaseModel):
+    signals: list[FirmSignalExtract]
 
 
 class ScanResponse(BaseModel):

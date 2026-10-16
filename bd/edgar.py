@@ -88,11 +88,14 @@ def html_to_text(html: str) -> str:
     return re.sub(r"\s+", " ", " ".join(p.parts)).strip()
 
 
-def excerpt(text: str, max_chars: int) -> str:
-    """The part of a filing around Item 5.02 (or the start, if the heading is absent)."""
-    m = re.search(r"item\s*5\.02", text, re.I)
+def excerpt(text: str, max_chars: int, item: str = "5.02") -> str:
+    """The part of a filing around the given Item heading (or the start, if the heading is absent)."""
+    m = re.search(r"item\s*" + re.escape(item).replace(r"\.", r"\."), text, re.I)
     start = m.start() if m else 0
     return text[start: start + max_chars]
+
+
+_EXHIBIT = re.compile(r"^(ex|exhibit)[-_ ]?99([-_.]?0?1)?[-_a-z0-9]*\.html?$", re.I)
 
 
 class EdgarClient:
@@ -137,6 +140,9 @@ class EdgarClient:
         return str(d.get("name") or ""), [str(t) for t in d.get("tickers") or []]
 
     def recent_item_502(self, cik: str, since: date, until: date, limit: int) -> list[Filing]:
+        return self.recent_items(cik, since, until, limit, "5.02")
+
+    def recent_items(self, cik: str, since: date, until: date, limit: int, item: str) -> list[Filing]:
         recent = self.submissions(cik)["filings"]["recent"]
         cols = [recent.get(k) for k in ("accessionNumber", "filingDate", "reportDate", "form", "items", "primaryDocument")]
         if not all(isinstance(c, list) for c in cols[:2] + cols[3:]):
@@ -147,7 +153,7 @@ class EdgarClient:
             fd = _date(fdate)
             if form not in _FORMS or fd is None or not _ACCESSION.match(str(acc)) or not _DOCNAME.match(str(doc)):
                 continue
-            if "5.02" not in [x.strip() for x in str(items or "").split(",")]:
+            if item not in [x.strip() for x in str(items or "").split(",")]:
                 continue
             f = Filing(cik=f"{int(cik):010d}", accession=str(acc), filing_date=fd,
                        report_date=_date(reports[i]) if i < len(reports) else None,
@@ -159,3 +165,19 @@ class EdgarClient:
 
     def filing_text(self, filing: Filing) -> str:
         return excerpt(html_to_text(self._get(filing.url).text), self._cfg.edgar.max_chars)
+
+    def earnings_release(self, filing: Filing) -> tuple[str, str]:
+        """(url, text) of the press release furnished with an Item 2.02 8-K: the exhibit 99 document listed in the
+        filing's index if there is one, else the 8-K itself. The URL returned is one this client just fetched."""
+        base = f"{ARCHIVE_HOST}/Archives/edgar/data/{int(filing.cik)}/{filing.accession.replace('-', '')}"
+        url = filing.url
+        try:
+            items = self._get(f"{base}/index.json").json()["directory"]["item"]
+            names = [str(i["name"]) for i in items if isinstance(i, dict) and _DOCNAME.match(str(i.get("name", "")))]
+            exhibit = next((n for n in sorted(names) if _EXHIBIT.match(n)), None)
+            if exhibit:
+                url = f"{base}/{exhibit}"
+        except (EdgarError, ValueError, KeyError, TypeError):
+            pass                                  # no usable index: fall back to the 8-K document itself
+        text = html_to_text(self._get(url).text)
+        return url, text[: self._cfg.edgar.max_chars]

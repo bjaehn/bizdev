@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Operate{% endblock %}
+{% block body %}
+<h1>Operate</h1>
+<p class="sub">Run the pipeline from here. Nothing on this page posts to Teams.</p>
+
+<div class="card">
+<h2 style="margin-top:0">Ready?</h2>
+<ul>{% for label, ok in ready %}<li><span class="{{ 'good' if ok else 'bad' }}">{{ '✓' if ok else '✗' }}</span> {{ label }}</li>{% endfor %}</ul>
+<p class="meta">Set these in the hosting dashboard (never here). Per-run model spend is capped at ${{ '%.2f'|format(cap) }}; jobs that call the model show their token cost on the Runs &amp; cost page.</p>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Monday schedule</h2>
+<p>Next run: <strong>{{ next_run.strftime('%A %b %-d, %-I:%M %p %Z') }}</strong> (America/Chicago). It will
+{% if posts %}<strong>post to Teams</strong> (the webhook is set).{% else %}<strong>not post</strong>: it only builds the card, because {% if ready[2][1] %}BD_DRY_RUN is on{% else %}no Teams webhook is set{% endif %}.{% endif %}</p>
+{% if last %}<p class="meta">Last scheduled run: <a href="/jobs/{{ last.id }}">#{{ last.id }}, {{ last.status }}</a>, {{ last.created }} UTC.</p>{% endif %}
+</div>
+
+{% if busy %}<div class="flash err">A job is running. Open it below; new jobs wait until it finishes.</div>{% endif %}
+
+<div class="card">
+<h2 style="margin-top:0">Light refresh now</h2>
+<p class="meta">Reads every known company job board (free) and checks SEC filings not read before (a small model cost each), then re-scores. This is what runs daily except Monday; turn that on or off on Settings. It never posts.</p>
+<form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="refresh_now">
+<label><input type="checkbox" name="confirm" value="1"> I understand new SEC filings use paid model calls</label>
+<p><button class="ghost" type="submit">Run light refresh</button></p></form>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Discover companies</h2>
+<p class="meta">Market research: finds Chicagoland companies by segment, verifies their facts, adds those that pass the fit gate (marked auto-added) and queues the rest on the Discovery page. Start with 2 segments to see the cost. Uses paid model calls.</p>
+<form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="discover">
+<div class="grid"><div><label>How many segments (1-30; set the list on Settings)</label><input type="number" name="limit" value="2" min="1" max="30" required></div></div>
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
+<p><button type="submit">Run discover</button></p></form>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Private equity firms</h2>
+<p class="meta">Firms come from accounts that have a PE sponsor. <b>Sync</b> is free. <b>Portfolio research</b> reads each firm's own site and adds its Chicagoland companies (same rules as Discover). <b>Firm signals</b> look for a new fund, an exit or an operating-partner hire; they lift the owner's portfolio companies a little. The two research buttons use paid model calls.</p>
+<form method="post" action="/operate/run" style="display:inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="pe_sync"><button class="ghost" type="submit">Sync firms from accounts (free)</button></form>
+<form method="post" action="/operate/run" style="margin-top:12px"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="grid"><div><label>How many firms (1-50)</label><input type="number" name="limit" value="5" min="1" max="50" required></div>
+<div><label>What to run</label><select name="kind"><option value="pe_portfolio">Portfolio research</option><option value="pe_signals">Firm signals</option></select></div></div>
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
+<p><button type="submit">Run</button></p></form>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Enrich accounts</h2>
+<p class="meta">Looks up missing facts for accounts on hold and writes proposals. Review them on the Enrich review page; nothing is applied automatically. Uses paid model calls.</p>
+<form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="enrich">
+<div class="grid"><div><label>How many accounts (1-100)</label><input type="number" name="limit" value="10" min="1" max="100" required></div>
+<div><label>Only names containing (optional)</label><input type="text" name="only" maxlength="60"></div></div>
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
+<p><button type="submit">Run enrich</button></p></form>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Scan for signals</h2>
+<p class="meta">Searches public sources for accounts that pass the fit gate. Start small (5 accounts) to see the cost. Uses paid model calls.</p>
+<form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="scan">
+<div class="grid"><div><label>How many accounts (1-100)</label><input type="number" name="limit" value="5" min="1" max="100" required></div>
+<div><label>Tier</label><select name="tier"><option>all</option><option>A</option><option>B</option></select></div></div>
+<label>Scanners (none ticked = all)</label>
+<div>{% for s in scanners %}<label style="display:inline-block;margin-right:14px"><input type="checkbox" name="scanners" value="{{ s }}"> {{ s }}</label>{% endfor %}</div>
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
+<p><button type="submit">Run scan</button></p></form>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Score, then preview the card</h2>
+<form method="post" action="/operate/run" style="display:inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="score"><button type="submit">Run score (free)</button></form>
+<form method="post" action="/operate/run" style="margin-top:12px"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="card_dry">
+<label><input type="checkbox" name="no_llm" value="1"> Skip the model (plain summaries, free)</label>
+<label><input type="checkbox" name="confirm" value="1"> I understand the briefer uses paid model calls unless the box above is ticked</label>
+<p><button class="ghost" type="submit">Build card (dry run)</button></p></form>
+</div>
+
+<div class="card">
+<h2 style="margin-top:0">Full weekly run, dry run</h2>
+<p class="meta">Scan, score and build the card exactly as Monday will, without posting. Can take a long time and costs the most.</p>
+<form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="weekly_dry">
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
+<p><button class="ghost" type="submit">Run weekly (dry run)</button></p></form>
+</div>
+
+<h2>Recent jobs</h2>
+{% if jobs %}<div class="wrap"><table><tr><th>#</th><th>Job</th><th>Status</th><th>Started (UTC)</th><th>Note</th></tr>
+{% for j in jobs %}<tr><td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td><td>{{ kinds[j.kind][0] if j.kind in kinds else j.kind }}</td>
+<td><span class="badge {{ 'good' if j.status == 'ok' else ('bad' if j.status in ('failed','interrupted') else '') }}">{{ j.status }}</span></td>
+<td>{{ j.started or j.created }}</td><td>{{ j.note or '' }}</td></tr>{% endfor %}</table></div>
+{% else %}<div class="empty">No jobs yet.</div>{% endif %}
+{% endblock %}

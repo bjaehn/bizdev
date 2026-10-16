@@ -35,7 +35,7 @@ tr:last-child td{border-bottom:0}
 td.num,th.num{text-align:right;white-space:nowrap}
 .wrap{overflow-x:auto}
 label{display:block;font-size:13px;color:var(--muted);margin:10px 0 3px}
-input[type=text],input[type=number],select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+input[type=text],input[type=number],input[type=password],select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 16px}
 button,.btn{display:inline-block;padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
 button.ghost,.btn.ghost{background:transparent;color:var(--accent)}
@@ -53,20 +53,24 @@ footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);fon
 .pill-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
 .empty{text-align:center;color:var(--muted);padding:32px 16px}
 </style>
+{% block head %}{% endblock %}
 </head>
 <body>
 <header><div class="bar">
 <span class="brand">BD Signals</span>
+{% if nav is not defined or nav %}
 <nav>
-{% for key, href, label in [('leads','/','Leads'),('accounts','/accounts','Accounts'),('enrich','/enrich','Enrich review'),('exclusions','/exclusions','Exclusions'),('runs','/runs','Runs &amp; cost'),('audit','/audit','Changes')] %}
+{% for key, href, label in [('opportunities','/','Opportunities'),('card','/monday','Monday card'),('accounts','/accounts','Accounts'),('hiring','/hiring','Hiring'),('candidates','/candidates','Discovery'),('firms','/firms','PE firms'),('enrich','/enrich','Enrich review'),('exclusions','/exclusions','Exclusions'),('runs','/runs','Runs &amp; cost'),('settings','/settings','Settings'),('audit','/audit','Changes')] + ([('operate','/operate','Operate')] if operate else []) %}
 <a href="{{ href }}" class="{{ 'on' if page == key else '' }}">{{ label|safe }}</a>
 {% endfor %}
 </nav>
+{% if hosted %}<form method="post" action="/logout" style="margin-left:auto"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Sign out</button></form>{% endif %}
+{% endif %}
 </div></header>
 <main>
 {% for kind, text in flash %}<div class="flash {{ kind }}">{{ text }}</div>{% endfor %}
 {% block body %}{% endblock %}
 </main>
-<footer>Local view of bd.sqlite. This page cannot scan, score, call a model or post to Teams. Links open the original public source in a new tab.</footer>
+<footer>{% if hosted %}Hosted copy of the BD database. Nothing here posts to Teams: the only post is the scheduled Monday run. Links open the original public source in a new tab.{% else %}Local view of bd.sqlite. This page cannot scan, score, call a model or post to Teams. Links open the original public source in a new tab.{% endif %}</footer>
 </body>
 </html>

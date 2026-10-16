@@ -18,6 +18,7 @@ scoring:
     ai_commitment: 16
     strategy_rebrand: 14
     hiring_cluster: 26      # 3+ related postings in 60 days
+    hiring_leadership: 30   # a VP-or-above role posted in a relevant area (AI, data, transformation, strategy/ops, product)
     hiring_interim: 18
     hiring_single: 12
     platform_migration: 20
@@ -28,7 +29,7 @@ scoring:
   # Which family each type belongs to.
   families:
     leadership: [leadership_change, leadership_transformation_ai_data, open_exec_search]
-    hiring: [hiring_cluster, hiring_interim, hiring_single]
+    hiring: [hiring_cluster, hiring_leadership, hiring_interim, hiring_single]
     events: [restructuring_layoffs, ma_divestiture, activist, ops_failure, cost_program, ai_commitment, strategy_rebrand]
     pe: [pe_platform_or_sponsor_exec, pe_addon, pe_hold_2_4]
     technology: [platform_migration, vendor_deal]
@@ -61,6 +62,12 @@ scoring:
     watch: 40
   # Bands that are posted to Teams.
   posted_bands: [Hot, Warm]
+
+  # Sponsor activity: events at a private equity firm lift the score of its current portfolio companies. A lift is
+  # added only to a company that already has its own scoring signal, it is capped, and it is shown separately.
+  sponsor:
+    base_points: {firm_new_fund: 8, firm_exit: 6, firm_operating_partner: 8}
+    lift_max: 10
 
 post_gate:
   require_high_confidence_within_days: 90
@@ -158,12 +165,27 @@ hiring:
   window_days: 60               # a posting must be dated within this many days of the run
   cluster_min: 3                # hiring_cluster = this many related postings
   senior_levels: [c_suite, svp_vp, director]
+  leadership_levels: [c_suite, svp_vp]   # a posting at these levels is a hiring_leadership signal
   # Posting theme -> service lines (code, not the model, assigns these).
   theme_service_lines:
     ai_technology: [AI & Technology]
     data_analytics: [Data & Analytics]
     strategy_operations: [Strategy & Operations]
     transformation_change: [Strategy & Operations]
+    product_engineering: [Concept to Delivery]
+  # Used only by the `ats` scanner, which reads a company's own job board directly: a posting counts toward a theme
+  # when its TITLE contains one of the phrases (whole words, any case). First theme in this order that matches wins;
+  # a title that matches none is ignored. The model-based `hiring` scanner assigns themes itself.
+  theme_keywords:
+    data_analytics: [data engineer, data scientist, data analyst, data architect, data platform, data governance, data science, analytics, business intelligence, chief data, head of data]
+    ai_technology: [machine learning, artificial intelligence, ai, generative ai, llm, mlops, ml engineer, chief technology, chief information, cio, cto, enterprise architect, cloud architect, it strategy, digital technology]
+    transformation_change: [transformation, pmo, program management, portfolio management, change management, business excellence, operational excellence, continuous improvement, integration management]
+    strategy_operations: [strategy, chief operating, coo, chief of staff, corporate development, business operations, operations excellence, operating model]
+    product_engineering: [product manager, product management, head of product, vp product, chief product, digital product, platform engineer, software engineer, engineering manager]
+  # product_engineering is noisy (every large company hires engineers), so its titles must also contain one of these.
+  theme_title_gates:
+    product_engineering: [manager, director, head, vp, vice president, chief, principal, staff, lead, architect]
+  interim_words: [interim, fractional, contract executive]
 
 edgar:
   min_interval_seconds: 0.15      # SEC fair access allows 10 requests/second; stay well under
@@ -181,3 +203,30 @@ card:
   max_bytes: 28000                # Teams adaptive card payloads are limited to about 28 KB
   max_buttons_per_lead: 3
   title: SEI Chicago BD Signals
+
+# Market research: `bd discover` finds Chicagoland companies by segment, researches their facts with the same
+# verified-evidence rules as `bd enrich`, auto-adds those that clear the fit gate, and queues the rest for a person.
+discovery:
+  per_segment: 8
+  max_candidates_per_run: 30
+  max_auto_add_per_run: 15
+  scan_unreviewed_per_run: 10     # auto-added accounts are scanned only up to this many per run until a person reviews them
+  segments:
+    - manufacturing and industrial products
+    - food, beverage and consumer packaged goods
+    - healthcare services, health systems and life sciences
+    - banking, insurance and asset management
+    - logistics, transportation and distribution
+    - business and professional services
+    - technology, software and data companies
+    - retail, e-commerce and hospitality
+    - energy, utilities, chemicals and materials
+    - construction, engineering and real estate
+    - education, nonprofits and associations
+    - media, marketing and telecommunications
+
+# Private equity firms: derived from accounts that have a sponsor; `bd pe-portfolio` finds their other Chicagoland
+# companies, `bd pe-signals` looks for firm-level news (new fund, operating-partner hire, exit).
+pe_firms:
+  max_firms_per_run: 25
+  portfolio_max_per_firm: 25

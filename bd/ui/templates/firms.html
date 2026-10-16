@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}PE firms{% endblock %}
+{% block body %}
+<h1>Private equity firms</h1>
+<p class="sub">Firms that own companies on your list. They are added automatically from accounts that have a PE sponsor; add others by hand. A firm's own news adds a small, capped lift to the score of its portfolio companies that already have a signal of their own.</p>
+{% if errors %}<div class="errors">Not saved:<ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+<div class="wrap"><table>
+<tr><th>Firm</th><th>Status</th><th class="num">Companies</th><th class="num">On your list</th><th class="num">Firm signals</th><th>Latest signal</th><th>Portfolio researched</th><th>Signals scanned</th></tr>
+{% for f in rows %}<tr><td><a href="/firms/{{ f['id'] }}">{{ f['name'] }}</a>{% if f['domain'] %}<br><span class="meta">{{ f['domain'] }}</span>{% endif %}</td>
+<td><span class="badge {{ 'good' if f['status'] == 'active' else 'bad' }}">{{ f['status'] }}</span></td>
+<td class="num">{{ f['companies'] }}</td><td class="num">{{ f['accounts'] }}</td><td class="num">{{ f['signals'] }}</td>
+<td>{{ f['last_signal']|fdate if f['last_signal'] else '' }}</td><td>{{ f['last_portfolio'] or 'never' }}</td><td>{{ f['last_scanned'] or 'never' }}</td></tr>
+{% else %}<tr><td colspan="8" class="empty">No firms yet. Run "Sync firms from accounts" on the Operate page, or add one below.</td></tr>{% endfor %}
+</table></div>
+<div class="card" style="margin-top:16px"><h2 style="margin-top:0">Add a firm</h2>
+<form method="post" action="/firms/add"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="grid">
+<div><label for="name">Name</label><input id="name" type="text" name="name" value="{{ form.get('name','') }}" required maxlength="120"></div>
+<div><label for="domain">Website domain (optional)</label><input id="domain" type="text" name="domain" value="{{ form.get('domain','') }}" placeholder="examplecapital.com"></div>
+<div><label for="hq_city">HQ city (optional)</label><input id="hq_city" type="text" name="hq_city" value="{{ form.get('hq_city','') }}"></div>
+<div><label for="portfolio_url">Portfolio page URL (optional)</label><input id="portfolio_url" type="text" name="portfolio_url" value="{{ form.get('portfolio_url','') }}"></div>
+</div><p><button type="submit">Add firm</button></p></form></div>
+{% endblock %}

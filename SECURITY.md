@@ -31,6 +31,9 @@ The request body is the only thing sent; the API key travels in the standard hea
   Anthropic. Search results (public pages) come back into the model context.
 * **1b. SEC filing reader (`edgar`)**: company name, form type, filing and report dates, and an excerpt of
   the filing (at most 8,000 characters, starting at Item 5.02). Public SEC text. No web search.
+* **1b-2. Earnings reader (`earnings`)**: as 1b, but the text is the earnings press release (exhibit 99) of an Item 2.02 8-K, at most 8,000 characters. Public SEC text. No web search.
+* **1b-3. `press` scanner**: as 1a, but the search tool is restricted to an allow-list: the company's own domain, the configured wire services and SEC domains (the API does not allow an allow-list together with the blocked-domain list, so LinkedIn and paywalled sites are excluded by construction rather than by the block list).
+* **1b-4. Job boards (`ats`)**: no model involved. The app requests a company's public job-board JSON from three fixed hosts (`boards-api.greenhouse.io`, `api.lever.co`, `api.ashbyhq.com`), sending only the board id and the declared User-Agent. The board id comes from a posting URL the model scanner already verified. Titles are classified by code.
 * **1c. `bd enrich`**: company name, known domain, known HQ city, today's date. Web search enabled.
 * **1d. Briefer (`bd card`)**: company name, industry, and up to 4 signals (type, event date, days ago,
   confidence, the stored 25-word summary, role/person name, service lines) for leads already chosen for
@@ -122,6 +125,18 @@ secrets (a test asserts this).
   `bd ui` was started in, only `*.csv`.
 * **Accountability:** every change is written to `audit_log`.
 
+### 4b. The hosted app (`bd serve`)
+
+This is the one component reachable from the internet. Controls: refuses to start without `BD_UI_PASSWORD` of 16+
+characters; constant-time password check; signed, expiring (12 h), HttpOnly, SameSite=Lax session cookie (Secure
+and HSTS behind https); failed logins throttled per client and globally with back-off; CSRF token, same-origin
+Origin and Sec-Fetch-Site checks on every POST including login; Content-Security-Policy forbids all scripts;
+`/healthz` returns only `ok`; the login page never shows flash messages or navigation. Jobs: a fixed whitelist run
+as `python -m bd.cli` subprocesses with validated argv (no shell), one at a time, 2-hour timeout, secrets
+redacted from displayed logs, paid-call confirmation, and **no job or button that posts to Teams** - only the
+scheduled Monday run can, and only when `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not 1. The Operate page
+shows whether each secret is set, never its value. The container drops root before serving.
+
 ## 5. Known gaps and limits
 
 1. **Not yet exercised live.** The code was built and tested offline (fake LLM, fake HTTP). It has not yet
@@ -155,11 +170,20 @@ secrets (a test asserts this).
 13. **The UI is single-user and unauthenticated beyond the token.** There is no per-person login, so the audit log
     records `ui` as the actor, not a name.
 
+14. **Hosting provider.** In hosted mode the provider (e.g. Railway) holds the database - target accounts, signals, scores - on its volume, and sees the secrets set in its dashboard. Treat it as one more external service.
+15. **One shared password, no MFA, no IP allowlist.** Anyone with the password has full access to the data, the Operate buttons (which spend API money, capped per run) and account edits; the audit log records `ui`. Strongly recommended before real use: put the service behind SSO (Cloudflare Access, Tailscale) or host it inside SEI.
+16. **Login throttle is in memory and keyed on `X-Forwarded-For`.** It resets on restart, and a client that can forge that header gets a fresh per-client counter (the global limit of 60 failures/hour still applies). Single replica only.
+17. **`wsgiref` is not a hardened internet server.** Connections time out after 30 s and bodies are capped at 64 KB, but there is no rate limiting beyond login and no slow-loris protection beyond the timeout; a reverse proxy in front (the host platform's edge) is assumed.
+18. **Docker image not built in CI here.** The Dockerfile and entrypoint were reviewed and the server was run end to end locally, but the image build itself was not exercised in the development sandbox.
+19. **Auto-added companies are not human-reviewed.** `bd discover` adds a company only when the fit gate passes on facts that each have an evidence URL the search tool returned and that resolves, with a verified domain, under a per-run cap. That is as strong as the other pipelines, but a mis-identified company (same name, different entity) is still possible. Mitigations: they are marked auto-added, tier B, and scanned only up to `discovery.scan_unreviewed_per_run` per run until reviewed; every add is audited with its source; the Discovery page and Accounts filter make review quick. Discovery sends company names already in the database to the model (to avoid duplicates), in addition to the data listed in section 1.
+20. **PE ownership links rest on the firm's own website.** A portfolio company is linked to a firm (and so receives its sponsor lift) only when the listing page is hosted on the firm's domain or an SEC page, or when the company's own verified facts name the sponsor. A stale or wrong firm page could link a company that has been sold; the link is shown with its source on the firm page and can be corrected by excluding the firm. Portfolio research sends the names of known accounts to the model (to avoid duplicates), like discovery.
+21. **Job-board feeds are trusted as published.** A posting's date is the provider's own `first_published` / `createdAt` / `publishedAt`; a posting with none is ignored, never dated by us. If a company re-posts an old role, it can look new. The response layouts could not be fetched from the build sandbox; parsing is defensive and an unexpected shape is an error, not "no postings".
+
 ## 6. Decisions for IT
 
 * Approve or restrict egress: `api.anthropic.com`, `data.sec.gov`, `www.sec.gov`, the Teams webhook host,
   and (hard to allowlist) arbitrary public hosts for URL verification, perhaps through an inspecting proxy.
 * Confirm Anthropic data-retention terms for this use.
-* Choose the deployment: GitHub Actions (private repo, state branch) or an SEI-managed host with cron.
+* Choose the deployment: the hosted app (`bd serve`, one service + volume; needs SSO in front of it per gap 15), GitHub Actions (private repo, state branch) or an SEI-managed host with cron.
 * Decide who may hold the Teams webhook URL and where the API key is stored (secret manager vs repo secret).
 * Decide dependency pinning and scanning, and Actions SHA pinning.

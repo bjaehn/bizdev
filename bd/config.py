@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from bd.models import SIGNAL_TYPES, SOURCE_TYPES
+from bd.models import FIRM_SIGNAL_TYPES, SIGNAL_TYPES, SOURCE_TYPES
 
 
 class _Strict(BaseModel):
@@ -33,6 +33,17 @@ class Bands(_Strict):
     watch: int
 
 
+class SponsorScoring(_Strict):
+    base_points: dict[str, float]     # by firm signal type
+    lift_max: float                   # cap on the total lift a company can get from its sponsor's activity
+
+    @model_validator(mode="after")
+    def _types(self) -> "SponsorScoring":
+        if set(self.base_points) != set(FIRM_SIGNAL_TYPES):
+            raise ValueError(f"sponsor.base_points keys must equal {sorted(FIRM_SIGNAL_TYPES)}")
+        return self
+
+
 class Scoring(_Strict):
     base_points: dict[str, float]
     families: dict[str, list[str]]
@@ -47,6 +58,7 @@ class Scoring(_Strict):
     score_max: int
     bands: Bands
     posted_bands: list[str]
+    sponsor: SponsorScoring
 
     @model_validator(mode="after")
     def _consistent(self) -> "Scoring":
@@ -160,7 +172,11 @@ class Hiring(_Strict):
     window_days: int
     cluster_min: int
     senior_levels: list[str]
+    leadership_levels: list[str]
     theme_service_lines: dict[str, list[str]]
+    theme_keywords: dict[str, list[str]]
+    theme_title_gates: dict[str, list[str]] = {}
+    interim_words: list[str]
 
 
 class Edgar(_Strict):
@@ -182,6 +198,19 @@ class Card(_Strict):
     title: str
 
 
+class Discovery(_Strict):
+    segments: list[str]
+    per_segment: int                   # companies asked for per segment
+    max_candidates_per_run: int        # new companies researched (enriched) per run
+    max_auto_add_per_run: int          # auto-adds per run; the rest go to the review queue
+    scan_unreviewed_per_run: int       # unreviewed auto-added accounts a single scan may include
+
+
+class PeFirms(_Strict):
+    max_firms_per_run: int            # firms checked for firm-level signals per run
+    portfolio_max_per_firm: int       # portfolio companies requested per firm
+
+
 class Config(_Strict):
     scoring: Scoring
     post_gate: PostGate
@@ -196,6 +225,8 @@ class Config(_Strict):
     edgar: Edgar
     briefer: Briefer
     card: Card
+    discovery: Discovery
+    pe_firms: PeFirms
 
     @model_validator(mode="after")
     def _status_bounds(self) -> "Config":

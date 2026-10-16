@@ -1,0 +1,11 @@
+.git
+.venv
+**/__pycache__
+.pytest_cache
+*.sqlite
+card.json
+enrich_proposals.csv
+eval_report.json
+tests
+docs
+.github

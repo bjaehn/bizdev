@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Leads{% endblock %}
+{% block title %}Monday card{% endblock %}
 {% block body %}
-<div class="row"><div><h1>Leads</h1>
-<p class="sub">What the weekly run would post: Hot or Warm accounts with a High-confidence signal in the last 90 days, not in cooldown.</p></div>
-{% if dates %}<form method="get" action="/" class="filters"><label for="date" style="margin:0">Scored on</label>
+<div class="row"><div><h1>Monday card</h1>
+<p class="sub">What the Monday card would post (the top of <a href="/">Opportunities</a> that also passes the posting gates): Hot or Warm accounts with a High-confidence signal in the last 90 days, not in cooldown.</p></div>
+{% if dates %}<form method="get" action="/monday" class="filters"><label for="date" style="margin:0">Scored on</label>
 <select id="date" name="date">{% for d in dates %}<option value="{{ d }}" {{ 'selected' if d == run_date else '' }}>{{ d }}</option>{% endfor %}</select>
 <button class="ghost" type="submit">Show</button></form>{% endif %}</div>
 
@@ -40,6 +40,8 @@
 {% endfor %}{% endfor %}
 </table></div>
 <p class="meta">Stacking bonus: +{{ c.bonus|round|int }} (10 per extra family, max 30). Computed by plain code from the stored signals; no model is involved.</p>
+{% if c.sponsor and c.sponsor.lift %}<p class="meta"><b>Sponsor activity: +{{ c.sponsor.lift|round(1) }}</b> (capped at {{ c.sponsor.cap|round|int }}), from the owner's own news, not this company's:
+{% for x in c.sponsor.signals %}{{ x.firm }} {{ x.type|replace('firm_', '')|replace('_', ' ') }} ({{ x.event_date|fdate }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
 </details>
 </div>
 {% else %}
