@@ -210,7 +210,7 @@ discovery:
   per_segment: 8
   max_candidates_per_run: 30
   max_auto_add_per_run: 15
-  scan_unreviewed_per_run: 10     # auto-added accounts are scanned only up to this many per run until a person reviews them
+  scan_unreviewed_per_run: 25     # new auto-added companies scanned per run before a person marks them reviewed (same size as one update)
   segments:
     - manufacturing and industrial products
     - food, beverage and consumer packaged goods

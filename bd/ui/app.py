@@ -44,7 +44,8 @@ from bd.ui.auth import Hosted, Throttle
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
 from bd.opportunities import build_opportunities, filter_opportunities, score_dates
-from bd.settings_store import (INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
+from bd.setup_check import static_problems
+from bd.settings_store import (UPDATE_FIELDS, load_update, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
                                refresh_enabled, reset_discovery, save_discovery, save_refresh)
 from bd.shortlist import ShortlistError, build_shortlist
 
@@ -345,7 +346,11 @@ class App:
                 return self.job_page(int(p[6:]))
         parts = p.strip("/").split("/")
         table = {
-            ("GET", "/"): lambda: self.opportunities(req, conn),
+            ("GET", "/"): lambda: self.home(conn) if self.jobs is not None else self.opportunities(req, conn),
+            ("GET", "/opportunities"): lambda: self.opportunities(req, conn),
+            ("POST", "/update"): lambda: self.update_start(req, conn),
+            ("POST", "/check"): lambda: self.check_start(),
+            ("POST", "/settings/update"): lambda: self.settings_update(req, conn),
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
             ("GET", "/accounts/new"): lambda: self.render("account_new.html", page="accounts", form={}, errors=[]),
@@ -388,6 +393,63 @@ class App:
         return self.error("404 Not Found", "No such page.")
 
     # ---- pages ------------------------------------------------------------------------------------------------
+    def home(self, conn: sqlite3.Connection) -> Response:
+        """What state is the app in, and what is the one thing to click next."""
+        assert self.jobs is not None
+        problems = static_problems(self.cfg, os.environ)
+        rows = conn.execute("SELECT status, COUNT(*) n FROM accounts GROUP BY status").fetchall()
+        by = {r["status"]: r["n"] for r in rows}
+        total, ready, need = sum(by.values()), by.get("active", 0), by.get("hold_review", 0)
+        top, opps = [], 0
+        dates = score_dates(conn)
+        if dates:
+            try:
+                ol = build_opportunities(conn, self.cfg, date.fromisoformat(dates[0]))
+                top, opps = ol.items[:5], len(ol.items)
+            except ShortlistError:
+                pass
+        u = load_update(conn)
+        if not (os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("ANTHROPIC_MODEL")):
+            step = ("Finish setup", "The app needs your Anthropic key and model name before it can research anything. See Setup below.", "setup")
+        elif total == 0:
+            step = ("Press Update my list", "There are no companies yet. The update searches for Chicagoland companies to add.", "update")
+        elif ready == 0:
+            step = ("Press Update my list", f"{need} companies are waiting for facts (location and size). The update researches them.", "update")
+        elif opps == 0:
+            step = ("Press Update my list", f"{ready} companies are ready. The update scans them for news, hiring and leadership changes.", "update")
+        else:
+            step = ("Open Opportunities", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
+        last = self.jobs.last_job(("update",))
+        return self.render("home.html", page="home", problems=problems, total=total, ready=ready, need=need, opps=opps, top=top, u=u,
+                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS,
+                           last_log=self.jobs.log_tail(last.id)[-1500:] if last and last.status == "failed" else "")
+
+    def update_start(self, req: Request, conn: sqlite3.Connection) -> Response:
+        assert self.jobs is not None
+        form = {k: str(v) for k, v in load_update(conn).items()}
+        try:
+            job_id = self.jobs.submit("update", form, confirmed=bool(req.f("confirm")))
+        except JobError as e:
+            self.say("err", str(e))
+            return self.redirect("/")
+        return self.redirect(f"/jobs/{job_id}")
+
+    def check_start(self) -> Response:
+        assert self.jobs is not None
+        try:
+            return self.redirect(f"/jobs/{self.jobs.submit('check', {})}")
+        except JobError as e:
+            self.say("err", str(e))
+            return self.redirect("/")
+
+    def settings_update(self, req: Request, conn: sqlite3.Connection) -> Response:
+        errs = save_update(conn, {k: req.f(k) for k in UPDATE_FIELDS})
+        if errs:
+            self.say("err", "Not saved: " + "; ".join(errs))
+        else:
+            self.say("ok", "Saved. The next update uses these numbers.")
+        return self.redirect("/settings")
+
     def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = score_dates(conn)
         if not dates:
@@ -562,7 +624,8 @@ class App:
         form = form or {"segments": "\n".join(d.segments), **{k: str(getattr(d, k)) for k in INT_FIELDS}}
         return self.render("settings.html", page="settings", form=form, errors=errors or [], fields=INT_FIELDS,
                            customized=bool(load_discovery_overrides(conn)), max_segments=MAX_SEGMENTS,
-                           refresh_on=refresh_enabled(conn), can_schedule=self.jobs is not None)
+                           refresh_on=refresh_enabled(conn), can_schedule=self.jobs is not None,
+                           update=load_update(conn), update_fields=UPDATE_FIELDS)
 
     def refresh_save(self, req: Request, conn: sqlite3.Connection) -> Response:
         save_refresh(conn, bool(req.f("enabled")))

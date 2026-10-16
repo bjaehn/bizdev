@@ -241,7 +241,15 @@ class Config(_Strict):
 def load_config(path: str | os.PathLike[str] | None = None) -> Config:
     p = Path(path or os.environ.get("BD_CONFIG", "config.yaml"))
     with p.open() as f:
-        return Config.model_validate(yaml.safe_load(f))
+        cfg = Config.model_validate(yaml.safe_load(f))
+    # A job that runs several commands gives each the budget still left (see bd.jobs); env only, never from config.yaml.
+    try:
+        cap = float(os.environ.get("BD_MAX_COST_USD", ""))
+    except ValueError:
+        cap = None
+    if cap is not None and cap >= 0:
+        cfg = cfg.model_copy(update={"llm": cfg.llm.model_copy(update={"max_cost_per_run_usd": cap})})
+    return cfg
 
 
 @dataclass(frozen=True)

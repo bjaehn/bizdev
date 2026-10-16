@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -137,6 +138,7 @@ def scan(
     force: bool = typer.Option(False, help="Ignore tier cadence"),
     dry_run: bool = typer.Option(False, help="Apply the fit gate and show what would be scanned; no API calls"),
     light: bool = typer.Option(False, "--light", help="Daily refresh: do not mark accounts as scanned, so the weekly cadence is unaffected"),
+    allow_empty: bool = typer.Option(False, "--allow-empty", help="Exit 0 (not an error) when no account is ready to scan"),
 ) -> None:
     """Fit-gate, then scan due accounts that passed (concurrently), logging tokens and cost."""
     from bd.accounts import list_accounts
@@ -155,15 +157,20 @@ def scan(
     from bd.settings_store import apply_overrides
     cfg = apply_overrides(cfg, conn)
     _print_gate(apply_fit_gate(conn, cfg))
-    accounts = list_accounts(conn, tier=tier, limit=limit)
+    accounts = list_accounts(conn, tier=tier)
     from bd.discover import select_scan_accounts
     accounts, held_back = select_scan_accounts(accounts, cfg)
     if held_back:
         typer.echo(f"{held_back} auto-added account(s) not yet reviewed are held back this run "
                    f"(limit {cfg.discovery.scan_unreviewed_per_run}); mark them reviewed in the app to scan them all.")
     if not accounts:
+        if allow_empty:
+            typer.echo("No companies are ready to scan yet (each needs a confirmed Chicagoland location and size).")
+            return
         _fail("No accounts passed the fit gate. Fill in the held accounts' facts or run `bd seed accounts.csv`.")
-    due = [a for a in accounts if is_due(a, run_date, cfg, force)]
+    due = sorted((a for a in accounts if is_due(a, run_date, cfg, force)), key=lambda a: (a.last_scanned or "", a.id))
+    if limit:
+        due = due[:limit]                           # --limit counts accounts that are due; never-scanned ones go first
     probes = [SCANNERS[n].create(cfg, None, None, None, None) for n in names]
     n_calls = sum(p.applies_to(a) for a in due for p in probes)   # e.g. edgar only applies to accounts with a CIK
     typer.echo(f"{len(due)} of {len(accounts)} accounts due (tier {tier}) x {names} = {n_calls} calls")
@@ -174,7 +181,7 @@ def scan(
     if not due:
         return
     objs = _build_scanners(names, cfg, settings)
-    summary = run_scans(conn, cfg, objs, accounts, run_date, model=settings.anthropic_model, workers=workers,
+    summary = run_scans(conn, cfg, objs, due, run_date, model=settings.anthropic_model, workers=workers,
                         force=force, touch_last_scanned=not light, log=typer.echo)
     typer.echo(f"\nPer account (tokens, est. cost):")
     for r in summary.accounts.values():
@@ -475,6 +482,7 @@ def enrich(
     limit: Optional[int] = typer.Option(None, help="At most N accounts"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
     workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    allow_empty: bool = typer.Option(False, "--allow-empty", help="Exit 0 (not an error) when no account needs facts"),
 ) -> None:
     """PROPOSE missing account facts (domain, Chicagoland, size, ownership, CIK) with evidence URLs.
 
@@ -491,6 +499,9 @@ def enrich(
     init_db(conn)
     accounts = select_accounts(conn, all_accounts, only, limit)
     if not accounts:
+        if allow_empty:
+            typer.echo("No companies need facts right now.")
+            return
         _fail("No accounts to enrich (held accounts by default; use --all, or run `bd seed accounts.csv` first).")
     try:
         key, model = settings.require_llm()
@@ -515,9 +526,49 @@ def enrich(
                    "Raise llm.max_cost_per_run_usd and re-run.", err=True)
 
 
+@app.command(name="apply-proposals")
+def apply_proposals(file: str = typer.Argument("enrich_proposals.csv", help="A proposals CSV written by `bd enrich`")) -> None:
+    """Apply every NEW fact in a proposals file (facts the database does not have yet). Never overwrites a stored value and
+    never touches companies that are not accounts; each fact is logged with its source URL. A missing file is not an error."""
+    from bd.curate import apply_all_new
+    from bd.db import connect, init_db
+
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    if not Path(file).is_file():
+        typer.echo(f"{file} not found: nothing to apply.")
+        return
+    r = apply_all_new(conn, cfg, file)
+    typer.echo(f"Applied {r['facts']} new fact(s) to {r['accounts']} account(s). Left alone: {r['conflicts_skipped']} that differ from "
+               f"what is stored, {r['not_in_database']} for companies not in the database"
+               + (f"; {r['failed']} failed validation" if r["failed"] else "") + ".")
+
+
+@app.command()
+def check() -> None:
+    """Test the model connection with one tiny call (about $0.0001) and say in plain words what to fix."""
+    from bd.llm import AnthropicWebSearchClient, LLMError
+    from bd.setup_check import explain_error, static_problems
+
+    cfg, settings = load_config(), Settings.from_env()
+    problems = static_problems(cfg, os.environ)
+    for p_ in problems:
+        typer.echo(f"- {p_}")
+    if not (settings.anthropic_api_key and settings.anthropic_model):
+        _fail("Not ready: set ANTHROPIC_API_KEY and ANTHROPIC_MODEL in the hosting settings.")
+    client = AnthropicWebSearchClient(cfg, model=settings.anthropic_model, api_key=settings.anthropic_api_key, web_search=False)
+    try:
+        client.run("Reply with the single word OK.", [{"role": "user", "content": "ping"}])
+    except LLMError as e:
+        _fail("The model connection failed: " + explain_error(str(e)))
+    typer.echo("Connection OK: the key, the model and the workspace settings work.")
+
+
 @app.command()
 def score(
     as_of: Optional[str] = typer.Option(None, help="Score date YYYY-MM-DD (default today)"),
+    allow_empty: bool = typer.Option(False, "--allow-empty", help="Exit 0 (not an error) when no account is ready to score"),
 ) -> None:
     """Score every fit-gated (active) account from its stored signals. Deterministic; no API calls."""
     from bd.db import connect, init_db
@@ -531,6 +582,9 @@ def score(
     sync_from_accounts(conn)                      # so a sponsor's activity reaches its portfolio companies
     scored = score_accounts(conn, cfg, run_date)
     if not scored:
+        if allow_empty:
+            typer.echo("No companies are ready to score yet.")
+            return
         _fail("No active accounts to score. Seed accounts and fill in their fit-gate facts first.")
     counts: dict[str, int] = {}
     for sa in scored:
