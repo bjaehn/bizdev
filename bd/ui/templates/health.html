@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Data health{% endblock %}
+{% block body %}
+<div class="row"><div><h1>Data health</h1>
+<p class="sub">Is the app finding things, what does it cost, and where are the gaps? Everything here is read from what past runs stored; nothing on this page runs a scan.</p></div>
+<form method="get" action="/health" class="filters"><label for="days" style="margin:0">Look back</label>
+<select id="days" name="days">{% for d in (7, 14, 30, 60, 90) %}<option value="{{ d }}" {{ 'selected' if d == h.days else '' }}>{{ d }} days</option>{% endfor %}</select>
+<button class="ghost" type="submit">Show</button></form></div>
+
+<h2>Freshness</h2>
+<div class="card"><p class="meta" style="margin:0">Last scan <b>{{ h.last_scan or 'never' }}</b> · last score <b>{{ h.last_score or 'never' }}</b> · last enrich <b>{{ h.last_enrich or 'never' }}</b> · last RFP search <b>{{ h.last_rfps or 'never' }}</b></p></div>
+
+<h2>Which scanners are producing (last {{ h.days }} days)</h2>
+<div class="wrap"><table>
+<tr><th>Scanner</th><th>Verdict</th><th class="num">Calls</th><th class="num">Companies</th><th class="num">New signals</th><th class="num">Cost</th><th class="num">Cost per signal</th><th>Most common notes</th></tr>
+{% for y in h.scanners %}<tr><td>{{ y.name }}</td>
+<td><span class="badge {{ 'good' if y.verdict == 'producing' else ('bad' if y.verdict == 'failing' else ('warm' if y.verdict == 'ran, found nothing' else '')) }}">{{ y.verdict }}</span></td>
+<td class="num">{{ y.calls }}</td><td class="num">{{ y.accounts }}</td><td class="num">{{ y.signals }}</td>
+<td class="num">${{ '%.2f'|format(y.cost) }}{% if y.unpriced %} <span class="badge warm">{{ y.unpriced }} unpriced</span>{% endif %}</td>
+<td class="num">{{ ('$%.2f'|format(y.cost_per_signal)) if y.cost_per_signal is not none else '-' }}</td>
+<td class="meta">{% for n in y.notes %}{{ n }}{{ '<br>'|safe if not loop.last }}{% endfor %}</td></tr>{% endfor %}
+</table></div>
+<p class="meta">"failing" means at least half the calls ended in an error; a note that starts with "rejected" is a result the checks refused (for example a link that did not load), not a failure. "ran, found nothing" is normal for rare signals such as layoff notices.</p>
+
+<h2>Cost</h2>
+<div class="card"><p style="margin:0"><b>${{ '%.2f'|format(h.cost_total) }}</b> in the last {{ h.days }} days{% if h.cost_per_scanned_account is not none %} · about <b>${{ '%.2f'|format(h.cost_per_scanned_account) }}</b> to scan one company ({{ h.accounts_scanned }} scanned){% endif %}.</p></div>
+<div class="wrap"><table>
+<tr><th>Step</th><th class="num">Calls</th><th class="num">Cost</th></tr>
+{% for s, n, c, u in h.steps %}<tr><td>{{ s }}</td><td class="num">{{ n }}</td><td class="num">${{ '%.2f'|format(c) }}{% if u %} <span class="badge warm">{{ u }} unpriced</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="3" class="empty">No paid calls recorded in this period.</td></tr>{% endfor %}
+</table></div>
+{% if h.daily_cost %}<p class="meta">Recent days: {% for d, c in h.daily_cost %}{{ d }} ${{ '%.2f'|format(c) }}{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+
+<h2>Coverage</h2>
+<div class="card">
+<p style="margin:0 0 6px"><b>{{ h.accounts_total }}</b> companies: {% for k, n in h.by_status.items() %}{{ k|status_label }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}.
+{% if h.by_origin %}By origin: {% for k, n in h.by_origin.items() %}{{ k }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}.{% endif %}{% if h.unreviewed %} {{ h.unreviewed }} auto-added and not yet reviewed.{% endif %}</p>
+<p class="meta" style="margin:0">Ready-to-scan companies by last scan: never {{ h.scan_age.get('never', 0) }} · within a week {{ h.scan_age.get('week', 0) }} · within a month {{ h.scan_age.get('month', 0) }} · older {{ h.scan_age.get('older', 0) }}. With an SEC id (CIK): {{ h.with_cik }} · with a website: {{ h.with_domain }}.</p>
+</div>
+{% if h.hold_reasons %}<h3>Why companies are held</h3>
+<div class="wrap"><table><tr><th>Reason</th><th class="num">Companies</th></tr>
+{% for r, n in h.hold_reasons %}<tr><td>{{ r }}</td><td class="num">{{ n }}</td></tr>{% endfor %}</table></div>
+<p class="meta">Held companies are never scanned or scored. Run <b>Update my list</b> (it researches the next batch) or fill the facts in on a company page.</p>{% endif %}
+
+<h2>What was found (last 90 days)</h2>
+{% if h.signals_90d %}
+<p class="meta">{{ h.signals_90d }} signals{% if h.high_share is not none %}, {{ (h.high_share * 100)|round|int }}% at High confidence{% endif %}.</p>
+<div class="grid">
+<div class="wrap"><table><tr><th>Signal group</th><th class="num">Signals</th></tr>{% for f, n in h.by_family %}<tr><td>{{ family_labels.get(f, f) }}</td><td class="num">{{ n }}</td></tr>{% endfor %}</table></div>
+<div class="wrap"><table><tr><th>Source type</th><th class="num">Signals</th></tr>{% for s, n in h.by_source %}<tr><td>{{ s|replace('_', ' ') }}</td><td class="num">{{ n }}</td></tr>{% endfor %}</table></div>
+</div>
+{% else %}<div class="card empty">No signals found in the last 90 days.</div>{% endif %}
+{% endblock %}

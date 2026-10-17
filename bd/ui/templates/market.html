@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Market view{% endblock %}
+{% block body %}
+<h1>Market view</h1>
+<p class="sub">Where in the Chicago market signals are appearing. Counts use the date of the event from its source, over the companies that are ready to scan{% if m.score_date %}; scores are from the run on {{ m.score_date }}{% endif %}.</p>
+
+<h2>By industry</h2>
+{% if m.segments %}
+<div class="wrap"><table>
+<tr><th>Industry</th><th class="num">Companies</th><th class="num">With a signal (90 days)</th><th class="num">Signals, last 30 days</th><th>Trend</th><th class="num">Hot</th><th class="num">Warm</th><th class="num">Watch</th><th class="num">Avg score</th></tr>
+{% for s in m.segments %}<tr><td>{{ s.industry }}</td><td class="num">{{ s.companies }}</td><td class="num">{{ s.with_signal_90d }}</td><td class="num">{{ s.signals_30d }}</td>
+<td>{% if s.trend == 'up' %}<span class="badge good">up from {{ s.signals_prior_30d }}</span>{% elif s.trend == 'down' %}<span class="badge bad">down from {{ s.signals_prior_30d }}</span>{% else %}<span class="badge">flat ({{ s.signals_prior_30d }} before)</span>{% endif %}</td>
+<td class="num">{{ s.hot or '' }}</td><td class="num">{{ s.warm or '' }}</td><td class="num">{{ s.watch or '' }}</td><td class="num">{{ ('%.0f'|format(s.avg_score)) if s.avg_score is not none else '-' }}</td></tr>{% endfor %}
+</table></div>
+<p class="meta">Sorted by how many Hot, Warm and Watch companies the industry has. Trend compares the last 30 days with the 30 days before.</p>
+{% else %}<div class="card empty">No companies are ready to scan yet.</div>{% endif %}
+
+<h2>Signals by month</h2>
+{% if m.family_by_month %}
+{% set mx = namespace(v=1) %}{% for f, counts in m.family_by_month.items() %}{% for c in counts %}{% if c > mx.v %}{% set mx.v = c %}{% endif %}{% endfor %}{% endfor %}
+<div class="wrap"><table>
+<tr><th>Signal group</th>{% for mo in m.months %}<th class="num">{{ mo }}</th>{% endfor %}</tr>
+{% for f, counts in m.family_by_month.items() %}<tr><td>{{ family_labels.get(f, f) }}</td>
+{% for c in counts %}<td class="num"><div style="background:var(--accent);opacity:.25;height:6px;border-radius:3px;width:{{ (c * 100 / mx.v)|round|int }}%;margin-left:auto"></div>{{ c or '' }}</td>{% endfor %}</tr>{% endfor %}
+</table></div>
+{% else %}<div class="card empty">No signals recorded yet.</div>{% endif %}
+
+<h2>Private equity sponsors</h2>
+{% if m.sponsors %}
+<div class="wrap"><table>
+<tr><th>Firm</th><th class="num">Portfolio companies here</th><th class="num">Their signals (90 days)</th><th class="num">Firm news (180 days)</th></tr>
+{% for s in m.sponsors %}<tr><td><a href="/firms/{{ s.firm_id }}">{{ s.name }}</a></td><td class="num">{{ s.companies }}</td><td class="num">{{ s.signals_90d }}</td><td class="num">{{ s.firm_signals_180d }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<div class="card empty">No sponsors with ready-to-scan portfolio companies yet.</div>{% endif %}
+
+<h2>Quiet companies</h2>
+<p class="meta">{{ m.quiet_total }} ready-to-scan compan{{ 'y has' if m.quiet_total == 1 else 'ies have' }} no signal in the last 180 days. Largest first. Quiet can mean nothing is happening, or that the scanners cannot see it (check <a href="/health">Data health</a>).</p>
+{% if m.quiet %}
+<div class="wrap"><table>
+<tr><th>Company</th><th>Industry</th><th class="num">Revenue</th><th class="num">Employees</th><th>Last scanned</th><th class="num">Signals ever</th></tr>
+{% for q in m.quiet %}<tr><td><a href="/accounts/{{ q.account_id }}">{{ q.name }}</a></td><td>{{ q.industry }}</td><td class="num">{{ q.revenue|money }}</td><td class="num">{{ '{:,}'.format(q.employees) if q.employees else '-' }}</td><td>{{ q.last_scanned or 'never' }}</td><td class="num">{{ q.signals_total }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}
