@@ -153,7 +153,7 @@ def test_llm_failure_is_captured_not_raised(cfg):
     from bd.llm import LLMRefusal
 
     class Boom:
-        def run(self, *a):
+        def run(self, *a, **kw):
             raise LLMRefusal("model refused (category=None)")
     out = LeadershipScanner(cfg, Boom(), FakeVerifier()).scan(account(), AS_OF)
     assert out.signals == [] and "LLMRefusal" in out.error
@@ -163,11 +163,11 @@ def test_tokens_spent_before_a_failure_are_still_logged(cfg):
     from bd.llm import LLMError, LLMResult, Usage
 
     class FailsOnRetry(FakeLLM):
-        def run(self, system, messages):
+        def run(self, system, messages, **kw):
             if self.calls:
                 self.calls.append(1)
                 raise LLMError("api down", Usage(input_tokens=7, output_tokens=3))
-            return super().run(system, messages)
+            return super().run(system, messages, **kw)
     llm = FailsOnRetry(["garbage"])
     out = LeadershipScanner(cfg, llm, FakeVerifier()).scan(account(), AS_OF)
     assert "api down" in out.error and out.usage.total_tokens == 150 + 10

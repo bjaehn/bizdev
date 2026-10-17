@@ -43,7 +43,7 @@ class FakeLLM:
         self.usage = usage or Usage(input_tokens=100, output_tokens=50, web_searches=1)
         self.calls = []
 
-    def run(self, system, messages):
+    def run(self, system, messages, **kw):
         self.calls.append((system, list(messages)))
         text = self.replies.pop(0)
         u = Usage()

@@ -30,6 +30,7 @@ from typing import Literal
 from pydantic import BaseModel, field_validator
 
 from bd.accounts import PROPOSAL_ONLY_COLUMNS, SEED_COLUMNS, Account, normalize_domain
+from bd.budget import Reserve
 from bd.config import Config
 from bd.cost import estimate_cost
 from bd.edgar import EdgarClient, EdgarError
@@ -257,9 +258,10 @@ def run_enrich(conn: sqlite3.Connection, cfg: Config, enricher: Enricher, accoun
     inflight: dict[Future[EnrichResult], Account] = {}
     done_results: dict[int, EnrichResult] = {}
     spent, hit = 0.0, False
+    reserve = Reserve(cfg.llm.call_reserve_usd)
     with ThreadPoolExecutor(max_workers=workers) as ex:
         while queue or inflight:
-            while queue and len(inflight) < workers and not hit:
+            while queue and len(inflight) < workers and not hit and reserve.allows(spent, len(inflight), cap):
                 a = queue.popleft()
                 inflight[ex.submit(enricher.enrich, a, as_of)] = a
             if not inflight:
@@ -273,6 +275,7 @@ def run_enrich(conn: sqlite3.Connection, cfg: Config, enricher: Enricher, accoun
                     r = EnrichResult(account=a, row={"name": a.name}, error=f"{type(e).__name__}: {e}")
                 cost = estimate_cost(r.usage, model, cfg)
                 spent += cost or 0.0
+                reserve.note(cost, r.usage.web_searches > 0)
                 with conn:
                     conn.execute(
                         "INSERT INTO runs(run_date,step,account_id,accounts_scanned,signals_found,tokens,est_cost,errors) "
@@ -282,6 +285,6 @@ def run_enrich(conn: sqlite3.Connection, cfg: Config, enricher: Enricher, accoun
                 got = [k for k in r.row if k in SEED_COLUMNS[1:]]
                 log(f"  {a.name}: proposed {got or 'nothing'}, {len(r.dropped)} dropped, {r.usage.total_tokens:,} tokens, "
                     + ("unpriced" if cost is None else f"${cost:.4f}") + (f"  ERROR {r.error}" if r.error else ""))
-            if cap is not None and spent >= cap:
+            if cap is not None and queue and (spent >= cap or not reserve.allows(spent, len(inflight), cap)):
                 hit = True
     return [done_results[a.id] for a in accounts if a.id in done_results], spent, hit

@@ -38,7 +38,7 @@ class Router:
         self.urls = {normalize_url(u) for u in urls}
         self.lock, self.calls = threading.Lock(), []
 
-    def run(self, system, messages):
+    def run(self, system, messages, **kw):
         user = messages[-1]["content"]
         with self.lock:
             self.calls.append(user)

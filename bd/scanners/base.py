@@ -105,6 +105,13 @@ class Scanner:
         """Extra arguments for this account's model calls (e.g. a search allow-list). Default: none."""
         return {}
 
+    def _call_kwargs(self, account: Account) -> dict:
+        kw = dict(self.llm_kwargs(account))
+        tier = self.cfg.scan.tiers.get(account.tier)
+        if tier and tier.max_searches:
+            kw["max_uses"] = tier.max_searches
+        return kw
+
     def applies_to(self, account: Account) -> bool:
         """False when this scanner has nothing to do for the account (no calls are made or billed)."""
         return True
@@ -135,7 +142,7 @@ class Scanner:
             resp, result = generate_validated(
                 self.llm, self.system_prompt(), self.user_prompt(account, as_of),
                 self.response_model, retries=self.cfg.llm.json_retries,
-                llm_kwargs=self.llm_kwargs(account) or None,
+                llm_kwargs=self._call_kwargs(account) or None,
             )
         except LLMError as e:  # InvalidJSON and LLMRefusal are LLMErrors
             out.error = f"{type(e).__name__}: {e}"

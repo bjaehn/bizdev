@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from bd.accounts import Account
+from bd.budget import Reserve
 from bd.config import Config
 from bd.cost import estimate_cost
 from bd.llm import Usage
@@ -72,6 +73,7 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
     queue: deque[tuple[Account, Scanner]] = deque((a, s) for a in due for s in scanners if s.applies_to(a))
     remaining = {a.id: sum(s.applies_to(a) for s in scanners) for a in due}
     failed: set[int] = set()
+    reserve = Reserve(cfg.llm.call_reserve_usd)
     inflight: dict[Future[ScanOutcome], tuple[Account, Scanner]] = {}
 
     def finish(acc: Account, sc: Scanner, out: ScanOutcome) -> None:
@@ -87,6 +89,7 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
                 learn_board(conn, acc.id, out.learned_board)
             record_filings(conn, acc.id, sc.name, out.read_filings, as_of)
         cost = estimate_cost(out.usage, model, cfg)
+        reserve.note(cost, out.usage.web_searches > 0)
         if cost is None:
             run.est_cost = None
             summary.unpriced_calls += 1
@@ -121,7 +124,8 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         while queue or inflight:
-            while queue and len(inflight) < workers and not summary.budget_hit:
+            while queue and len(inflight) < workers and not summary.budget_hit \
+                    and reserve.allows(summary.est_cost, len(inflight), cap):
                 acc, sc = queue.popleft()
                 if sc.reads_filings:
                     inflight[ex.submit(sc.scan, acc, as_of, known_accessions(conn, acc.id, sc.name))] = (acc, sc)
@@ -138,7 +142,8 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
                     out = ScanOutcome(account=acc, scanner=sc.name, usage=Usage(),
                                       error=f"{type(e).__name__}: {e}")
                 finish(acc, sc, out)
-            if cap is not None and summary.est_cost >= cap and not summary.budget_hit:
+            if cap is not None and not summary.budget_hit and queue and (
+                    summary.est_cost >= cap or not reserve.allows(summary.est_cost, len(inflight), cap)):
                 summary.budget_hit = True
         summary.skipped_budget = len(queue)
 
