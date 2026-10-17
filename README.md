@@ -73,6 +73,8 @@ signals validated by code; none writes outreach.
 
 **Open public RFPs** (`bd rfps`, the Open RFPs page) are a separate, market-level feed rather than a scanner: one search per agency group in `config.yaml` `rfps.groups` (City of Chicago, Cook County, State of Illinois, schools and universities, transit and water agencies, federal), each restricted to that group's own domains. A solicitation is kept only if its page is on those domains, was in the search results, resolves, and states a due date that has not passed. They are not tied to a company and are not scored. Part of `Update my list` and the weekly run; roughly six searches per run.
 
+**Data health** (`/health`) and **Market view** (`/market`, both under More) are read-only pages built from what past runs stored. Data health shows which scanners produced anything (and which failed or never ran), cost per scanned company, why companies are held, and how fresh the data is. Market view shows signals by industry with a 30-day trend, signal groups by month, sponsor activity, and the large companies with no signal in 180 days.
+
 ## Commands
 
 | Command | What it does |

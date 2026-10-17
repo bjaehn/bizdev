@@ -38,6 +38,8 @@ from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply
                        mark_reviewed, reject_candidate, remove_exclusion, update_account)
 from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
+from bd.health import build_health
+from bd.market import build_market
 from bd.jobs import KINDS, SCANNER_NAMES, JobError, JobRunner
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
@@ -357,6 +359,8 @@ class App:
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
             ("GET", "/rfps"): lambda: self.rfps_page(req, conn),
+            ("GET", "/health"): lambda: self.health_page(req, conn),
+            ("GET", "/market"): lambda: self.render("market.html", page="market", m=build_market(conn, date.today())),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
             ("GET", "/accounts/new"): lambda: self.render("account_new.html", page="accounts", form={}, errors=[]),
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
@@ -503,6 +507,13 @@ class App:
         changes = watchlist_changes(conn, since)
         return self.render("watchlist.html", page="watchlist", changes=changes, days=days, since=since.isoformat(),
                            stage_labels=STAGE_LABELS, labels=TYPE_LABELS, counts=stage_counts(conn))
+
+    def health_page(self, req: Request, conn: sqlite3.Connection) -> Response:
+        try:
+            days = max(1, min(365, int(req.q("days") or 30)))
+        except ValueError:
+            days = 30
+        return self.render("health.html", page="health", h=build_health(conn, self.cfg, date.today(), days))
 
     def rfps_page(self, req: Request, conn: sqlite3.Connection) -> Response:
         today = date.today()
