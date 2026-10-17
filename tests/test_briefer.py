@@ -114,7 +114,7 @@ def test_llm_error_falls_back(cfg, leads):
     conn, ls = leads
 
     class Boom:
-        def run(self, *a):
+        def run(self, *a, **kw):
             raise LLMError("down", Usage(input_tokens=5))
     b = Briefer(cfg, Boom()).brief(ls[0], AS_OF)
     assert b.source == "fallback" and "down" in b.error and b.usage.input_tokens == 5

@@ -111,11 +111,11 @@ class AnthropicWebSearchClient:
         headers = {"anthropic-workspace-id": ws} if ws else None
         self._client = client or anthropic.Anthropic(api_key=api_key, default_headers=headers)
 
-    def _tools(self, allowed_domains: list[str] | None = None) -> list[dict[str, Any]]:
+    def _tools(self, allowed_domains: list[str] | None = None, max_uses: int | None = None) -> list[dict[str, Any]]:
         tool: dict[str, Any] = {
             "type": self._cfg.llm.web_search_tool_type,
             "name": "web_search",
-            "max_uses": self._cfg.llm.web_search_max_uses,
+            "max_uses": max_uses or self._cfg.llm.web_search_max_uses,
         }
         if allowed_domains:      # the API accepts either an allow list or a block list, not both
             tool["allowed_domains"] = list(allowed_domains)
@@ -123,13 +123,14 @@ class AnthropicWebSearchClient:
             tool["blocked_domains"] = list(self._cfg.sources.blocked_domains)
         return [tool]
 
-    def run(self, system: str, messages: list[dict[str, Any]], allowed_domains: list[str] | None = None) -> LLMResult:
+    def run(self, system: str, messages: list[dict[str, Any]], allowed_domains: list[str] | None = None,
+            max_uses: int | None = None) -> LLMResult:
         convo = list(messages)
         usage, urls = Usage(), set()
         resp = None
         for attempt in range(self._cfg.llm.max_continuations + 1):
             try:
-                extra: dict[str, Any] = {"tools": self._tools(allowed_domains)} if self._web_search else {}
+                extra: dict[str, Any] = {"tools": self._tools(allowed_domains, max_uses)} if self._web_search else {}
                 resp = self._client.messages.create(
                     model=self._model, max_tokens=self._cfg.llm.max_tokens,
                     system=system, messages=convo, **extra,

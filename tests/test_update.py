@@ -341,3 +341,16 @@ def test_messy_user_agent_is_flagged_and_real_requests_work(cfg):
         assert good.verify(url).ok
     finally:
         srv.shutdown()
+
+
+def test_search_depth_follows_the_account_tier(cfg):
+    from bd.llm import AnthropicWebSearchClient
+    c = AnthropicWebSearchClient(cfg, model="claude-sonnet-5-5", client=object())
+    assert c._tools(None)[0]["max_uses"] == cfg.llm.web_search_max_uses
+    assert c._tools(None, 3)[0]["max_uses"] == 3
+    assert cfg.scan.tiers["A"].max_searches > cfg.scan.tiers["B"].max_searches
+    from bd.scanners.leadership import LeadershipScanner
+    from bd.accounts import Account
+    sc = LeadershipScanner(cfg, None, None)
+    a = Account(id=1, name="X", tier="B")
+    assert sc._call_kwargs(a)["max_uses"] == cfg.scan.tiers["B"].max_searches

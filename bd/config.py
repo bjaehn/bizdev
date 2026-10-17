@@ -113,6 +113,7 @@ class FitGate(_Strict):
 
 class Tier(_Strict):
     every_weeks: int
+    max_searches: int | None = None     # web searches allowed per model call for this tier (default: llm.web_search_max_uses)
 
 
 class Scan(_Strict):
@@ -130,6 +131,7 @@ class Llm(_Strict):
     max_continuations: int
     json_retries: int
     concurrency: int
+    call_reserve_usd: float = 0.35      # expected cost of one search call, until real calls give an average
     max_cost_per_run_usd: float | None = None
 
 

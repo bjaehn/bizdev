@@ -99,16 +99,17 @@ scan:
     pe_hold_2_4: [730, 1461]
   max_future_days: 30   # event_date later than run date + this is rejected as implausible
   tiers:
-    A: {every_weeks: 1}
-    B: {every_weeks: 2}
+    A: {every_weeks: 1, max_searches: 6}     # deeper search for the accounts that matter most
+    B: {every_weeks: 2, max_searches: 3}
 
 llm:
   max_tokens: 16000
-  web_search_max_uses: 8          # cost cap per account per scanner call
+  web_search_max_uses: 4          # web searches per model call (a scan tier can override: scan.tiers.*.max_searches)
   web_search_tool_type: web_search_20260209   # check Anthropic docs if the model changes
   max_continuations: 5            # pause_turn resumes per call
   json_retries: 1                 # one retry on invalid JSON
   concurrency: 4                  # max simultaneous scanner calls
+  call_reserve_usd: 0.35          # expected cost of one search call; the limit counts calls in flight (bd/budget.py)
   max_cost_per_run_usd: 10.0      # soft cap: stop starting new calls once estimated spend reaches this
 
 # USD per million tokens. Source: https://platform.claude.com/docs/en/about-claude/pricing

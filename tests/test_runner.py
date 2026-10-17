@@ -180,7 +180,7 @@ def test_budget_cap_stops_new_calls_and_reports(cfg, conn):
     accts = make_accounts(conn, 10)
     per_call = 0.027
     sc = FakeScanner(cfg, delay=0.01)
-    s = run_scans(conn, cfg, [sc], accts, AS_OF, MODEL, workers=1, max_cost=per_call * 3 - 0.001)
+    s = run_scans(conn, cfg, [sc], accts, AS_OF, MODEL, workers=1, max_cost=per_call * 3 + 0.001)   # the limit holds: a fourth call would pass it
     assert s.budget_hit and len(sc.calls) == 3 and s.skipped_budget == 7
     t = conn.execute("SELECT errors FROM runs WHERE step='scan:total'").fetchone()[0]
     assert "budget cap hit, 7 calls not started" in t
@@ -193,3 +193,24 @@ def test_config_cap_applies_by_default_and_is_not_hit_here(cfg, conn):
     s = run_scans(conn, cfg, [FakeScanner(cfg)], accts, AS_OF, MODEL, workers=1, max_cost=None)
     # config default cap is $25, far above this run
     assert not s.budget_hit and s.skipped_budget == 0
+
+
+def test_limit_holds_with_calls_in_flight(cfg, conn):
+    """Four workers used to start four ~$0.30 calls before the first finished, ending about $1 over the limit."""
+    accts = make_accounts(conn, 12)
+    sc = FakeScanner(cfg, delay=0.05, usage=Usage(input_tokens=100_000, output_tokens=10_000, web_searches=3))   # about $0.30 a call
+    s = run_scans(conn, cfg, [sc], accts, AS_OF, MODEL, workers=4, max_cost=1.0)
+    assert s.budget_hit and s.skipped_budget > 0
+    assert s.est_cost <= 1.0 + 1e-9, s.est_cost
+
+
+def test_reserve_rules():
+    from bd.budget import Reserve
+    r = Reserve(0.35)
+    assert r.allows(0, 0, None) and not r.allows(5.0, 0, 5.0)
+    assert r.allows(0.0, 0, 0.1)                      # one call is always let through when nothing is running
+    assert not r.allows(0.5, 3, 1.0) and r.allows(0.2, 1, 1.0) and not r.allows(0.9, 0, 1.0)
+    r.note(0.01, searched=False)                      # a cheap SEC lookup says nothing about a search call
+    assert r.per_call == 0.35
+    r.note(0.25), r.note(0.35)
+    assert abs(r.per_call - 0.30) < 1e-9
