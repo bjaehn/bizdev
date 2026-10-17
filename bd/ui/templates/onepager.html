@@ -3,7 +3,7 @@
 {% block title %}{{ d.a.name }} one-pager{% endblock %}
 {% block body %}
 <div class="onepager">
-<p class="meta noprint"><a href="/accounts/{{ d.a.id }}">← {{ d.a.name }}</a> · Use your browser's Print (Save as PDF) for a clean one-page copy.</p>
+<p class="meta noprint"><a href="/accounts/{{ d.a.id }}">← {{ d.a.name }}</a> · Use your browser's Print (Save as PDF) for a clean printable copy; a company with many signals may run to a second page.</p>
 <div class="row"><div><h1>{{ d.a.name }}</h1>
 <p class="sub">{{ [d.a.industry, d.a.hq_city, (d.a.ownership if d.a.ownership else none)]|select|join(' · ') or 'No company details recorded' }}{% if d.firms %} · owned by {{ d.firms|join(', ') }}{% endif %}
 {% if d.a.revenue or d.a.employees %}<br>{% if d.a.revenue %}Revenue {{ d.a.revenue|money }}{% endif %}{% if d.a.revenue and d.a.employees %} · {% endif %}{% if d.a.employees %}{{ '{:,}'.format(d.a.employees) }} employees{% endif %}{% endif %}</p></div>
