@@ -43,6 +43,8 @@ from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
+from bd.pipeline import (STAGE_LABELS, STAGES, add_note, default_since, get_state, notes_for, set_stage, set_watching, stage_counts,
+                         watchlist_changes)
 from bd.opportunities import build_opportunities, filter_opportunities, score_dates
 from bd.setup_check import static_problems
 from bd.settings_store import (UPDATE_FIELDS, load_update, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
@@ -352,6 +354,7 @@ class App:
             ("POST", "/check"): lambda: self.check_start(),
             ("POST", "/settings/update"): lambda: self.settings_update(req, conn),
             ("GET", "/monday"): lambda: self.leads(req, conn),
+            ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
             ("GET", "/accounts/new"): lambda: self.render("account_new.html", page="accounts", form={}, errors=[]),
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
@@ -382,6 +385,8 @@ class App:
             ok = set_firm_status(conn, int(parts[1]), req.f("status"))
             self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
             return self.redirect(f"/firms/{int(parts[1])}")
+        if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch"):
+            return self.pipeline_update(req, conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
             return self.reviewed(conn, int(parts[1]))
         if m == "POST" and len(parts) == 3 and parts[0] == "candidates" and parts[1].isdigit() and parts[2] in ("accept", "reject"):
@@ -461,16 +466,41 @@ class App:
         except ShortlistError as e:
             return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=[], total=0, error=str(e),
                                q={}, families=[], lines=[], stale=[], prev_date=None)
-        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked")}
+        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage")}
         q["pe"] = req.q("pe") == "1"
         q["new"] = req.q("new") == "1"
         items = filter_opportunities(ol.items, band=q["band"], family=q["family"], service_line=q["service_line"], pe_only=q["pe"],
-                                     q=q["q"], new_only=q["new"], status=q["status"], sort=q["sort"] or "score")
+                                     q=q["q"], new_only=q["new"], status=q["status"], sort=q["sort"] or "score",
+                                     stage=q["stage"])
         families = sorted({r.kind for o in ol.items for r in o.reasons})
         return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=items, total=len(ol.items),
                            error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale,
                            prev_date=ol.prev_date.isoformat() if ol.prev_date else None, bands=["Hot", "Warm", "Watch", "Stored"],
-                           statuses=["card", "over_cap", "held", "tracking"])
+                           statuses=["card", "over_cap", "held", "tracking"], stages=STAGES, stage_labels=STAGE_LABELS)
+
+    def pipeline_update(self, req: Request, conn: sqlite3.Connection, account_id: int, what: str) -> Response:
+        if what == "stage":
+            ok = set_stage(conn, account_id, req.f("stage"), req.f("note"))
+            self.say("ok" if ok else "err", "Stage saved." if ok else "Nothing to save (unknown stage, or no change).")
+        elif what == "note":
+            ok = add_note(conn, account_id, req.f("body"))
+            self.say("ok" if ok else "err", "Note added." if ok else "Write something first.")
+        else:
+            on = req.f("on") == "1"
+            ok = set_watching(conn, account_id, on)
+            self.say("ok" if ok else "err", ("Added to" if on else "Removed from") + " your watchlist." if ok else "No such account.")
+        back = req.f("back")
+        return self.redirect(back if back.startswith("/") and not back.startswith("//") else f"/accounts/{account_id}")
+
+    def watchlist(self, req: Request, conn: sqlite3.Connection) -> Response:
+        try:
+            days = max(1, min(90, int(req.q("days") or 7)))
+        except ValueError:
+            days = 7
+        since = default_since(days=days)
+        changes = watchlist_changes(conn, since)
+        return self.render("watchlist.html", page="watchlist", changes=changes, days=days, since=since.isoformat(),
+                           stage_labels=STAGE_LABELS, labels=TYPE_LABELS, counts=stage_counts(conn))
 
     def leads(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = [r[0] for r in conn.execute("SELECT DISTINCT run_date FROM scores ORDER BY run_date DESC")]
@@ -526,7 +556,10 @@ class App:
             "SELECT f.id, f.name, f.status, l.status AS link_status FROM portfolio_links l JOIN pe_firms f ON f.id = l.firm_id "
             "WHERE l.account_id = ? ORDER BY f.name", (a.id,)).fetchall()
         postings = conn.execute("SELECT * FROM postings WHERE account_id = ? AND open = 1 ORDER BY posted_date DESC LIMIT 40", (a.id,)).fetchall()
-        return dict(page="accounts", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
+        brief = conn.execute("SELECT why_now, best_service_line, run_date FROM briefs WHERE account_id = ? ORDER BY run_date DESC LIMIT 1",
+                             (a.id,)).fetchone()
+        return dict(state=get_state(conn, a.id), notes=notes_for(conn, a.id), stages=STAGES, stage_labels=STAGE_LABELS, brief=brief,
+                    page="accounts", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
                     conf_scored={"High", "Medium"}, firms=firms, postings=postings, lead=set(self.cfg.hiring.leadership_levels))
 
     def account_page(self, req: Request, conn: sqlite3.Connection, account_id: int) -> Response:
