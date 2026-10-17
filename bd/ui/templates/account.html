@@ -2,7 +2,7 @@
 {% from "_facts.html" import facts_form, errors_box %}
 {% block title %}{{ a.name }}{% endblock %}
 {% block body %}
-<p class="meta"><a href="/opportunities">← Opportunities</a></p>
+<p class="meta"><a href="/opportunities">← Opportunities</a> · <a href="/accounts/{{ a.id }}/onepager">One-page summary (printable)</a></p>
 <div class="row"><div><h1>{{ a.name }}</h1>
 <p class="sub">{{ [a.industry, a.hq_city, a.ownership, (a.revenue|money ~ ' revenue') if a.revenue else none]|select|join(' · ') or 'no company details recorded yet' }}</p></div>
 <div class="tags">{% if scores %}<span class="badge {{ 'hot' if scores[0]['band'] == 'Hot' else ('warm' if scores[0]['band'] == 'Warm' else '') }}">{{ scores[0]['band'] }} · {{ scores[0]['score'] }}</span> {% endif %}
