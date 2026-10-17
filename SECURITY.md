@@ -23,7 +23,7 @@ outreach and contacts no one. No LinkedIn and no paywalled sites (a domain block
 
 The request body is the only thing sent; the API key travels in the standard header.
 
-* **1a. Web-search scanners (`leadership`, `events`, `pe`, `hiring`, `tech_procurement`, `warn`)**: a static system prompt,
+* **1a. Web-search scanners (`leadership`, `events`, `pe`, `hiring`, `tech_procurement`, `warn`, and the `rfps` feed)**: a static system prompt,
   plus per company: company name, website domain (if known), HQ city (if known), today's date, and the
   window (180 days; 60 days for job postings). The `pe` scanner also sends the PE sponsor's name if you
   recorded one, and runs only for accounts marked PE-backed. The web search
@@ -180,6 +180,7 @@ shows whether each secret is set, never its value. The container drops root befo
 21. **Job-board feeds are trusted as published.** A posting's date is the provider's own `first_published` / `createdAt` / `publishedAt`; a posting with none is ignored, never dated by us. If a company re-posts an old role, it can look new. The response layouts could not be fetched from the build sandbox; parsing is defensive and an unexpected shape is an error, not "no postings".
 22. **Financial pressure rests on the SEC's structured data, whose layout was not fetched here.** The `financials` scanner reads `data.sec.gov/api/xbrl/companyfacts/CIK##########.json` (the documented layout as I know it; parsing is defensive and a company whose figures cannot be compared gets no signal, never a guess). Companies that tag revenue or operating income in unusual ways, banks and insurers, and companies with a restated or changed fiscal year may be missed. The URL stored as the source is the data file itself (it was retrieved), not the 10-K page. Only the CIK leaves this machine.
 23. **WARN notices depend on web search finding the state's page.** The `warn` scanner is restricted to `illinois.gov`, but the state's notice list may be a table or PDF that the search tool does not surface for every company, so a missing signal does not prove there was no notice. Whether it finds real notices has not been seen live.
+24. **The RFP feed depends on web search reaching agency procurement pages.** `bd rfps` is restricted to the domains in `config.yaml` `rfps.groups` and keeps only pages that were returned, resolve, are on those domains and state a future due date. Many procurement portals are JavaScript-heavy or behind a login (notably sam.gov), so the search may see little of them and a short or empty list does not mean there are no open solicitations. The domain list is my best knowledge of the agencies' sites and has not been checked live. The model decides whether a solicitation asks for consulting-type work; code cannot check that.
 
 ## 6. Decisions for IT
 

@@ -293,4 +293,4 @@ def test_pe_jobs_validate_and_pe_sync_needs_no_confirmation():
             with pytest.raises(JobError):
                 validate(kind, bad)
     assert sequence_for("pe_signals", ["pe-signals", "--limit", "5"], "2026-01-05") == [["pe-signals", "--limit", "5", "--as-of", "2026-01-05"]]
-    assert [s[0] for s in sequence_for("weekly", [], "2026-01-05")] == ["scan", "pe-signals", "score", "card"]
+    assert [s[0] for s in sequence_for("weekly", [], "2026-01-05")] == ["scan", "pe-signals", "rfps", "score", "card"]
