@@ -180,6 +180,27 @@ CREATE TABLE IF NOT EXISTS firm_signals (
 );
 CREATE INDEX IF NOT EXISTS ix_firm_signals_firm ON firm_signals(firm_id, event_date);
 
+-- Where each lead stands with you (bd/pipeline.py). One row per account that has ever been touched; no row = 'new'.
+CREATE TABLE IF NOT EXISTS lead_state (
+    account_id INTEGER PRIMARY KEY REFERENCES accounts(id),
+    stage      TEXT NOT NULL DEFAULT 'new' CHECK (stage IN ('new','reviewing','pursuing','passed','won','lost')),
+    watching   INTEGER NOT NULL DEFAULT 0,
+    updated    TEXT NOT NULL
+);
+
+-- Notes and stage changes, newest last. A stage row keeps the score at the time, so outcomes can later be compared with
+-- what the score predicted.
+CREATE TABLE IF NOT EXISTS lead_notes (
+    id         INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    ts         TEXT NOT NULL,
+    kind       TEXT NOT NULL CHECK (kind IN ('note','stage')),
+    stage      TEXT,
+    score_at   INTEGER,
+    body       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_lead_notes_account ON lead_notes(account_id, id);
+
 CREATE TABLE IF NOT EXISTS exclusions (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL,

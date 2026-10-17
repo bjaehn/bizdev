@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Watchlist{% endblock %}
+{% block body %}
+<div class="row"><div><h1>Watchlist</h1>
+<p class="sub">Companies you follow, and what was found for them in the last {{ days }} day{{ '' if days == 1 else 's' }} (since {{ since }}). Follow a company from its page.</p></div>
+<form method="get" action="/watchlist" class="filters"><label for="days" style="margin:0">Look back</label>
+<select id="days" name="days">{% for d in (1, 7, 14, 30, 90) %}<option value="{{ d }}" {{ 'selected' if d == days else '' }}>{{ d }} day{{ '' if d == 1 else 's' }}</option>{% endfor %}</select>
+<button class="ghost" type="submit">Show</button></form></div>
+<p class="meta">Pipeline: {% for k, n in counts.items() %}{{ stage_labels[k] }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</p>
+{% for w in changes %}
+<div class="card"><div class="row"><div><a class="name" href="/accounts/{{ w.account_id }}">{{ w.name }}</a>
+<div class="meta">{{ stage_labels[w.stage] }}{% if w.score is not none %} · score {{ w.score }} ({{ w.band }}){% endif %}</div></div>
+<div>{% if w.new_signals or w.new_postings %}<span class="badge good">{{ w.new_signals|length }} new signal{{ '' if w.new_signals|length == 1 else 's' }}{% if w.new_postings %} · {{ w.new_postings }} new posting{{ '' if w.new_postings == 1 else 's' }}{% endif %}</span>{% else %}<span class="badge">nothing new</span>{% endif %}</div></div>
+{% if w.new_signals %}<ul class="signals">{% for s in w.new_signals %}<li><b>{{ labels[s['type']] }}</b> · {{ s['event_date']|fdate }} · {{ s['confidence'] }}<br><span class="meta">{{ s['summary'] }}</span>
+{% if s['source_url']|safe_url %}<br><a href="{{ s['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s['source_url']|host }}</a>{% endif %}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% else %}<div class="card empty">You are not watching any company yet.<br>Open a company from <a href="/opportunities">Opportunities</a> and press <b>Watch this company</b>.</div>{% endfor %}
+{% endblock %}

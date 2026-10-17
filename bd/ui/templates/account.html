@@ -6,6 +6,24 @@
 <div class="row"><div><h1>{{ a.name }}</h1>
 <p class="sub">Fit gate: <span class="badge {{ 'good' if fit.verdict == 'pass' else ('warm' if fit.verdict == 'unknown' else 'bad') }}">{{ fit.verdict }}</span>
 status <b>{{ a.status }}</b>{% if fit.reasons %} · {{ fit.reasons|join('; ') }}{% endif %}</p></div></div>
+{% if brief or scores %}<div class="card"><h2 style="margin-top:0">Where it stands</h2>
+{% if brief %}<p style="margin:0 0 6px">{{ brief['why_now'] }}</p>
+<p class="meta">Written {{ brief['run_date'] }}{% if brief['best_service_line'] %} · best fit: <b>{{ brief['best_service_line'] }}</b>{% endif %}. Built only from the signals below.</p>{% endif %}
+{% if scores %}<p class="meta" style="margin:0">Latest score <b>{{ scores[0]['score'] }}</b> ({{ scores[0]['band'] }}) on {{ scores[0]['run_date'] }}.</p>{% endif %}</div>{% endif %}
+<div class="card"><h2 style="margin-top:0">Your pipeline</h2>
+<form method="post" action="/accounts/{{ a.id }}/stage" class="filters"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="stage" style="margin:0">Stage</label>
+<select id="stage" name="stage">{% for k in stages %}<option value="{{ k }}" {{ 'selected' if state.stage == k else '' }}>{{ stage_labels[k] }}</option>{% endfor %}</select>
+<input type="text" name="note" maxlength="2000" placeholder="Why (optional)" aria-label="Why" style="min-width:220px">
+<button type="submit">Save stage</button></form>
+<form method="post" action="/accounts/{{ a.id }}/watch" style="margin:8px 0"><input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="on" value="{{ '0' if state.watching else '1' }}"><button class="ghost" type="submit">{{ 'Stop watching' if state.watching else 'Watch this company' }}</button>
+<span class="meta">Watched companies appear on the <a href="/watchlist">watchlist</a> with anything new.</span></form>
+<form method="post" action="/accounts/{{ a.id }}/note"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="body">Add a note</label><textarea id="body" name="body" rows="2" maxlength="2000" style="width:100%"></textarea>
+<button class="ghost" type="submit">Add note</button></form>
+{% if notes %}<ul class="signals">{% for n in notes %}<li><span class="meta">{{ n['ts'][:10] }}{% if n['kind'] == 'stage' %} · moved to <b>{{ stage_labels[n['stage']] }}</b>{% if n['score_at'] is not none %} at score {{ n['score_at'] }}{% endif %}{% endif %}</span>{% if n['body'] %}<br>{{ n['body'] }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+</div>
 {% if a.origin == 'discovered' %}<div class="card"><h2 style="margin-top:0">Found by market research</h2>
 <p class="meta">Discovered {{ a.discovered_at or '' }}{% if a.source_url|safe_url %} via <a href="{{ a.source_url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ a.source_url|host }}</a>{% endif %}.
 {% if not a.reviewed %}Not yet reviewed: it is scanned only up to a per-run limit.{% else %}Reviewed.{% endif %}</p>

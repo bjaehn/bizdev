@@ -17,6 +17,7 @@ from bd.accounts import Account, list_accounts
 from bd.brief_core import fallback_brief
 from bd.config import Config
 from bd.labels import FAMILY_LABELS, FIRM_TYPE_LABELS, TYPE_LABELS, fmt_date
+from bd.pipeline import OPEN_STAGES, all_states
 from bd.score_store import score_one
 from bd.scoring import ScoreResult
 from bd.shortlist import Lead, LeadSignal, ShortlistError, build_shortlist, lead_signals
@@ -50,6 +51,8 @@ class Opportunity:
     open_postings: int = 0
     leadership_postings: int = 0
     firms: list[str] = field(default_factory=list)
+    stage: str = "new"                         # where you have taken it (bd.pipeline)
+    watching: bool = False
 
     @property
     def delta(self) -> int | None:
@@ -99,6 +102,7 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
     out = OpportunityList(run_date, prev_date)
     keep = max(cfg.card.max_buttons_per_lead, cfg.briefer.max_signals_in_prompt)
     floor = 1 if include_tracked_only else cfg.scoring.bands.watch
+    states = all_states(conn)
     briefs = {r["account_id"]: r for r in conn.execute("SELECT * FROM briefs WHERE run_date = ?", (run_date.isoformat(),))}
 
     window_start = (run_date - timedelta(days=cfg.hiring.window_days)).isoformat()
@@ -141,6 +145,9 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
         p = postings.get(acc.id)
         o.open_postings, o.leadership_postings = (p["n"], p["leaders"] or 0) if p else (0, 0)
         o.firms = firms.get(acc.id, [])
+        st = states.get(acc.id)
+        if st:
+            o.stage, o.watching = st.stage, st.watching
         if not gated or acc.name in out.stale:
             o.status, o.status_text = STATUS_UNKNOWN, "scores are out of date: re-run score"
         elif acc.id in on_card:
@@ -160,7 +167,8 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
 
 
 def filter_opportunities(items: list[Opportunity], band: str = "", family: str = "", service_line: str = "", pe_only: bool = False,
-                         q: str = "", new_only: bool = False, status: str = "", sort: str = "score") -> list[Opportunity]:
+                         q: str = "", new_only: bool = False, status: str = "", sort: str = "score",
+                         stage: str = "") -> list[Opportunity]:
     q = q.strip().lower()
     out = [o for o in items
            if (not band or o.result.band == band)
@@ -169,7 +177,8 @@ def filter_opportunities(items: list[Opportunity], band: str = "", family: str =
            and (not pe_only or o.account.ownership == "pe-backed")
            and (not q or q in o.account.name.lower())
            and (not new_only or o.is_new)
-           and (not status or o.status == status)]
+           and (not status or o.status == status)
+           and (not stage or (o.stage in OPEN_STAGES if stage == "open" else o.stage == stage))]
     if sort == "change":
         out.sort(key=lambda o: (-(o.delta if o.delta is not None else o.result.score), o.rank))
     elif sort == "hiring":
