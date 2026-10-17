@@ -231,6 +231,13 @@ class Rfps(_Strict):
     groups: list[RfpGroup]
 
 
+class Ask(_Strict):
+    max_rows: int                     # rows kept from a query (more is flagged as truncated)
+    max_question_chars: int
+    timeout_seconds: float            # a query running longer than this is aborted
+    max_cost_usd: float               # per question (the two model calls together)
+
+
 class Config(_Strict):
     scoring: Scoring
     post_gate: PostGate
@@ -245,6 +252,7 @@ class Config(_Strict):
     edgar: Edgar
     financials: Financials
     rfps: Rfps
+    ask: Ask
     briefer: Briefer
     card: Card
     discovery: Discovery

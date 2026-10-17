@@ -355,6 +355,38 @@ def pe_signals(
 
 
 @app.command()
+def ask(
+    id: int = typer.Option(..., "--id", help="Id of a stored question (the Ask page creates it)"),
+    as_of: Optional[str] = typer.Option(None, help="Today's date YYYY-MM-DD (default today)"),
+) -> None:
+    """Answer one plain-English question about your own data: the model writes a read-only query, code runs it, the model phrases the
+    answer from the rows. Two small text calls; no web access."""
+    from bd.ask import run_ask
+    from bd.db import connect, init_db
+    from bd.llm import AnthropicWebSearchClient
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    try:
+        key, model = settings.require_llm()
+    except RuntimeError as e:
+        _fail(str(e))
+        raise
+    llm = AnthropicWebSearchClient(cfg, model=model, api_key=key, web_search=False)
+    o = run_ask(conn, settings.db_path, cfg, llm, model, id, run_date, max_cost=cfg.llm.max_cost_per_run_usd)
+    if o is None:
+        _fail(f"No pending question with id {id}.")
+        raise typer.Exit(code=2)
+    cost = f"${o.cost:.4f}" if o.cost is not None else "unpriced"
+    if o.status != "done":
+        typer.echo(f"Could not answer: {o.error} ({cost})", err=True)
+        raise typer.Exit(code=3)
+    typer.echo(f"Answered ({len(o.rows or [])} row(s), {cost}).")
+
+
+@app.command()
 def rfps(
     limit: Optional[int] = typer.Option(None, help="At most N agency groups"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),

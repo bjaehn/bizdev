@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
-PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "rfps", "card"})
+PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "rfps", "ask", "card"})
 SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials")
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
@@ -52,6 +52,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "pe_portfolio": ("Research PE portfolios", True, False),
     "pe_signals": ("Scan PE firms for signals", True, False),
     "rfps": ("Find open public RFPs", True, False),
+    "ask": ("Ask a question about your data", True, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -111,6 +112,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
     if kind == "check":
         return ["check"]
+    if kind == "ask":
+        return ["ask", "--id", str(num("id", 1, 10**9, required=True))]
     if kind == "rfps":
         return ["rfps", "--limit", str(num("limit", 1, 12, required=True))]
     if kind == "update":

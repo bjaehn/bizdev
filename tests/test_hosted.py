@@ -191,7 +191,7 @@ def test_there_is_no_posting_job_and_scheduled_only_job_is_not_user_startable():
         validate("weekly", {})
     assert validate("weekly", {}, scheduled=True) == []
     for kind in KINDS:
-        for step in sequence_for(kind, validate(kind, {"limit": "5", "research": "5", "segments": "1", "scan": "5", "budget": "5"}, scheduled=True), "2026-01-05"):
+        for step in sequence_for(kind, validate(kind, {"limit": "5", "id": "5", "research": "5", "segments": "1", "scan": "5", "budget": "5"}, scheduled=True), "2026-01-05"):
             if step[0] == "card" and kind != "weekly":
                 assert "--dry-run" in step
 

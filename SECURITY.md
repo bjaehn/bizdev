@@ -39,8 +39,17 @@ The request body is the only thing sent; the API key travels in the standard hea
   confidence, the stored 25-word summary, role/person name, service lines) for leads already chosen for
   the card. No score, no URLs, no web search.
 
-Not sent to Anthropic: the exclusions list, client names, revenue/employee figures, scores, the database,
-API keys, or any SEI internal data. Names of executives appear only where a public source named them
+* **1e. Ask your data (`bd ask`)**: the fixed table layout, today's date and the question you typed (call 1, no
+  web search); then the question and the rows the query returned, capped at 100 rows and 400 characters a cell
+  (call 2). Those rows come from an allow-list of tables (companies and their public facts, signals, scores,
+  briefs, postings, PE firms and links, RFPs, your pipeline stage and the cost log) and can therefore include
+  figures such as revenue, employees and scores for the companies you ask about. **Your free-text notes, the
+  exclusions list (client names), the change log, settings, jobs and API keys are not in the allow-list and
+  cannot be read by the query.** Only what you ask about leaves; nothing is sent unless you press Ask.
+
+Not sent to Anthropic by the scanners, briefer or enrich: the exclusions list, client names, revenue/employee
+figures, scores, the database, API keys, or any SEI internal data (the optional Ask feature above sends the
+rows of a question you asked). Names of executives appear only where a public source named them
 (e.g. "Pat Lee, CIO").
 
 *Retention and training terms for this API traffic depend on SEI's agreement with Anthropic and are not
@@ -181,6 +190,7 @@ shows whether each secret is set, never its value. The container drops root befo
 22. **Financial pressure rests on the SEC's structured data, whose layout was not fetched here.** The `financials` scanner reads `data.sec.gov/api/xbrl/companyfacts/CIK##########.json` (the documented layout as I know it; parsing is defensive and a company whose figures cannot be compared gets no signal, never a guess). Companies that tag revenue or operating income in unusual ways, banks and insurers, and companies with a restated or changed fiscal year may be missed. The URL stored as the source is the data file itself (it was retrieved), not the 10-K page. Only the CIK leaves this machine.
 23. **WARN notices depend on web search finding the state's page.** The `warn` scanner is restricted to `illinois.gov`, but the state's notice list may be a table or PDF that the search tool does not surface for every company, so a missing signal does not prove there was no notice. Whether it finds real notices has not been seen live.
 24. **The RFP feed depends on web search reaching agency procurement pages.** `bd rfps` is restricted to the domains in `config.yaml` `rfps.groups` and keeps only pages that were returned, resolve, are on those domains and state a future due date. Many procurement portals are JavaScript-heavy or behind a login (notably sam.gov), so the search may see little of them and a short or empty list does not mean there are no open solicitations. The domain list is my best knowledge of the agencies' sites and has not been checked live. The model decides whether a solicitation asks for consulting-type work; code cannot check that.
+25. **Ask your data runs model-written SQL.** It is limited by code, not trust: one SELECT, no comments, a separate read-only connection, an authorizer that allows only the listed tables and a short list of functions (a column outside the list reads as NULL, anything else is refused), a 5-second limit and a 200-row cap. A query that is wrong but safe is still possible (the model may misread a column), so the SQL and the rows are shown under every answer. The returned rows include web-derived text (signal summaries); the answer step is told to treat them as data and has no tools, and the answer is shown escaped. Not tested against the live model.
 
 ## 6. Decisions for IT
 

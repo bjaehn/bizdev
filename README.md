@@ -75,6 +75,8 @@ signals validated by code; none writes outreach.
 
 **Data health** (`/health`) and **Market view** (`/market`, both under More) are read-only pages built from what past runs stored. Data health shows which scanners produced anything (and which failed or never ran), cost per scanned company, why companies are held, and how fresh the data is. Market view shows signals by industry with a 30-day trend, signal groups by month, sponsor activity, and the large companies with no signal in 180 days.
 
+**Ask your data** (`/ask`, under More, hosted app only) answers a plain-English question about your own database. It runs as a job (paid-call tick, a few cents): a model writes one read-only query from the table layout, code checks and runs it on a read-only connection limited to an allow-list of tables, and a second call phrases the answer from the returned rows. The answer, the rows and the SQL are stored and shown together. Your free-text notes are not available to it. `bd ask --id N` is the command behind the button.
+
 ## Commands
 
 | Command | What it does |
