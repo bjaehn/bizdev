@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
 PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "card"})
-SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement")
+SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials")
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
 LOG_TAIL_BYTES = 20_000
@@ -148,7 +148,7 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 def refresh_scanners() -> str:
     """Scanners for the light refresh: the free job-board feed always; SEC filings only when BD_USER_AGENT is set (the SEC
     requires a declared contact). Only filings not read before cost a model call."""
-    return "ats" + (",edgar,earnings" if os.environ.get("BD_USER_AGENT") else "")
+    return "ats" + (",edgar,earnings,financials" if os.environ.get("BD_USER_AGENT") else "")
 
 
 def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:

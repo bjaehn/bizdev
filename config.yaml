@@ -25,6 +25,7 @@ scoring:
     vendor_deal: 14
     rfp_match: 30
     risk_factor: 8
+    financial_pressure: 14  # from the company's own latest 10-K figures (revenue down, margin down, or an operating loss)
 
   # Which family each type belongs to.
   families:
@@ -35,6 +36,7 @@ scoring:
     technology: [platform_migration, vendor_deal]
     procurement: [rfp_match]
     filings: [risk_factor]
+    financials: [financial_pressure]
 
   # Recency by event age in days (inclusive upper bound). Older than the last band = 0.
   recency_bands:
@@ -187,6 +189,13 @@ hiring:
   theme_title_gates:
     product_engineering: [manager, director, head, vp, vice president, chief, principal, staff, lead, architect]
   interim_words: [interim, fractional, contract executive]
+
+# Financial pressure, read from the SEC's structured data for the company's latest 10-K (no model call, so no cost).
+# A signal needs at least one of these to hold; each compares the latest fiscal year with the one before it.
+financials:
+  revenue_decline_pct: 3.0      # revenue fell by at least this much
+  margin_drop_points: 3.0       # operating margin fell by at least this many percentage points
+  flag_operating_loss: true     # operating income was negative
 
 edgar:
   min_interval_seconds: 0.15      # SEC fair access allows 10 requests/second; stay well under
