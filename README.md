@@ -82,6 +82,8 @@ signals validated by code; none writes outreach.
 
 **Facts for SEC filers come from the SEC, not the model.** For a company with a CIK, `bd enrich` (and discover's research) reads the SEC's company-facts and submissions files in code: revenue is the latest fiscal year from its 10-K, ownership is `public` when it has a listed ticker, and HQ city is the business address. The evidence link on each fact is the SEC file read. Private companies and nonprofits still rely on the model's sourced figures. `bd sec-fill` does this for every company on file before the model is asked (free), and `bd enrich` also finds a missing CIK from the SEC's list of listed companies (exact name match) and then reads the rest from the SEC, so a public company's size no longer waits for a web search. **Update my list** has a setting for whether to search agency sites for RFPs; it is **off by default** (two live runs cost about $0.90 each and found nothing: the model's search budget ran out before it reached a listing page).
 
+**Pattern bonus (optional, off by default).** `scoring.sequences` in `config.yaml` lets order count: for example a new executive followed within 120 days by a hiring push earns a bonus (each pattern once, capped together at `sequence_bonus_max`, shown on the opportunity as a "Pattern" reason). It is empty by default because enabling it changes scores, including the spec's reference accounts; the config file holds four starting patterns to uncomment.
+
 ## Commands
 
 | Command | What it does |

@@ -668,6 +668,7 @@ class App:
                 "families": lead.result.components.get("families", {}),
                 "bonus": lead.result.components.get("stacking_bonus", 0),
                 "sponsor": lead.result.components.get("sponsor", {}),
+                "sequences": lead.result.components.get("sequences", {}),
                 "posted": posted[lead.account.id]["posted"] if lead.account.id in posted else 0,
             })
         tracked = sorted((s for s in sl.skipped if s.score >= self.cfg.scoring.bands.watch), key=lambda s: -s.score)

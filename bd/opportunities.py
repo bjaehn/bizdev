@@ -87,6 +87,12 @@ def _reasons(result: ScoreResult) -> list[Reason]:
         out.append(Reason("sponsor", "Sponsor activity", sp["lift"],
                           f"{top['firm']} {FIRM_TYPE_LABELS.get(top['type'], top['type'])}, "
                           f"{fmt_date(date.fromisoformat(top['event_date']))}"))
+    seq = result.components.get("sequences") or {}
+    for m in seq.get("matches", []):
+        out.append(Reason("sequence", "Pattern", m["bonus"],
+                          f"{m['label']}: {TYPE_LABELS.get(m['first']['type'], m['first']['type'])} "
+                          f"{fmt_date(date.fromisoformat(m['first']['event_date']))}, then "
+                          f"{TYPE_LABELS.get(m['then']['type'], m['then']['type'])} {fmt_date(date.fromisoformat(m['then']['event_date']))}"))
     return sorted(out, key=lambda r: -r.points)
 
 

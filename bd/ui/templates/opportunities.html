@@ -17,7 +17,7 @@
 <details class="more"><summary>More filters</summary>
 <div class="filters" style="margin:10px 0 0">
 <select name="date" aria-label="Scored on">{% for d in dates %}<option value="{{ d }}" {{ 'selected' if d == run_date else '' }}>scored {{ d }}</option>{% endfor %}</select>
-<select name="family" aria-label="Signal group"><option value="">any signal group</option>{% for f in families %}<option value="{{ f }}" {{ 'selected' if q.family == f else '' }}>{{ family_labels.get(f, 'Sponsor activity' if f == 'sponsor' else f) }}</option>{% endfor %}</select>
+<select name="family" aria-label="Signal group"><option value="">any signal group</option>{% for f in families %}<option value="{{ f }}" {{ 'selected' if q.family == f else '' }}>{{ family_labels.get(f, {'sponsor': 'Sponsor activity', 'sequence': 'Pattern'}.get(f, f)) }}</option>{% endfor %}</select>
 <select name="service_line" aria-label="Service line"><option value="">any service line</option>{% for l in lines %}<option {{ 'selected' if q.service_line == l else '' }}>{{ l }}</option>{% endfor %}</select>
 <select name="status" aria-label="Status"><option value="">any status</option>
 {% for k, t in [('card','on the Monday card'),('over_cap','over the cap'),('held','held back'),('tracking','tracking only')] %}<option value="{{ k }}" {{ 'selected' if q.status == k else '' }}>{{ t }}</option>{% endfor %}</select>

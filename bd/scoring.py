@@ -46,6 +46,7 @@ class ScoreResult:
     rationale: str
     components: dict = field(default_factory=dict)
     sponsor_lift: float = 0.0
+    sequence_bonus: float = 0.0
 
     def components_json(self) -> str:
         return json.dumps(self.components, sort_keys=True)
@@ -134,6 +135,30 @@ def sponsor_lift(firm_signals: Sequence[tuple[ScoringSignal, str]], as_of: date,
     return min(s.sponsor.lift_max, total), rows
 
 
+def sequence_matches(scored: Sequence[SignalPoints], cfg: Scoring) -> tuple[float, list[dict]]:
+    """Patterns present in the scored signals and the bonus they earn. For each configured pattern: the latest `then` signal that
+    has a `first` signal on or before it within `within_days`, paired with the closest such `first`. Each pattern counts once;
+    the total is capped at `sequence_bonus_max`. Deterministic: ties go to the later date, then the type name."""
+    matches: list[dict] = []
+    for q in cfg.sequences:
+        firsts = [p for p in scored if p.type in q.first]
+        thens = sorted((p for p in scored if p.type in q.then), key=lambda p: (_neg_date(p.event_date), p.type))
+        found = None
+        for b in thens:
+            bd_ = date.fromisoformat(b.event_date)
+            cands = [(( bd_ - date.fromisoformat(a.event_date)).days, a.type, a) for a in firsts
+                     if 0 <= (bd_ - date.fromisoformat(a.event_date)).days <= q.within_days]
+            if cands:
+                gap, _, a = min(cands, key=lambda c: (c[0], c[1]))
+                found = {"name": q.name, "label": q.label, "bonus": q.bonus, "gap_days": gap,
+                         "first": {"type": a.type, "event_date": a.event_date}, "then": {"type": b.type, "event_date": b.event_date}}
+                break
+        if found:
+            matches.append(found)
+    matches.sort(key=lambda m: (-m["bonus"], m["name"]))
+    return min(cfg.sequence_bonus_max, sum(m["bonus"] for m in matches)), matches
+
+
 def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config,
                   firm_signals: Sequence[tuple[ScoringSignal, str]] = ()) -> ScoreResult:
     s = cfg.scoring
@@ -161,7 +186,8 @@ def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config,
     bonus = min(s.stacking_bonus_max, s.stacking_bonus_per_family * max(0, n_fam - 1))
     # Sponsor activity only lifts a company that already has a scoring signal of its own; it never creates a lead.
     lift, lift_rows = sponsor_lift(firm_signals, as_of, cfg) if family_totals else (0.0, [])
-    raw = sum(family_totals.values()) + bonus + lift
+    seq_bonus, seq_rows = sequence_matches(scored, s) if family_totals else (0.0, [])
+    raw = sum(family_totals.values()) + bonus + seq_bonus + lift
     score = min(s.score_max, _half_up(raw))
     band = band_for(score, s)
     families = tuple(sorted(family_totals))
@@ -176,6 +202,7 @@ def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config,
             for fam in families
         },
         "stacking_bonus": bonus,
+        "sequences": {"bonus": seq_bonus, "cap": s.sequence_bonus_max, "matches": seq_rows},
         "sponsor": {"lift": round(lift, 4), "cap": s.sponsor.lift_max, "signals": lift_rows},
         "raw_total": round(raw, 4),
         "score_cap": s.score_max,
@@ -188,9 +215,10 @@ def score_account(signals: Sequence[ScoringSignal], as_of: date, cfg: Config,
         stacking_bonus=bonus,
         raw_total=raw,
         signals=tuple(weighted),
-        rationale=_rationale(family_totals, bonus, score, s.score_max, lift),
+        rationale=_rationale(family_totals, bonus, score, s.score_max, lift, seq_bonus),
         components=components,
         sponsor_lift=lift,
+        sequence_bonus=seq_bonus,
     )
 
 
@@ -198,13 +226,15 @@ def _neg_date(iso: str) -> int:
     return -date.fromisoformat(iso).toordinal()
 
 
-def _rationale(family_totals: dict[str, float], bonus: float, score: int, cap: int, lift: float = 0.0) -> str:
+def _rationale(family_totals: dict[str, float], bonus: float, score: int, cap: int, lift: float = 0.0, seq: float = 0.0) -> str:
     if not family_totals:
         return "No scoreable signals."
     parts = [f"{fam} {tot:.1f}" for fam, tot in family_totals.items()]
     text = " + ".join(parts)
     if bonus:
         text += f" + stacking bonus {bonus:g}"
+    if seq:
+        text += f" + pattern bonus {seq:g}"
     if lift:
         text += f" + sponsor activity {lift:.1f}"
     text += f" = {score}"
