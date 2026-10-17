@@ -56,6 +56,10 @@ class Filing:
                 f"{self.accession.replace('-', '')}/{self.primary_document}")
 
 
+def facts_url(cik: str) -> str:
+    return f"{API_HOST}/api/xbrl/companyfacts/CIK{int(cik):010d}.json"
+
+
 def _date(v: object) -> date | None:
     try:
         return date.fromisoformat(str(v)) if v else None
@@ -132,6 +136,20 @@ class EdgarClient:
             raise EdgarError("response was not JSON") from e
         if not isinstance(data, dict) or not isinstance(data.get("filings", {}).get("recent"), dict):
             raise EdgarError("unexpected submissions layout (no filings.recent)")
+        return data
+
+    def company_facts(self, cik: str) -> dict:
+        """The SEC's structured financial data for a company (XBRL "company facts"): data.sec.gov/api/xbrl/companyfacts/CIK##########.json
+        -> facts.<taxonomy>.<concept>.units.<unit> = list of {start, end, val, accn, fy, fp, form, filed}. Like the other layouts
+        here it could not be fetched from the build sandbox; the parser in bd.financials is defensive."""
+        if not cik.isdigit():
+            raise EdgarError("bad cik")
+        try:
+            data = self._get(facts_url(cik)).json()
+        except ValueError as e:
+            raise EdgarError("response was not JSON") from e
+        if not isinstance(data, dict) or not isinstance(data.get("facts"), dict):
+            raise EdgarError("unexpected company-facts layout (no facts)")
         return data
 
     def company(self, cik: str) -> tuple[str, list[str]]:

@@ -23,7 +23,7 @@ outreach and contacts no one. No LinkedIn and no paywalled sites (a domain block
 
 The request body is the only thing sent; the API key travels in the standard header.
 
-* **1a. Web-search scanners (`leadership`, `events`, `pe`, `hiring`, `tech_procurement`)**: a static system prompt,
+* **1a. Web-search scanners (`leadership`, `events`, `pe`, `hiring`, `tech_procurement`, `warn`)**: a static system prompt,
   plus per company: company name, website domain (if known), HQ city (if known), today's date, and the
   window (180 days; 60 days for job postings). The `pe` scanner also sends the PE sponsor's name if you
   recorded one, and runs only for accounts marked PE-backed. The web search
@@ -178,6 +178,8 @@ shows whether each secret is set, never its value. The container drops root befo
 19. **Auto-added companies are not human-reviewed.** `bd discover` adds a company only when the fit gate passes on facts that each have an evidence URL the search tool returned and that resolves, with a verified domain, under a per-run cap. That is as strong as the other pipelines, but a mis-identified company (same name, different entity) is still possible. Mitigations: they are marked auto-added, tier B, and scanned only up to `discovery.scan_unreviewed_per_run` per run until reviewed; every add is audited with its source; the Discovery page and Accounts filter make review quick. Discovery sends company names already in the database to the model (to avoid duplicates), in addition to the data listed in section 1.
 20. **PE ownership links rest on the firm's own website.** A portfolio company is linked to a firm (and so receives its sponsor lift) only when the listing page is hosted on the firm's domain or an SEC page, or when the company's own verified facts name the sponsor. A stale or wrong firm page could link a company that has been sold; the link is shown with its source on the firm page and can be corrected by excluding the firm. Portfolio research sends the names of known accounts to the model (to avoid duplicates), like discovery.
 21. **Job-board feeds are trusted as published.** A posting's date is the provider's own `first_published` / `createdAt` / `publishedAt`; a posting with none is ignored, never dated by us. If a company re-posts an old role, it can look new. The response layouts could not be fetched from the build sandbox; parsing is defensive and an unexpected shape is an error, not "no postings".
+22. **Financial pressure rests on the SEC's structured data, whose layout was not fetched here.** The `financials` scanner reads `data.sec.gov/api/xbrl/companyfacts/CIK##########.json` (the documented layout as I know it; parsing is defensive and a company whose figures cannot be compared gets no signal, never a guess). Companies that tag revenue or operating income in unusual ways, banks and insurers, and companies with a restated or changed fiscal year may be missed. The URL stored as the source is the data file itself (it was retrieved), not the 10-K page. Only the CIK leaves this machine.
+23. **WARN notices depend on web search finding the state's page.** The `warn` scanner is restricted to `illinois.gov`, but the state's notice list may be a table or PDF that the search tool does not surface for every company, so a missing signal does not prove there was no notice. Whether it finds real notices has not been seen live.
 
 ## 6. Decisions for IT
 

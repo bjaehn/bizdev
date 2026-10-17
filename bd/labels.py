@@ -28,11 +28,12 @@ TYPE_LABELS = {
     "vendor_deal": "Vendor deal",
     "rfp_match": "RFP match",
     "risk_factor": "Risk factor disclosure",
+    "financial_pressure": "Financial pressure",
 }
 assert set(TYPE_LABELS) == set(SIGNAL_TYPES)
 
 FAMILY_LABELS = {"leadership": "Leadership", "hiring": "Hiring", "events": "Company events", "pe": "Private equity",
-                 "technology": "Technology", "procurement": "Procurement", "filings": "Filings"}
+                 "technology": "Technology", "procurement": "Procurement", "filings": "Filings", "financials": "Financials"}
 FIRM_TYPE_LABELS = {"firm_new_fund": "new fund", "firm_exit": "exit", "firm_operating_partner": "operating-partner hire"}
 
 

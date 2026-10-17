@@ -279,7 +279,7 @@ def test_scheduler_submits_refresh_on_non_mondays_and_honors_the_setting(runner)
 
 def test_refresh_jobs(runner, monkeypatch):
     monkeypatch.setenv("BD_USER_AGENT", "SEI test@example.com")
-    assert sequence_for("refresh", [], "2026-10-13") == [["scan", "--scanners", "ats,edgar,earnings", "--force", "--light", "--as-of", "2026-10-13"],
+    assert sequence_for("refresh", [], "2026-10-13") == [["scan", "--scanners", "ats,edgar,earnings,financials", "--force", "--light", "--as-of", "2026-10-13"],
                                                          ["score", "--as-of", "2026-10-13"]]
     monkeypatch.delenv("BD_USER_AGENT")
     assert sequence_for("refresh_now", [], "2026-10-13")[0][2] == "ats"

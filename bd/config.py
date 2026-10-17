@@ -91,6 +91,12 @@ class Scoring(_Strict):
         raise KeyError(f"unknown signal type: {type_}")
 
 
+class Financials(_Strict):
+    revenue_decline_pct: float
+    margin_drop_points: float
+    flag_operating_loss: bool
+
+
 class PostGate(_Strict):
     require_high_confidence_within_days: int
     max_leads_per_post: int
@@ -226,6 +232,7 @@ class Config(_Strict):
     sources: Sources
     hiring: Hiring
     edgar: Edgar
+    financials: Financials
     briefer: Briefer
     card: Card
     discovery: Discovery
