@@ -71,6 +71,8 @@ signals validated by code; none writes outreach.
 | `financials` | financial_pressure | accounts with a CIK | **free**: no model. Reads the company's latest 10-K figures from the SEC's structured data (data.sec.gov company facts) and flags revenue down, operating margin down, or an operating loss versus the prior year (thresholds in `config.yaml` `financials`). Dated by the day the 10-K was filed; needs a 10-K filed inside the 180-day window. Banks and insurers usually lack comparable tags and get no signal |
 | `tech_procurement` | platform_migration, vendor_deal, rfp_match, risk_factor | every account | an RFP must have a future due date; a risk factor must be on sec.gov |
 
+**Open public RFPs** (`bd rfps`, the Open RFPs page) are a separate, market-level feed rather than a scanner: one search per agency group in `config.yaml` `rfps.groups` (City of Chicago, Cook County, State of Illinois, schools and universities, transit and water agencies, federal), each restricted to that group's own domains. A solicitation is kept only if its page is on those domains, was in the search results, resolves, and states a due date that has not passed. They are not tied to a company and are not scored. Part of `Update my list` and the weekly run; roughly six searches per run.
+
 ## Commands
 
 | Command | What it does |

@@ -201,6 +201,22 @@ CREATE TABLE IF NOT EXISTS lead_notes (
 );
 CREATE INDEX IF NOT EXISTS ix_lead_notes_account ON lead_notes(account_id, id);
 
+-- Open public solicitations (RFP / RFQ / RFI) from Chicago-area agencies (bd/rfps.py). Market-level: not tied to an account, so
+-- they are shown on their own page and never scored. `url` is the page the search returned and code verified.
+CREATE TABLE IF NOT EXISTS solicitations (
+    id            INTEGER PRIMARY KEY,
+    url           TEXT NOT NULL UNIQUE,
+    title         TEXT NOT NULL,
+    agency        TEXT NOT NULL,
+    grp           TEXT NOT NULL,
+    due_date      TEXT NOT NULL,
+    summary       TEXT NOT NULL,
+    service_lines TEXT NOT NULL DEFAULT '[]',
+    first_seen    TEXT NOT NULL,
+    last_seen     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_solicitations_due ON solicitations(due_date);
+
 CREATE TABLE IF NOT EXISTS exclusions (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL,

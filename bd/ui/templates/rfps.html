@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Open RFPs{% endblock %}
+{% block body %}
+<div class="row"><div><h1>Open RFPs</h1>
+<p class="sub">Open solicitations from Chicago-area public agencies that ask for consulting-type work. Each was found on the agency's own website, its page was fetched to confirm it exists, and it states a due date that has not passed. These are not tied to a company and are not scored.</p></div></div>
+<form method="get" action="/rfps" class="filters">
+<select name="group" aria-label="Agency group"><option value="">all agency groups</option>{% for g in groups %}<option {{ 'selected' if q.group == g else '' }}>{{ g }}</option>{% endfor %}</select>
+<select name="service_line" aria-label="Service line"><option value="">any service line</option>{% for l in lines %}<option {{ 'selected' if q.service_line == l else '' }}>{{ l }}</option>{% endfor %}</select>
+<label style="margin:0"><input type="checkbox" name="closed" value="1" {{ 'checked' if q.closed else '' }}> include closed</label>
+<button class="ghost" type="submit">Filter</button></form>
+<p class="meta">{{ items|length }} shown of {{ total }} recorded.</p>
+{% for r in items %}
+<div class="card"><div class="row"><div>
+<a class="name" href="{{ r.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ r.title }}</a>
+<div class="meta">{{ r.agency }} · {{ r.grp }} · {{ r.url|host }}</div></div>
+<div><span class="badge {{ 'bad' if r.days_left < 0 else ('hot' if r.days_left <= 7 else ('warm' if r.days_left <= 21 else '')) }}">{% if r.days_left < 0 %}closed {{ r.due_date|fdate }}{% else %}due {{ r.due_date|fdate }} · {{ r.days_left }} day{{ '' if r.days_left == 1 else 's' }}{% endif %}</span></div></div>
+<p style="margin:10px 0 4px">{{ r.summary }}</p>
+<div class="meta">{% if r.lines %}best fit: <b>{{ r.lines|join(', ') }}</b> · {% endif %}first found {{ r.first_seen }}</div>
+</div>
+{% else %}<div class="card empty">No open RFPs recorded yet.<br>They are found as part of <b>Update my list</b>, or run <b>Find RFPs</b> from Advanced tools.</div>{% endfor %}
+{% endblock %}

@@ -43,6 +43,7 @@ from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
+from bd.rfp_store import list_open as list_open_rfps
 from bd.pipeline import (STAGE_LABELS, STAGES, add_note, default_since, get_state, notes_for, set_stage, set_watching, stage_counts,
                          watchlist_changes)
 from bd.opportunities import build_opportunities, filter_opportunities, score_dates
@@ -355,6 +356,7 @@ class App:
             ("POST", "/settings/update"): lambda: self.settings_update(req, conn),
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
+            ("GET", "/rfps"): lambda: self.rfps_page(req, conn),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
             ("GET", "/accounts/new"): lambda: self.render("account_new.html", page="accounts", form={}, errors=[]),
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
@@ -501,6 +503,17 @@ class App:
         changes = watchlist_changes(conn, since)
         return self.render("watchlist.html", page="watchlist", changes=changes, days=days, since=since.isoformat(),
                            stage_labels=STAGE_LABELS, labels=TYPE_LABELS, counts=stage_counts(conn))
+
+    def rfps_page(self, req: Request, conn: sqlite3.Connection) -> Response:
+        today = date.today()
+        q = {k: req.q(k) for k in ("service_line", "group")}
+        q["closed"] = req.q("closed") == "1"
+        groups = [g.name for g in self.cfg.rfps.groups]
+        rows = list_open_rfps(conn, today, include_closed=q["closed"], service_line=q["service_line"] if q["service_line"] in self.cfg.service_lines else "",
+                              grp=q["group"] if q["group"] in groups else "")
+        items = [dict(r, lines=json.loads(r["service_lines"]), days_left=(date.fromisoformat(r["due_date"]) - today).days) for r in rows]
+        return self.render("rfps.html", page="rfps", items=items, q=q, groups=groups, lines=self.cfg.service_lines,
+                           total=conn.execute("SELECT COUNT(*) FROM solicitations").fetchone()[0])
 
     def leads(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = [r[0] for r in conn.execute("SELECT DISTINCT run_date FROM scores ORDER BY run_date DESC")]

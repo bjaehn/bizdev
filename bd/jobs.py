@@ -23,7 +23,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
-PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "card"})
+PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "rfps", "card"})
 SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials")
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
@@ -51,6 +51,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "pe_sync": ("Sync PE firms from accounts", False, False),
     "pe_portfolio": ("Research PE portfolios", True, False),
     "pe_signals": ("Scan PE firms for signals", True, False),
+    "rfps": ("Find open public RFPs", True, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -110,6 +111,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
     if kind == "check":
         return ["check"]
+    if kind == "rfps":
+        return ["rfps", "--limit", str(num("limit", 1, 12, required=True))]
     if kind == "update":
         research, segs = num("research", 0, 100, required=True), num("segments", 0, 30, required=True)
         scan, budget = num("scan", 1, 100, required=True), num("budget", 1, 100, required=True)
@@ -161,14 +164,14 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
         return steps + [["pe-sync"], ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of],
-                        ["score", "--allow-empty", "--as-of", as_of]]
+                        ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--allow-empty", "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
-        return [["scan", "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["score", "--as-of", as_of],
+        return [["scan", "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
-    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals") else [args]
+    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "rfps") else [args]
 
 
 def redact(text: str, env: dict[str, str] | None = None) -> str:

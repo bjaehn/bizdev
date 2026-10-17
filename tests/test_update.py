@@ -29,11 +29,11 @@ def test_update_job_is_validated_and_runs_the_steps_in_order():
     args = validate("update", UPD)
     assert args == ["update", "--research", "25", "--segments", "2", "--scan", "25", "--budget", "8"]
     steps = sequence_for("update", args, "2026-10-16")
-    assert [s[0] for s in steps] == ["check", "enrich", "apply-proposals", "discover", "pe-sync", "scan", "score"]
+    assert [s[0] for s in steps] == ["check", "enrich", "apply-proposals", "discover", "pe-sync", "scan", "rfps", "score"]
     assert steps[1] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
     assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[-2]
     skip = sequence_for("update", validate("update", {**UPD, "research": "0", "segments": "0"}), "2026-10-16")
-    assert [s[0] for s in skip] == ["check", "pe-sync", "scan", "score"]
+    assert [s[0] for s in skip] == ["check", "pe-sync", "scan", "rfps", "score"]
     for bad in ({**UPD, "budget": "0"}, {**UPD, "budget": "101"}, {**UPD, "scan": "0"}, {**UPD, "research": "x"}, {}):
         with pytest.raises(JobError):
             validate("update", bad)

@@ -355,6 +355,37 @@ def pe_signals(
 
 
 @app.command()
+def rfps(
+    limit: Optional[int] = typer.Option(None, help="At most N agency groups"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    allow_empty: bool = typer.Option(False, "--allow-empty", help="Exit 0 even when every call failed"),
+    dry_run: bool = typer.Option(False, help="List the agency groups that would be searched; no API calls"),
+) -> None:
+    """Find open public RFPs from Chicago-area agencies (not tied to a company; shown on the Open RFPs page)."""
+    from bd.db import connect, init_db
+    from bd.rfps import RfpFinder, run_rfps
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    groups = cfg.rfps.groups[:limit] if limit else cfg.rfps.groups
+    typer.echo(f"{len(groups)} agency group(s) to search.")
+    if dry_run:
+        for g in groups:
+            typer.echo(f"  would search: {g.name} ({', '.join(g.domains)})")
+        return
+    web, verifier, _enricher, model = _pe_deps(settings, cfg)
+    s = run_rfps(conn, cfg, RfpFinder(cfg, web, verifier), run_date, model, groups, log=typer.echo)
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.new} new RFPs ({s.known} already known), {s.errors} call errors.")
+    if s.budget_hit:
+        typer.echo("Spending limit reached: some agency groups were not searched.", err=True)
+    if s.groups and s.errors == s.groups and not allow_empty:
+        typer.echo("Every agency call failed (bad API key or model, no network?).", err=True)
+        raise typer.Exit(code=3)
+
+
+@app.command()
 def ui(
     port: int = typer.Option(8765, help="Port on 127.0.0.1 (0 = pick a free one)"),
     no_open: bool = typer.Option(False, "--no-open", help="Do not open a browser; just print the link"),

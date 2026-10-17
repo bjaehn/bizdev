@@ -220,6 +220,17 @@ class PeFirms(_Strict):
     portfolio_max_per_firm: int       # portfolio companies requested per firm
 
 
+class RfpGroup(_Strict):
+    name: str
+    domains: list[str]
+
+
+class Rfps(_Strict):
+    max_searches: int                 # web searches per agency group
+    max_due_days: int                 # a due date further out than this is treated as implausible
+    groups: list[RfpGroup]
+
+
 class Config(_Strict):
     scoring: Scoring
     post_gate: PostGate
@@ -233,6 +244,7 @@ class Config(_Strict):
     hiring: Hiring
     edgar: Edgar
     financials: Financials
+    rfps: Rfps
     briefer: Briefer
     card: Card
     discovery: Discovery
