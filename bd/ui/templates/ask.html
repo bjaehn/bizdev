@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Ask your data{% endblock %}
+{% block head %}{% if items and items[0].status == 'pending' %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
+{% block body %}
+<h1>Ask your data</h1>
+<p class="sub">Ask a question about the companies, signals, scores, postings, sponsors and RFPs in your own database. A model writes a read-only query, the app runs it, and the answer is phrased from the rows it returned. It does not search the web. The rows and the query are shown under every answer: the answer is only as good as the rows beneath it.</p>
+{% if available %}
+<div class="card">
+<form method="post" action="/ask"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="question">Your question (up to {{ max_chars }} characters)</label>
+<textarea id="question" name="question" rows="2" maxlength="{{ max_chars }}" style="width:100%" required placeholder="Which healthcare companies had a leadership change and are also hiring in data or AI?"></textarea>
+<p class="meta">Examples: "How many companies are ready to scan, by industry?" · "What did we find at Baxter since September?" · "Which PE firms have two or more portfolio companies with a signal in the last 60 days?" · "Which open RFPs are due in the next two weeks?"</p>
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls (a few cents)</label>
+<p><button type="submit" {{ 'disabled' if busy else '' }}>Ask</button>{% if busy %} <span class="meta">Another job is running; try again when it finishes.</span>{% endif %}</p></form>
+</div>
+{% else %}
+<div class="card empty">Asking questions needs the hosted app (it runs as a job). The local viewer cannot call a model.</div>
+{% endif %}
+
+{% for q in items %}
+<div class="card">
+<div class="row"><div><b>{{ q.question }}</b><div class="meta">asked {{ q.asked[:16]|replace('T', ' ') }} UTC{% if q.cost is not none %} · ${{ '%.3f'|format(q.cost) }}{% endif %}</div></div>
+<div>{% if q.status == 'pending' %}<span class="badge warm">working…</span>{% elif q.status == 'done' %}<span class="badge good">answered</span>{% else %}<span class="badge bad">not answered</span>{% endif %}</div></div>
+{% if q.status == 'done' %}<p style="margin:10px 0 4px">{{ q.answer }}</p>
+{% elif q.status == 'error' %}<p style="margin:10px 0 4px">{{ q.error }}</p>{% endif %}
+{% if q.columns %}
+<details {{ 'open' if q.rows|length <= 8 else '' }}><summary>Evidence: {{ q.rows|length }} row{{ '' if q.rows|length == 1 else 's' }}{% if q.truncated %} (more were cut off){% endif %}</summary>
+<div class="wrap"><table><tr>{% for c in q.columns %}<th>{{ c }}</th>{% endfor %}</tr>
+{% for r in q.rows %}<tr>{% for v in r %}<td>{% if q.id_col is not none and loop.index0 == q.name_col and r[q.id_col] %}<a href="/accounts/{{ r[q.id_col] }}">{{ v }}</a>{% else %}{{ v if v is not none else '' }}{% endif %}</td>{% endfor %}</tr>{% endfor %}
+</table></div></details>{% endif %}
+{% if q.sql %}<details><summary>The query that was run</summary><pre style="white-space:pre-wrap;margin:6px 0 0">{{ q.sql }}</pre>{% if q.explanation %}<p class="meta">{{ q.explanation }}</p>{% endif %}</details>{% endif %}
+</div>
+{% else %}<div class="card empty">No questions yet.</div>{% endfor %}
+{% endblock %}

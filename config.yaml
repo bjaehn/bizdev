@@ -210,6 +210,14 @@ rfps:
     - {name: Transit and water agencies, domains: [transitchicago.com, metrarail.com, rtachicago.org, pacebus.com, mwrd.org]}
     - {name: Federal, domains: [sam.gov]}
 
+# Plain-English questions about your own data (the Ask page). Two small model calls, no web access: one writes a read-only query,
+# one phrases the answer from the rows it returned.
+ask:
+  max_rows: 200
+  max_question_chars: 500
+  timeout_seconds: 5
+  max_cost_usd: 0.50
+
 edgar:
   min_interval_seconds: 0.15      # SEC fair access allows 10 requests/second; stay well under
   max_filings_per_scan: 5         # newest 8-K Item 5.02 filings read per account

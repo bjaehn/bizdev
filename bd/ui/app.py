@@ -45,6 +45,7 @@ from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
+from bd.ask_store import add_question, clean_question, recent as recent_questions
 from bd.rfp_store import list_open as list_open_rfps
 from bd.pipeline import (STAGE_LABELS, STAGES, add_note, default_since, get_state, notes_for, set_stage, set_watching, stage_counts,
                          watchlist_changes)
@@ -359,6 +360,8 @@ class App:
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
             ("GET", "/rfps"): lambda: self.rfps_page(req, conn),
+            ("GET", "/ask"): lambda: self.ask_page(conn),
+            ("POST", "/ask"): lambda: self.ask_start(req, conn),
             ("GET", "/health"): lambda: self.health_page(req, conn),
             ("GET", "/market"): lambda: self.render("market.html", page="market", m=build_market(conn, date.today())),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
@@ -514,6 +517,31 @@ class App:
         except ValueError:
             days = 30
         return self.render("health.html", page="health", h=build_health(conn, self.cfg, date.today(), days))
+
+    def ask_page(self, conn: sqlite3.Connection) -> Response:
+        return self.render("ask.html", page="ask", items=recent_questions(conn), available=self.jobs is not None,
+                           max_chars=self.cfg.ask.max_question_chars, busy=bool(self.jobs and self.jobs.busy()))
+
+    def ask_start(self, req: Request, conn: sqlite3.Connection) -> Response:
+        if self.jobs is None:
+            return self.error("404 Not Found", "No such page.")
+        q = clean_question(req.f("question"), self.cfg.ask.max_question_chars)
+        if q is None:
+            self.say("err", f"Write a question of 1 to {self.cfg.ask.max_question_chars} characters.")
+            return self.redirect("/ask")
+        if not req.f("confirm"):
+            self.say("err", "Tick the box to confirm this uses paid model calls.")
+            return self.redirect("/ask")
+        qid = add_question(conn, q)
+        try:
+            self.jobs.submit("ask", {"id": str(qid)}, confirmed=True)
+        except JobError as e:
+            with conn:
+                conn.execute("DELETE FROM questions WHERE id = ?", (qid,))
+            self.say("err", str(e))
+            return self.redirect("/ask")
+        self.say("ok", "Question sent. It usually takes under a minute; reload this page to see the answer.")
+        return self.redirect("/ask")
 
     def rfps_page(self, req: Request, conn: sqlite3.Connection) -> Response:
         today = date.today()

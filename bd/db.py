@@ -217,6 +217,25 @@ CREATE TABLE IF NOT EXISTS solicitations (
 );
 CREATE INDEX IF NOT EXISTS ix_solicitations_due ON solicitations(due_date);
 
+-- Plain-English questions about the data and what came back (bd/ask.py). The model's SQL and the rows it returned are kept so every
+-- answer can be audited. Written by the `ask` job, read by the Ask page.
+CREATE TABLE IF NOT EXISTS questions (
+    id           INTEGER PRIMARY KEY,
+    asked        TEXT NOT NULL,
+    question     TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','done','error')),
+    sql          TEXT,
+    explanation  TEXT,
+    columns_json TEXT,
+    rows_json    TEXT,
+    truncated    INTEGER NOT NULL DEFAULT 0,
+    answer       TEXT,
+    error        TEXT,
+    tokens       INTEGER NOT NULL DEFAULT 0,
+    cost         REAL,
+    finished     TEXT
+);
+
 CREATE TABLE IF NOT EXISTS exclusions (
     id      INTEGER PRIMARY KEY,
     name    TEXT NOT NULL,
