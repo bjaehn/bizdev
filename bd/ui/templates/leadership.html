@@ -1,87 +1,57 @@
 {% extends "base.html" %}
-{% block title %}Leadership view{% endblock %}
+{% from "_cards.html" import opp_card %}
+{% block title %}Leadership{% endblock %}
 {% block head %}<style>
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 12px}
-.tile{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
-.tile b{display:block;font-size:30px;line-height:1.1}
-.tile span{color:var(--muted);font-size:13px}
-.why{font-size:16px;margin:8px 0 4px}
-.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;align-items:start}
 .cols .card{margin:0}
-.cols h3{margin:0 0 6px;font-size:15px}
-ul.plain{list-style:none;margin:6px 0 0;padding:0}
-ul.plain li{padding:6px 0;border-top:1px solid var(--line)}
-ul.plain li:first-child{border-top:0}
+.cols h3,.pulse h3{margin:0 0 4px;font-size:15px}
+.quiet{color:var(--muted);margin:0 0 6px}
+.quiet b{color:var(--ink);font-weight:650}
 </style>{% endblock %}
 {% block body %}
-<div class="row"><div><h1>Leadership view</h1>
-<p class="sub">Chicago-area companies showing demand for SEI-type consulting, from public sources. Every line below links to the page it came from.{% if c.score_date %} Scores as of {{ c.score_date|fdate }}.{% endif %}</p></div>
+<div class="row"><div><h1>Leadership</h1>
+<p class="sub">Chicago-area companies showing demand for SEI-type consulting, from public sources. Every line links to where it came from.</p></div>
 <form method="get" action="/lookup" class="filters"><input type="text" name="q" placeholder="Look up any company" aria-label="Look up any company" maxlength="120" style="min-width:16rem"><button type="submit">Look up</button></form></div>
 
-<div class="tiles">
-<div class="tile"><b>{{ c.total }}</b><span>companies on the list</span></div>
-<div class="tile"><b>{{ c.ready }}</b><span>ready and being scanned</span></div>
-<div class="tile"><b>{{ c.with_signal_90d }}</b><span>with news in the last 90 days</span></div>
-<div class="tile"><b>{{ c.hot + c.warm }}</b><span>Hot or Warm now{% if c.hot %} ({{ c.hot }} Hot){% endif %}</span></div>
-<div class="tile"><b>{{ c.stages.get('pursuing', 0) }}</b><span>being pursued{% if c.stages.get('won') %}, {{ c.stages.get('won') }} won{% endif %}</span></div>
-<div class="tile"><b>{{ c.clients }}</b><span>existing clients tracked</span></div>
-</div>
-<p class="meta">{% if c.waiting %}{{ c.waiting }} compan{{ 'y is' if c.waiting == 1 else 'ies are' }} still waiting for facts (location and size) and are not scanned yet: <a href="/health">see why on Data health</a>. {% endif %}{% if c.last_run %}Last research run: {{ c.last_run|fdate }}.{% endif %}</p>
-{% if c.score_age_days is not none and c.score_age_days > stale_days %}<div class="flash err">These scores are {{ c.score_age_days }} days old. Press Update my list on Home to refresh them.</div>{% endif %}
+<p class="quiet"><b>{{ c.total }}</b> companies · <b>{{ c.ready }}</b> ready · <b>{{ c.with_signal_90d }}</b> with news in 90 days · <b>{{ c.hot + c.warm }}</b> Hot or Warm{% if c.stages.get('pursuing') %} · <b>{{ c.stages.get('pursuing') }}</b> being pursued{% endif %}{% if c.waiting %} · <a href="/health">{{ c.waiting }} waiting for facts</a>{% endif %}{% if c.score_date %} · scored {{ c.score_date|fdate }}{% endif %}</p>
+{% if c.score_age_days is not none and c.score_age_days > stale_days %}<div class="flash err">These scores are {{ c.score_age_days }} days old. Press Update my list under Admin to refresh them.</div>{% endif %}
 
 {% if problem %}<div class="card empty">{{ problem }}</div>{% endif %}
 
 {% if act %}
 <h2>Act on this week</h2>
-{% for o in act %}
-<div class="card">
-<div class="row"><div><span class="meta">#{{ o.rank }}</span> <a class="name" href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a>
-<div class="meta">{{ [o.account.industry, o.account.hq_city, o.account.ownership if o.account.ownership != 'public' else none]|select|join(' · ') or 'no company details recorded' }}{% if o.firms %} · owned by {{ o.firms|join(', ') }}{% endif %}</div></div>
-<div><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} · {{ o.result.score }}</span>
-{% if o.delta is not none and o.delta != 0 %}<span class="badge {{ 'good' if o.delta > 0 else 'bad' }}">{{ '+' if o.delta > 0 }}{{ o.delta }}</span> {% endif %}
-<span class="badge {{ 'good' if o.client else '' }}">{{ 'existing client' if o.client else 'new business' }}</span>
-{% if o.stage != 'new' %}<span class="badge good">{{ stage_labels[o.stage] }}</span>{% endif %}</div></div>
-<p class="why">{{ o.why_now }}</p>
-<div class="meta">{% if o.service_line %}Best fit: <b>{{ o.service_line }}</b> · {% endif %}{% if o.signals and o.signals[0].url|safe_url %}<a href="{{ o.signals[0].url|safe_url }}" target="_blank" rel="noopener noreferrer">source: {{ o.signals[0].url|host }}</a> · {% endif %}<a href="/accounts/{{ o.account.id }}/onepager">one-page summary</a>{% if o.open_postings %} · {{ o.open_postings }} open posting{{ '' if o.open_postings == 1 else 's' }}{% endif %}</div>
-</div>
-{% endfor %}
+{% for o in act %}{{ opp_card(o, stage_labels) }}{% endfor %}
 <p class="meta"><a href="/opportunities">All {{ c.scored }} ranked opportunities</a></p>
 
 <h2>What changed</h2>
+{% if changes.new_leads or changes.risers or changes.new_signals %}
 <div class="cols">
-<div class="card"><h3>New this week</h3>
-{% if changes.new_leads %}<ul class="plain">{% for o in changes.new_leads %}<li><a href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a> <span class="badge {{ 'hot' if o.result.band == 'Hot' else 'warm' }}">{{ o.result.band }} · {{ o.result.score }}</span><br><span class="meta">{{ o.why_now }}</span></li>{% endfor %}</ul>
-{% else %}<p class="meta" style="margin:0">{{ 'No company became Hot or Warm since ' ~ (changes.prev_date|fdate) ~ '.' if changes.prev_date else 'There is no earlier ranking to compare with yet.' }}</p>{% endif %}</div>
-<div class="card"><h3>Moving up</h3>
-{% if changes.risers %}<ul class="plain">{% for o in changes.risers %}<li><a href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a> <span class="badge good">+{{ o.delta }}</span> <span class="meta">now {{ o.result.band }} · {{ o.result.score }}</span></li>{% endfor %}</ul>
-{% else %}<p class="meta" style="margin:0">No company's score rose by {{ min_rise }} points or more.</p>{% endif %}</div>
-<div class="card"><h3>New signals found in the last {{ new_signal_days }} days ({{ changes.new_signal_total }})</h3>
-{% if changes.new_signals %}<ul class="plain">{% for s in changes.new_signals %}<li><a href="/accounts/{{ s.account_id }}">{{ s.name }}</a>: <b>{{ labels[s.type] }}</b> · {{ s.event_date|fdate }}<br><span class="meta">{{ s.summary }}</span>{% if s.url|safe_url %} <a href="{{ s.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s.url|host }}</a>{% endif %}</li>{% endfor %}</ul>
-{% else %}<p class="meta" style="margin:0">Nothing new was found.</p>{% endif %}</div>
+{% if changes.new_leads %}<div class="card"><h3>New this week</h3>
+<ul class="plain">{% for o in changes.new_leads %}<li><a href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a> <span class="badge {{ 'hot' if o.result.band == 'Hot' else 'warm' }}">{{ o.result.band }} · {{ o.result.score }}</span></li>{% endfor %}</ul></div>{% endif %}
+{% if changes.risers %}<div class="card"><h3>Moving up</h3>
+<ul class="plain">{% for o in changes.risers %}<li><a href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a> <span class="badge good">+{{ o.delta }}</span> <span class="meta">now {{ o.result.score }}</span></li>{% endfor %}</ul></div>{% endif %}
+{% if changes.new_signals %}<div class="card"><h3>New signals{% if changes.new_signal_total > changes.new_signals|length %} ({{ changes.new_signal_total }}){% endif %}</h3>
+<ul class="plain">{% for s in changes.new_signals %}<li><a href="/accounts/{{ s.account_id }}">{{ s.name }}</a>: {{ labels[s.type] }} <span class="meta">· {{ s.event_date|fdate }}</span>{% if s.url|safe_url %} <a href="{{ s.url|safe_url }}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}</li>{% endfor %}</ul></div>{% endif %}
+</div>
+{% else %}<p class="meta">{{ 'Nothing new since ' ~ (changes.prev_date|fdate) ~ '.' if changes.prev_date else 'There is no earlier ranking to compare with yet.' }}</p>{% endif %}
+{% endif %}
+
+{% if pulse.lines or pulse.families or pulse.sponsors %}
+<h2>Market pulse</h2>
+<div class="card pulse">
+{% if pulse.lines %}<h3>By industry</h3>
+<ul class="plain">{% for line in pulse.lines %}<li>{{ line }}</li>{% endfor %}</ul>{% endif %}
+{% if pulse.families %}<p style="margin:10px 0 0"><b>News this month:</b> {% for label, n in pulse.families %}{{ label }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+{% if pulse.sponsors %}{% set s = pulse.sponsors[0] %}<p style="margin:6px 0 0"><b>Private equity:</b> <a href="/firms/{{ s.firm_id }}">{{ s.name }}</a> has {{ s.companies }} portfolio compan{{ 'y' if s.companies == 1 else 'ies' }} here and {{ s.signals_90d }} signal{{ '' if s.signals_90d == 1 else 's' }} in 90 days.</p>{% endif %}
+<p class="meta" style="margin:8px 0 0"><a href="/market">Full market view</a></p>
 </div>
 {% endif %}
 
-<h2>Market pulse</h2>
-<div class="cols">
-<div class="card"><h3>By industry</h3>
-{% if pulse.lines %}<ul class="plain">{% for line in pulse.lines %}<li>{{ line }}</li>{% endfor %}</ul>
-{% else %}<p class="meta" style="margin:0">No industry has signals yet.</p>{% endif %}
-<p class="meta" style="margin:8px 0 0"><a href="/market">Full market view</a>{% if pulse.quiet_total %} · {{ pulse.quiet_total }} ready compan{{ 'y has' if pulse.quiet_total == 1 else 'ies have' }} had no news in 180 days{% endif %}</p></div>
-<div class="card"><h3>What kind of news this month</h3>
-{% if pulse.families %}<ul class="plain">{% for label, n in pulse.families %}<li>{{ label }}: <b>{{ n }}</b></li>{% endfor %}</ul>
-{% else %}<p class="meta" style="margin:0">No signals dated this month yet.</p>{% endif %}</div>
-<div class="card"><h3>Private equity activity</h3>
-{% if pulse.sponsors %}<ul class="plain">{% for s in pulse.sponsors %}<li><a href="/firms/{{ s.firm_id }}">{{ s.name }}</a>: {{ s.companies }} portfolio compan{{ 'y' if s.companies == 1 else 'ies' }} here, {{ s.signals_90d }} signal{{ '' if s.signals_90d == 1 else 's' }} in 90 days</li>{% endfor %}</ul>
-{% else %}<p class="meta" style="margin:0">No sponsor activity recorded.</p>{% endif %}</div>
-</div>
-
-<h2>Existing clients: where there may be more work</h2>
 {% if clients %}
-{% for k in clients %}<div class="card"><div class="row"><div><a class="name" href="/accounts/{{ k.account_id }}">{{ k.name }}</a>
-<div class="meta">{{ k.industry or 'industry not recorded' }}{% if k.score is not none %} · score {{ k.score }} ({{ k.band }}){% endif %}</div></div>
-<div><span class="badge good">{{ k.signals_90d }} signal{{ '' if k.signals_90d == 1 else 's' }} in 90 days</span></div></div>
-{% if k.latest_signal %}<p style="margin:8px 0 0"><b>{{ labels[k.latest_signal['type']] }}</b> · {{ k.latest_signal['event_date']|fdate }}<br><span class="meta">{{ k.latest_signal['summary'] }}</span>
-{% if k.latest_signal['source_url']|safe_url %} <a href="{{ k.latest_signal['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ k.latest_signal['source_url']|host }}</a>{% endif %}</p>{% endif %}</div>{% endfor %}
-<p class="meta"><a href="/clients">All existing clients</a></p>
-{% else %}<div class="card"><p class="meta" style="margin:0">{% if c.clients %}None of your {{ c.clients }} tracked clients has news in the last 90 days. <a href="/clients">See the list</a>.{% else %}No clients are marked yet. <a href="/clients">Paste your client list</a> to see expansion signals here, apart from new business.{% endif %}</p></div>{% endif %}
+<h2>Existing clients with news</h2>
+<div class="card"><ul class="plain">
+{% for k in clients %}<li><a class="name" style="font-size:16px" href="/accounts/{{ k.account_id }}">{{ k.name }}</a> <span class="badge good">{{ k.signals_90d }} signal{{ '' if k.signals_90d == 1 else 's' }} in 90 days</span>
+{% if k.latest_signal %}<br><span class="meta">{{ labels[k.latest_signal['type']] }} · {{ k.latest_signal['event_date']|fdate }}: {{ k.latest_signal['summary'] }}</span>{% if k.latest_signal['source_url']|safe_url %} <a href="{{ k.latest_signal['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}{% endif %}</li>{% endfor %}
+</ul><p class="meta" style="margin:8px 0 0"><a href="/clients">All existing clients</a></p></div>
+{% elif not c.clients %}<p class="meta" style="margin-top:24px">No clients are marked yet. <a href="/clients">Paste your client list</a> to see expansion signals here, apart from new business.</p>{% endif %}
 {% endblock %}
