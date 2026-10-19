@@ -88,7 +88,7 @@ def test_pages_and_forms(app_env):  # noqa: F811
     add_signal(e.conn, e.cfg, a, "leadership_change", 5, as_of=date.today())
     add_signal(e.conn, e.cfg, a, "hiring_cluster", 5, as_of=date.today())
     score_accounts(e.conn, e.cfg, date.today())
-    assert "No clients marked yet" in e.get("/clients").body and "Mark as an existing SEI client" in e.get(f"/accounts/{a}").body
+    assert "No clients marked yet" in e.get("/clients").body and "Mark as an existing client" in e.get(f"/accounts/{a}").body
     assert e.post(f"/accounts/{a}/client", {"on": "1"}).code == 303 and get_state(e.conn, a).client
     assert "Not a client" in e.get(f"/accounts/{a}").body
     body = e.get("/clients").body

@@ -701,7 +701,9 @@ class App:
         postings = conn.execute("SELECT * FROM postings WHERE account_id = ? AND open = 1 ORDER BY posted_date DESC LIMIT 40", (a.id,)).fetchall()
         brief = conn.execute("SELECT why_now, best_service_line, run_date FROM briefs WHERE account_id = ? ORDER BY run_date DESC LIMIT 1",
                              (a.id,)).fetchone()
-        return dict(state=get_state(conn, a.id), notes=notes_for(conn, a.id), stages=STAGES, stage_labels=STAGE_LABELS, brief=brief,
+        top = next((x for x in signals if x["confidence"] in ("High", "Medium")), None)       # newest signal that counts toward the score
+        headline = brief["why_now"] if brief else (f"{top['summary']} ({fmt_date(date.fromisoformat(top['event_date']))})" if top else None)
+        return dict(headline=headline, state=get_state(conn, a.id), notes=notes_for(conn, a.id), stages=STAGES, stage_labels=STAGE_LABELS, brief=brief,
                     page="company", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
                     conf_scored={"High", "Medium"}, firms=firms, postings=postings, lead=set(self.cfg.hiring.leadership_levels))
 

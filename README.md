@@ -111,6 +111,9 @@ bd ui                      # prints a one-time link; open it (a browser is opene
 A review-and-curate screen for the database. It **cannot** scan, score, call a model or post to Teams; those stay
 on the command line.
 
+The top bar has five links: **Leadership** (where the app opens after login), **Opportunities**, **Look up**, **Clients** and **Admin**.
+**Admin** is one page that groups everything else: updating the list, the company lists and review queues, reports, and the system pages (data health, run history, change log, settings).
+
 | Page | What you can do |
 |---|---|
 | **Leadership** | One screen for a meeting: how much of the list is covered, the top ranked companies with a dated "why now", best-fit service line, source link and a new-business / existing-client tag, what changed since the last ranking (new Hot/Warm companies, risers, signals found in the last 7 days), a market pulse built from counts (industries, kinds of news, PE activity), and existing clients with news. Read-only, no model |
