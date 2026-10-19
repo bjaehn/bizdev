@@ -113,7 +113,7 @@ def test_lookup_page_finds_adds_and_starts_the_job(app_env):  # noqa: F811
     score_accounts(e.conn, e.cfg, date.today())
     assert "Type any company name" in e.get("/lookup").body
     body = e.get("/lookup?q=acme").body
-    assert "Acme Corp" in body and "Restructuring / layoffs" in body and "ready to scan" in body and "One-page summary" in body
+    assert "Acme Corp" in body and "Restructuring / layoffs" in body and "ready to scan" in body and "Analysis profile" in body
     assert "Not on your list" not in body and "Research and scan now" in body
     miss = e.get("/lookup?q=Zeta <b>Holdings").body
     assert "Not on your list: Zeta &lt;b&gt;Holdings" in miss and "Add and check the SEC (free)" in miss and "<b>Holdings" not in miss

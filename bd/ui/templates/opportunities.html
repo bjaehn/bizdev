@@ -1,18 +1,51 @@
 {% extends "base.html" %}
-{% block title %}Opportunities{% endblock %}
-{% block body %}
 {% from "_cards.html" import opp_card %}
+{% block title %}Opportunities{% endblock %}
+{% block head %}<style>
+.strip{font-family:var(--sans);font-size:14px;color:var(--muted);margin:0 0 4px}
+.strip b{color:var(--ink);font-weight:650}
+.legend{font-family:var(--sans);font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0 14px}
+.legend .sw{display:inline-block;width:22px;height:14px;border-radius:3px;border:1px solid var(--line)}
+.views{font-family:var(--sans);font-size:14px;margin:0 0 10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.views a.on{color:var(--ink);font-weight:650;text-decoration:none;border-bottom:2px solid var(--accent)}
+table.matrix{border-top:2px solid var(--ink);table-layout:auto}
+.matrix th{white-space:normal;line-height:1.25;font-size:10.5px;letter-spacing:.05em;padding:6px 3px}
+.matrix th:nth-child(-n+2){text-align:left}
+.matrix th a{color:inherit;text-decoration:none}
+.matrix th a.on{color:var(--ink);border-bottom:2px solid var(--accent)}
+.matrix td{padding:5px 3px;vertical-align:middle}
+.matrix td.co{min-width:190px;max-width:230px;padding-right:12px}
+.matrix td.sc{min-width:104px;padding-right:12px}
+.matrix td.ty{text-align:center;white-space:nowrap;font-family:var(--sans);font-size:14px}
+.matrix .rank{font-family:var(--sans);font-size:12px;color:var(--muted);margin-right:4px}
+.sbar{height:6px;background:var(--line);border-radius:3px;margin:0 0 4px}
+.sbar i{display:block;height:100%;border-radius:3px;background:var(--muted)}
+.sbar.hot i{background:var(--hot)}.sbar.warm i{background:var(--warm)}
+.cell{display:block;min-width:46px;text-align:center;padding:11px 0;border-radius:4px;font-family:var(--sans);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink);text-decoration:none;
+ background:color-mix(in srgb,var(--accent) calc(var(--v,0) * 88%),transparent)}
+.cell.hi{color:var(--on-accent)}
+.cell.none{border:1px dashed var(--line);color:transparent}
+.cell:hover{outline:2px solid var(--accent)}
+.matrix td.co{position:sticky;left:0;background:var(--bg)}
+</style>{% endblock %}
+{% block body %}
 <h1>Opportunities</h1>
-<p class="sub">Companies with live signals, ranked. Open one for its story and sources.</p>
+<p class="sub">Companies ranked by how many <b>different signals</b> point to a need for consulting now. Open a company to see the evidence behind its score.</p>
 
 {% if not dates %}
-<div class="card empty">No scores yet.<br>Run a scan and then Score from the <a href="/operate">Operate</a> page; this page reads what they stored.</div>
+<div class="card empty">Nothing has been scored yet.<br>An admin needs to run an update from the Admin area to fill in company facts, scan for news and rank what it finds.</div>
 {% elif error %}<div class="errors"><b>{{ error }}</b></div>
 {% else %}
-{% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} account(s) ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). Run Score again; statuses below are not shown until then.</div>{% endif %}
-<form method="get" action="/opportunities" class="filters">
+{% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} compan{{ 'y' if stale|length == 1 else 'ies' }} ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). An admin needs to run Score again.</div>{% endif %}
+<p class="strip"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> ready · <b>{{ cov.with_signal_90d }}</b> with news in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.waiting %} · {{ cov.waiting }} still waiting for facts{% endif %}</p>
+{% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err">These scores are {{ cov.score_age_days }} days old.</div>{% endif %}
+{% if changes.new_leads or changes.risers %}<p class="strip">{% if changes.new_leads %}<b>New this week:</b> {% for o in changes.new_leads %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> ({{ o.result.band }}){{ ', ' if not loop.last }}{% endfor %}{% endif %}{% if changes.new_leads and changes.risers %} · {% endif %}{% if changes.risers %}<b>Moving up:</b> {% for o in changes.risers %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> +{{ o.delta }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}</p>{% endif %}
+
+<form method="get" action="/opportunities" class="filters" style="margin-top:14px">
+<input type="hidden" name="view" value="{{ '' if view == 'matrix' else view }}">
 <input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name">
 <select name="band" aria-label="Band"><option value="">any band</option>{% for b in bands %}<option {{ 'selected' if q.band == b else '' }}>{{ b }}</option>{% endfor %}</select>
+<select name="industry" aria-label="Industry"><option value="">any industry</option>{% for i in industries %}<option {{ 'selected' if q.industry == i else '' }}>{{ i }}</option>{% endfor %}</select>
 <button type="submit">Filter</button>
 <details class="more"><summary>More filters</summary>
 <div class="filters" style="margin:10px 0 0">
@@ -24,14 +57,49 @@
 <select name="stage" aria-label="Your stage"><option value="">any stage</option><option value="open" {{ 'selected' if q.stage == 'open' else '' }}>open (not passed, won or lost)</option>
 {% for k in stages %}<option value="{{ k }}" {{ 'selected' if q.stage == k else '' }}>{{ stage_labels[k] }}</option>{% endfor %}</select>
 <select name="client" aria-label="Client"><option value="">clients and new logos</option><option value="yes" {{ 'selected' if q.client == 'yes' else '' }}>existing clients only</option><option value="no" {{ 'selected' if q.client == 'no' else '' }}>new logos only</option></select>
-<select name="sort" aria-label="Sort"><option value="score">sort: score</option><option value="change" {{ 'selected' if q.sort == 'change' else '' }}>sort: biggest change</option><option value="hiring" {{ 'selected' if q.sort == 'hiring' else '' }}>sort: hiring</option></select>
+<select name="sort" aria-label="Sort"><option value="score">sort: score</option><option value="types" {{ 'selected' if q.sort == 'types' else '' }}>sort: signal types</option><option value="newest" {{ 'selected' if q.sort == 'newest' else '' }}>sort: newest signal</option><option value="change" {{ 'selected' if q.sort == 'change' else '' }}>sort: biggest change</option><option value="hiring" {{ 'selected' if q.sort == 'hiring' else '' }}>sort: hiring</option></select>
 <label style="margin:0"><input type="checkbox" name="pe" value="1" {{ 'checked' if q.pe else '' }}> PE-backed</label>
 <label style="margin:0"><input type="checkbox" name="new" value="1" {{ 'checked' if q.new else '' }}> new since last run</label>
 <label style="margin:0"><input type="checkbox" name="tracked" value="1" {{ 'checked' if q.tracked == '1' else '' }}> include below Watch</label>
 </div></details></form>
-<p class="meta">{{ items|length }} of {{ total }} opportunit{{ 'y' if total == 1 else 'ies' }}{% if prev_date %}; change is against the run on {{ prev_date }}{% else %}; no earlier run to compare with{% endif %}.</p>
 
+<div class="views"><span><a href="{{ link(view='') }}" class="{{ 'on' if view == 'matrix' else '' }}">Signal matrix</a> &nbsp; <a href="{{ link(view='chart') }}" class="{{ 'on' if view == 'chart' else '' }}">Priority chart</a> &nbsp; <a href="{{ link(view='list') }}" class="{{ 'on' if view == 'list' else '' }}">List</a></span>
+<span class="meta">{{ items|length }} of {{ total }} compan{{ 'y' if total == 1 else 'ies' }}{% if prev_date %}; change is against the run on {{ prev_date }}{% endif %}</span></div>
+
+{% if view == 'matrix' %}
+<div class="legend"><span>Points a signal type added to the score:</span>
+{% for v in (0.12, 0.35, 0.6, 0.9) %}<span class="sw" style="background:color-mix(in srgb,var(--accent) {{ (v * 88)|round|int }}%,transparent)"></span>{% endfor %}
+<span>few to many · a dashed box means none · <b style="color:var(--ink)">●</b> news in the last 30 days · <b style="color:var(--ink)">Types</b> counts the different signal types, the thing the stacking bonus rewards</span></div>
+{% if matrix.rows %}
+<div class="wrap"><table class="matrix">
+<thead><tr><th>Company</th><th><a href="{{ link(sort='score') }}" class="{{ 'on' if (q.sort or 'score') == 'score' else '' }}">Score</a></th>
+{% for key, label in matrix.columns %}<th style="text-align:center">{{ label }}</th>{% endfor %}
+<th style="text-align:center"><a href="{{ link(sort='types') }}" class="{{ 'on' if q.sort == 'types' else '' }}">Types</a></th></tr></thead>
+<tbody>
+{% for r in matrix.rows %}{% set o = r.opp %}<tr>
+<td class="co"><span class="rank">{{ o.rank }}</span><a class="name" style="font-size:18px" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>{% if o.client %} <span class="badge good">client</span>{% endif %}
+<div class="meta">{{ [o.account.industry, o.account.hq_city]|select|join(' · ') or 'no company details' }}</div></td>
+<td class="sc"><div class="sbar {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}"><i style="width:{{ r.score_pct }}%"></i></div>
+<b style="font-family:var(--sans)">{{ o.result.score }}</b> <span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }}</span>{% if o.delta is not none and o.delta > 0 %} <span class="badge good">+{{ o.delta }}</span>{% endif %}</td>
+{% for c in r.cells %}<td>{% if c.points %}<a class="cell {{ 'hi' if c.shade > 0.55 else '' }}" style="--v:{{ '%.2f'|format(c.shade) }}" href="/companies/{{ o.account.id }}" title="{{ c.title }}" aria-label="{{ c.title }}">{{ c.points|round|int }}{{ ' ●' if c.recent }}</a>{% else %}<span class="cell none" aria-hidden="true">·</span>{% endif %}</td>{% endfor %}
+<td class="ty"><b>{{ r.types }}</b>/{{ matrix.columns|length }}{% if o.result.stacking_bonus %}<br><span class="meta">+{{ o.result.stacking_bonus|round|int }}</span>{% endif %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+<p class="meta">Sort by <a href="{{ link(sort='score') }}">score</a> · <a href="{{ link(sort='types') }}">signal types</a> · <a href="{{ link(sort='newest') }}">newest signal</a> · <a href="{{ link(sort='change') }}">biggest change</a>. The number in a cell is the points that signal type added; they sum, with the stacking bonus, to the score.</p>
+{% else %}<div class="card empty">No companies match.</div>{% endif %}
+
+{% elif view == 'chart' %}
+{% if chart %}
+<div class="legend"><span>Each dot is a company. Up = higher score · right = larger revenue (each gridline is ten times the last) · colour = band ·
+size = how many different signal types fired · dark outline = news in the last 30 days. Top right is the biggest prize with the strongest signals.</span></div>
+<div class="card" style="padding:10px 12px;overflow-x:auto"><div style="min-width:640px">{{ chart|safe }}</div></div>
+{% if priority.unplaced %}<p class="meta"><b>{{ priority.unplaced|length }}</b> compan{{ 'y has' if priority.unplaced|length == 1 else 'ies have' }} no revenue on file, so cannot be placed on this chart: {% for id, name, score in priority.unplaced[:8] %}<a href="/companies/{{ id }}">{{ name }}</a> ({{ score }}){{ ', ' if not loop.last }}{% endfor %}{% if priority.unplaced|length > 8 %} and {{ priority.unplaced|length - 8 }} more{% endif %}. Add revenue in Admin, or run the SEC check, and they appear.</p>{% endif %}
+{% elif priority and priority.unplaced %}<div class="card empty">None of these {{ priority.unplaced|length }} companies has a revenue on file, so there is nothing to place on a size axis. The signal matrix and list still show them.</div>
+{% else %}<div class="card empty">No companies match.</div>{% endif %}
+
+{% else %}
 {% for o in items %}{{ opp_card(o, stage_labels, true) }}
 {% else %}<div class="card empty">No opportunities match.</div>{% endfor %}
+{% endif %}
 {% endif %}
 {% endblock %}

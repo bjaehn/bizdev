@@ -175,7 +175,7 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
 
 def filter_opportunities(items: list[Opportunity], band: str = "", family: str = "", service_line: str = "", pe_only: bool = False,
                          q: str = "", new_only: bool = False, status: str = "", sort: str = "score",
-                         stage: str = "", client: str = "") -> list[Opportunity]:
+                         stage: str = "", client: str = "", industry: str = "") -> list[Opportunity]:
     q = q.strip().lower()
     out = [o for o in items
            if (not band or o.result.band == band)
@@ -186,7 +186,8 @@ def filter_opportunities(items: list[Opportunity], band: str = "", family: str =
            and (not new_only or o.is_new)
            and (not status or o.status == status)
            and (not stage or (o.stage in OPEN_STAGES if stage == "open" else o.stage == stage))
-           and (client not in ("yes", "no") or o.client == (client == "yes"))]
+           and (client not in ("yes", "no") or o.client == (client == "yes"))
+           and (not industry or (o.account.industry or "") == industry)]
     if sort == "change":
         out.sort(key=lambda o: (-(o.delta if o.delta is not None else o.result.score), o.rank))
     elif sort == "hiring":

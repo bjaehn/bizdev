@@ -7,7 +7,7 @@
 {% for t in themes %}<a class="badge {{ 'good' if t == theme else '' }}" href="/hiring?theme={{ t }}">{{ t|replace('_', ' ') }}</a>{% endfor %}</div>
 <div class="wrap"><table>
 <tr><th>Company</th><th class="num">Open postings</th><th class="num">Leadership</th><th class="num">Interim</th><th>Newest</th><th>Source</th></tr>
-{% for r in rows %}<tr><td><a href="/accounts/{{ r['id'] }}">{{ r['name'] }}</a>{% if r['status'] != 'active' %} <span class="badge warm">{{ r['status'] }}</span>{% endif %}</td>
+{% for r in rows %}<tr><td><a href="/companies/{{ r['id'] }}">{{ r['name'] }}</a>{% if r['status'] != 'active' %} <span class="badge warm">{{ r['status'] }}</span>{% endif %}</td>
 <td class="num">{{ r['n'] }}</td><td class="num">{{ r['leaders'] or 0 }}</td><td class="num">{{ r['interim'] or 0 }}</td>
 <td>{{ r['newest']|fdate }}</td><td class="meta">{{ (r['ats_provider'] ~ ' board, daily') if r['ats_provider'] else 'weekly search' }}</td></tr>
 {% else %}<tr><td colspan="6" class="empty">No postings recorded yet. Run a scan; the first time a scan finds a posting on Greenhouse, Lever or Ashby, that company's board is read daily from then on.</td></tr>{% endfor %}
@@ -15,7 +15,7 @@
 <h2>Newest postings</h2>
 <div class="wrap"><table>
 <tr><th>Posted</th><th>Company</th><th>Title</th><th>Area</th><th>Level</th></tr>
-{% for p in recent %}<tr><td>{{ p['posted_date']|fdate }}</td><td><a href="/accounts/{{ p['account_id'] }}">{{ p['account'] }}</a></td>
+{% for p in recent %}<tr><td>{{ p['posted_date']|fdate }}</td><td><a href="/companies/{{ p['account_id'] }}">{{ p['account'] }}</a></td>
 <td>{% if p['url']|safe_url %}<a href="{{ p['url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ p['title'] }}</a>{% else %}{{ p['title'] }}{% endif %}</td>
 <td>{{ p['theme']|replace('_', ' ') }}</td><td>{{ p['seniority']|replace('_', ' ') }}{% if p['seniority'] in lead %} <span class="badge hot">leadership</span>{% endif %}</td></tr>
 {% else %}<tr><td colspan="5" class="empty">Nothing to show.</td></tr>{% endfor %}

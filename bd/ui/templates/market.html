@@ -1,10 +1,54 @@
 {% extends "base.html" %}
 {% block title %}Market view{% endblock %}
+{% block head %}<style>
+.legend{font-family:var(--sans);font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 10px}
+.legend .sw{display:inline-block;width:14px;height:14px;border-radius:3px}
+.legend .sh{display:inline-block;width:22px;height:14px;border-radius:3px;border:1px solid var(--line)}
+table.heat{border-top:2px solid var(--ink)}
+.heat th{white-space:normal;line-height:1.25;font-size:10.5px;letter-spacing:.05em;padding:6px 3px}
+.heat th:first-child{text-align:left}
+.heat td{padding:4px 3px;vertical-align:middle}
+.heat td.ind{min-width:150px;padding-right:12px;font-size:16px}
+.heat td.n{text-align:center;font-family:var(--sans);font-size:14px;white-space:nowrap;padding:4px 6px}
+.hc{display:block;min-width:50px;text-align:center;padding:11px 0;border-radius:4px;font-family:var(--sans);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink);text-decoration:none;
+ background:color-mix(in srgb,var(--accent) calc(var(--v,0) * 88%),transparent)}
+.hc.hi{color:var(--on-accent)}
+.hc.none{border:1px dashed var(--line);color:transparent}
+a.hc:hover{outline:2px solid var(--accent)}
+</style>{% endblock %}
 {% block body %}
 <h1>Market view</h1>
 <p class="sub">Where in the Chicago market signals are appearing. Counts use the date of the event from its source, over the companies that are ready to scan{% if m.score_date %}; scores are from the run on {{ m.score_date }}{% endif %}.</p>
 
-<h2>By industry</h2>
+<h2>Companies by band, run by run</h2>
+{% if trend_chart %}
+<div class="legend"><span class="sw" style="background:var(--hot)"></span>Hot <span class="sw" style="background:var(--warm)"></span>Warm <span class="sw" style="background:var(--accent);opacity:.55"></span>Watch
+<span>· one bar per scoring run, as that run scored it</span></div>
+<div class="card" style="padding:10px 12px;overflow-x:auto"><div style="min-width:560px">{{ trend_chart|safe }}</div></div>
+{% set last = m.trend[-1] %}
+{% if m.trend|length > 1 %}{% set prev = m.trend[-2] %}{% set d = last.hot_warm - prev.hot_warm %}
+<p class="meta">Hot or Warm: <b>{{ last.hot_warm }}</b> on {{ run_label(last.run_date) }}, {% if d > 0 %}up {{ d }} from{% elif d < 0 %}down {{ -d }} from{% else %}the same as{% endif %} {{ prev.hot_warm }} on {{ run_label(prev.run_date) }}. A bar is the companies in that band when that run scored them, so it also moves when companies become ready or are added.</p>
+{% else %}<p class="meta">Only one scoring run is stored so far ({{ run_label(last.run_date) }}), so there is no trend yet. Each weekly run adds a bar.</p>{% endif %}
+{% else %}<div class="card empty">Nothing has been scored yet, so there is no trend.</div>{% endif %}
+
+<h2>Where signals are appearing</h2>
+{% if m.heat and m.heat_max %}
+<div class="legend"><span>Signals in the last 90 days, by industry and signal type:</span>
+{% for v in (0.12, 0.35, 0.6, 0.9) %}<span class="sh" style="background:color-mix(in srgb,var(--accent) {{ (v * 88)|round|int }}%,transparent)"></span>{% endfor %}
+<span>few to many · a dashed box means none · click a number to see those companies</span></div>
+<div class="wrap"><table class="heat">
+<thead><tr><th>Industry</th><th style="text-align:center">Companies</th>{% for f in m.families %}<th style="text-align:center">{{ family_labels.get(f, f) }}</th>{% endfor %}<th style="text-align:center">Hot / Warm</th><th style="text-align:center">30 days</th></tr></thead>
+<tbody>
+{% for s in m.segments %}{% set row = m.heat[s.industry] %}<tr>
+<td class="ind">{{ s.industry }}</td><td class="n">{{ s.companies }}</td>
+{% for f in m.families %}{% set h = row.get(f) %}<td>{% if h %}<a class="hc {{ 'hi' if h.signals / m.heat_max > 0.55 else '' }}" style="--v:{{ '%.2f'|format(h.signals / m.heat_max) }}" href="/opportunities?{{ {'industry': s.industry, 'family': f, 'tracked': '1'}|urlencode }}" title="{{ h.signals }} signal{{ '' if h.signals == 1 else 's' }} at {{ h.companies }} compan{{ 'y' if h.companies == 1 else 'ies' }}">{{ h.signals }}</a>{% else %}<span class="hc none" aria-hidden="true">·</span>{% endif %}</td>{% endfor %}
+<td class="n">{% if s.hot or s.warm %}<b>{{ s.hot + s.warm }}</b>{% else %}<span class="meta">0</span>{% endif %}</td>
+<td class="n">{% if s.trend == 'up' %}<span class="badge good">up from {{ s.signals_prior_30d }}</span>{% elif s.trend == 'down' %}<span class="badge bad">down from {{ s.signals_prior_30d }}</span>{% else %}<span class="badge">flat</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="meta">The number is how many signals of that type were reported in the last 90 days at the industry's ready companies; hover for how many companies they belong to. It counts what was found, so a low-confidence signal shows here even if it adds nothing to a score. "30 days" compares the last 30 days with the 30 before.</p>
+{% else %}<div class="card empty">No signals in the last 90 days at ready companies yet.</div>{% endif %}
+
+<h2>By industry: the numbers</h2>
 {% if m.segments %}
 <div class="wrap"><table>
 <tr><th>Industry</th><th class="num">Companies</th><th class="num">With a signal (90 days)</th><th class="num">Signals, last 30 days</th><th>Trend</th><th class="num">Hot</th><th class="num">Warm</th><th class="num">Watch</th><th class="num">Avg score</th></tr>
@@ -38,7 +82,7 @@
 {% if m.quiet %}
 <div class="wrap"><table>
 <tr><th>Company</th><th>Industry</th><th class="num">Revenue</th><th class="num">Employees</th><th>Last scanned</th><th class="num">Signals ever</th></tr>
-{% for q in m.quiet %}<tr><td><a href="/accounts/{{ q.account_id }}">{{ q.name }}</a></td><td>{{ q.industry }}</td><td class="num">{{ q.revenue|money }}</td><td class="num">{{ '{:,}'.format(q.employees) if q.employees else '-' }}</td><td>{{ q.last_scanned or 'never' }}</td><td class="num">{{ q.signals_total }}</td></tr>{% endfor %}
+{% for q in m.quiet %}<tr><td><a href="/companies/{{ q.account_id }}">{{ q.name }}</a></td><td>{{ q.industry }}</td><td class="num">{{ q.revenue|money }}</td><td class="num">{{ '{:,}'.format(q.employees) if q.employees else '-' }}</td><td>{{ q.last_scanned or 'never' }}</td><td class="num">{{ q.signals_total }}</td></tr>{% endfor %}
 </table></div>
 {% endif %}
 {% endblock %}

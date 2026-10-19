@@ -38,13 +38,17 @@ from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply
                        mark_reviewed, reject_candidate, remove_exclusion, update_account)
 from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
-from bd.dossier import build_dossier
+from bd.charts import priority_svg, trend_svg
+from bd.priority import build_priority
+from bd.profile import build_profile
 from bd.health import build_health
 from bd.market import build_market
 from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
+from bd.leadership import build_changes, coverage
 from bd.lookup import find as find_company
+from bd.matrix import SORTS, build_matrix, sort_rows
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
 from bd.ask_store import add_question, clean_question, recent as recent_questions
@@ -404,7 +408,7 @@ class App:
             ("GET", "/ask"): lambda: self.ask_page(conn),
             ("POST", "/ask"): lambda: self.ask_start(req, conn),
             ("GET", "/health"): lambda: self.health_page(req, conn),
-            ("GET", "/market"): lambda: self.render("market.html", page="market", m=build_market(conn, date.today())),
+            ("GET", "/market"): lambda: self.market_page(conn),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
             ("GET", "/accounts/new"): lambda: self.render("account_new.html", page="accounts", form={}, errors=[]),
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
@@ -436,7 +440,9 @@ class App:
             self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
             return self.redirect(f"/firms/{int(parts[1])}")
         if m == "GET" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "onepager":
-            return self.onepager(conn, int(parts[1]))
+            return self.redirect(f"/companies/{int(parts[1])}")                                        # the profile is the printable summary now
+        if m == "GET" and len(parts) == 2 and parts[0] == "companies" and parts[1].isdigit():
+            return self.company_profile(conn, int(parts[1]))
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch", "client"):
             return self.pipeline_update(req, conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
@@ -509,26 +515,48 @@ class App:
 
     def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = score_dates(conn)
+        empty = dict(page="opportunities", dates=dates, run_date=None, items=[], total=0, error=None, q={}, families=[], lines=[], stale=[],
+                     prev_date=None, view="matrix", matrix=None, cov=None, changes=None, priority=None, chart=None)
         if not dates:
-            return self.render("opportunities.html", page="opportunities", dates=[], run_date=None, items=[], total=0, error=None,
-                               q={}, families=[], lines=[], stale=[], prev_date=None)
+            return self.render("opportunities.html", **empty)
         chosen = req.q("date") if req.q("date") in dates else dates[0]
         try:
             ol = build_opportunities(conn, self.cfg, date.fromisoformat(chosen), include_tracked_only=req.q("tracked") == "1")
         except ShortlistError as e:
-            return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=[], total=0, error=str(e),
-                               q={}, families=[], lines=[], stale=[], prev_date=None)
-        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage", "client")}
+            return self.render("opportunities.html", **{**empty, "run_date": chosen, "error": str(e)})
+        today = date.today()
+        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage", "client", "industry")}
         q["pe"] = req.q("pe") == "1"
         q["new"] = req.q("new") == "1"
+        view = req.q("view") if req.q("view") in ("list", "chart") else "matrix"
         items = filter_opportunities(ol.items, band=q["band"], family=q["family"], service_line=q["service_line"], pe_only=q["pe"],
-                                     q=q["q"], new_only=q["new"], status=q["status"], sort=q["sort"] or "score",
-                                     stage=q["stage"], client=q["client"])
+                                     q=q["q"], new_only=q["new"], status=q["status"], sort=(q["sort"] or "score") if view == "list" else "score",
+                                     stage=q["stage"], client=q["client"], industry=q["industry"])
+        matrix = None
+        if view == "matrix":
+            matrix = build_matrix(items, self.cfg, today)
+            matrix.rows = sort_rows(matrix.rows, q["sort"] if q["sort"] in SORTS else "score")
+        priority = chart = None
+        if view == "chart":
+            priority = build_priority(items, today)
+            b = self.cfg.scoring.bands
+            chart = priority_svg(priority.dots, [("Hot", b.hot), ("Warm", b.warm), ("Watch", b.watch)], self.cfg.scoring.score_max)
+        cov = coverage(conn, today)
+        cov.scored, cov.hot, cov.warm = len(ol.items), sum(o.result.band == "Hot" for o in ol.items), sum(o.result.band == "Warm" for o in ol.items)
+        cov.score_date, cov.score_age_days = chosen, (today - date.fromisoformat(chosen)).days
+        keep = {k: v for k, v in (("date", chosen if chosen != dates[0] else ""), ("q", q["q"]), ("band", q["band"]), ("industry", q["industry"]),
+                                  ("family", q["family"]), ("service_line", q["service_line"]), ("status", q["status"]), ("stage", q["stage"]),
+                                  ("client", q["client"]), ("pe", "1" if q["pe"] else ""), ("new", "1" if q["new"] else ""),
+                                  ("tracked", q["tracked"])) if v}
+        link = lambda **over: "/opportunities?" + urlencode({k: v for k, v in {**keep, "view": "" if view == "matrix" else view, "sort": q["sort"], **over}.items() if v})  # noqa: E731
         families = sorted({r.kind for o in ol.items for r in o.reasons})
         return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=items, total=len(ol.items),
-                           error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale,
+                           error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale, view=view, matrix=matrix, priority=priority, chart=chart,
                            prev_date=ol.prev_date.isoformat() if ol.prev_date else None, bands=["Hot", "Warm", "Watch", "Stored"],
-                           statuses=["card", "over_cap", "held", "tracking"], stages=STAGES, stage_labels=STAGE_LABELS)
+                           statuses=["card", "over_cap", "held", "tracking"], stages=STAGES, stage_labels=STAGE_LABELS, cov=cov,
+                           changes=build_changes(conn, ol, today), link=link,
+                           industries=sorted({o.account.industry for o in ol.items if o.account.industry}),
+                           sort_keys=[("score", "Score"), ("types", "Signal types"), ("newest", "Newest signal"), ("change", "Biggest change")])
 
     def pipeline_update(self, req: Request, conn: sqlite3.Connection, account_id: int, what: str) -> Response:
         if what == "stage":
@@ -551,6 +579,12 @@ class App:
     def admin_page(self) -> Response:
         groups = [(name, [i for i in items if not i[4] or self.jobs is not None]) for name, items in ADMIN_GROUPS]
         return self.render("admin.html", page="admin", groups=[g for g in groups if g[1]])
+
+    def market_page(self, conn: sqlite3.Connection) -> Response:
+        m = build_market(conn, date.today(), families=self.cfg.scoring.families)
+        label = lambda d: f"{date.fromisoformat(d):%b} {date.fromisoformat(d).day}"  # noqa: E731
+        trend = trend_svg([(label(p.run_date), p.hot, p.warm, p.watch) for p in m.trend])
+        return self.render("market.html", page="market", m=m, trend_chart=trend, run_label=label)
 
     def reports_page(self) -> Response:
         return self.render("reports.html", page="reports", items=REPORT_ITEMS)
@@ -607,11 +641,11 @@ class App:
         return self.render("watchlist.html", page="watchlist", changes=changes, days=days, since=since.isoformat(),
                            stage_labels=STAGE_LABELS, labels=TYPE_LABELS, counts=stage_counts(conn))
 
-    def onepager(self, conn: sqlite3.Connection, account_id: int) -> Response:
+    def company_profile(self, conn: sqlite3.Connection, account_id: int) -> Response:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
         if a is None:
-            return self.error("404 Not Found", "No such account.")
-        return self.render("onepager.html", page="accounts", d=build_dossier(conn, self.cfg, a, date.today()), stage_labels=STAGE_LABELS,
+            return self.error("404 Not Found", "No such company.")
+        return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, date.today()), stage_labels=STAGE_LABELS,
                            cfg_hiring_days=self.cfg.hiring.window_days)
 
     def health_page(self, req: Request, conn: sqlite3.Connection) -> Response:
@@ -717,7 +751,7 @@ class App:
         top = next((x for x in signals if x["confidence"] in ("High", "Medium")), None)       # newest signal that counts toward the score
         headline = brief["why_now"] if brief else (f"{top['summary']} ({fmt_date(date.fromisoformat(top['event_date']))})" if top else None)
         return dict(headline=headline, state=get_state(conn, a.id), notes=notes_for(conn, a.id), stages=STAGES, stage_labels=STAGE_LABELS, brief=brief,
-                    page="company", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
+                    page="accounts", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
                     conf_scored={"High", "Medium"}, firms=firms, postings=postings, lead=set(self.cfg.hiring.leadership_levels))
 
     def account_page(self, req: Request, conn: sqlite3.Connection, account_id: int) -> Response:

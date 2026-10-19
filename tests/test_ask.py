@@ -221,7 +221,7 @@ def test_answers_are_escaped_and_company_names_link(app_env):  # noqa: F811
                        ("Acme <b>is</b> here.", "SELECT name FROM accounts", json.dumps(["name", "account_id"]), json.dumps([["Acme", a]]), "Companies.", qid))
     body = e.get("/ask").body
     assert "Acme &lt;b&gt;is&lt;/b&gt; here." in body and "&lt;script&gt;alert(1)&lt;/script&gt;" in body and "<script>alert" not in body
-    assert f'<a href="/accounts/{a}">Acme</a>' in body and "SELECT name FROM accounts" in body and "answered" in body
+    assert f'<a href="/companies/{a}">Acme</a>' in body and "SELECT name FROM accounts" in body and "answered" in body
     add_question(e.conn, "Pending one")
     assert 'http-equiv="refresh"' in e.get("/ask").body and "working" in e.get("/ask").body
 

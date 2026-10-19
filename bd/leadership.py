@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from bd.config import Config
 from bd.labels import FAMILY_LABELS
 from bd.market import Market, SegmentRow, SponsorRow, build_market
-from bd.opportunities import Opportunity, build_opportunities, score_dates
+from bd.opportunities import Opportunity, OpportunityList, build_opportunities, score_dates
 from bd.pipeline import STAGES, ClientRow, client_rows, stage_counts
 from bd.shortlist import ShortlistError
 
@@ -80,7 +80,7 @@ class Leadership:
     problem: str | None = None         # why the ranked list is empty, in plain words
 
 
-def _coverage(conn: sqlite3.Connection, today: date) -> Coverage:
+def coverage(conn: sqlite3.Connection, today: date) -> Coverage:
     c = Coverage()
     by = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) n FROM accounts GROUP BY status")}
     c.total, c.ready, c.waiting = sum(by.values()), by.get("active", 0), by.get("hold_review", 0)
@@ -110,8 +110,26 @@ def _pulse(m: Market) -> Pulse:
     return p
 
 
+def build_changes(conn: sqlite3.Connection, ol: OpportunityList, today: date) -> Changes:
+    """What is new since the previous ranking: companies that became Hot or Warm, big risers, and signals found in the last week."""
+    ch = Changes()
+    ch.prev_date = ol.prev_date.isoformat() if ol.prev_date else None
+    if ol.prev_date:
+        ch.new_leads = [o for o in ol.items if o.is_new and o.result.band in ("Hot", "Warm")][:LIST_MAX]
+        ch.risers = sorted((o for o in ol.items if o.delta is not None and o.delta >= MIN_RISE and o not in ch.new_leads),
+                           key=lambda o: (-o.delta, o.rank))[:LIST_MAX]
+    since = (today - timedelta(days=NEW_SIGNAL_DAYS)).isoformat()
+    rows = conn.execute("SELECT s.account_id, a.name, s.type, s.event_date, s.summary, s.source_url FROM signals s "
+                        "JOIN accounts a ON a.id = s.account_id WHERE a.status = 'active' AND s.detected_date >= ? "
+                        "ORDER BY s.event_date DESC, s.id DESC", (since,)).fetchall()
+    ch.new_signal_total = len(rows)
+    ch.new_signals = [NewSignal(r["account_id"], r["name"], r["type"], r["event_date"], r["summary"], r["source_url"])
+                      for r in rows[:MAX_NEW_SIGNALS]]
+    return ch
+
+
 def build_leadership(conn: sqlite3.Connection, cfg: Config, today: date) -> Leadership:
-    out = Leadership(today, _coverage(conn, today))
+    out = Leadership(today, coverage(conn, today))
     cov = out.coverage
     dates = score_dates(conn)
     out.clients = [c for c in client_rows(conn, today) if c.signals_90d][:LIST_MAX]
@@ -131,17 +149,5 @@ def build_leadership(conn: sqlite3.Connection, cfg: Config, today: date) -> Lead
     cov.hot = sum(o.result.band == "Hot" for o in ol.items)
     cov.warm = sum(o.result.band == "Warm" for o in ol.items)
     out.act = ol.items[:ACT_COUNT]
-    ch = out.changes
-    ch.prev_date = ol.prev_date.isoformat() if ol.prev_date else None
-    if ol.prev_date:
-        ch.new_leads = [o for o in ol.items if o.is_new and o.result.band in ("Hot", "Warm")][:LIST_MAX]
-        ch.risers = sorted((o for o in ol.items if o.delta is not None and o.delta >= MIN_RISE and o not in ch.new_leads),
-                           key=lambda o: (-o.delta, o.rank))[:LIST_MAX]
-    since = (today - timedelta(days=NEW_SIGNAL_DAYS)).isoformat()
-    rows = conn.execute("SELECT s.account_id, a.name, s.type, s.event_date, s.summary, s.source_url FROM signals s "
-                        "JOIN accounts a ON a.id = s.account_id WHERE a.status = 'active' AND s.detected_date >= ? "
-                        "ORDER BY s.event_date DESC, s.id DESC", (since,)).fetchall()
-    ch.new_signal_total = len(rows)
-    ch.new_signals = [NewSignal(r["account_id"], r["name"], r["type"], r["event_date"], r["summary"], r["source_url"])
-                      for r in rows[:MAX_NEW_SIGNALS]]
+    out.changes = build_changes(conn, ol, today)
     return out

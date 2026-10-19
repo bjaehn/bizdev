@@ -37,7 +37,7 @@ def test_months_are_labelled():
         assert f">{label}<" in svg
 
 
-def test_the_onepager_page(app_env):  # noqa: F811
+def test_the_profile_page_and_the_old_onepager_address(app_env):  # noqa: F811
     from datetime import date
     e, today = app_env, date.today()
     a = add_account(e.conn, "Acme", industry="Health care", hq_city="Chicago", employees=12000)
@@ -45,17 +45,18 @@ def test_the_onepager_page(app_env):  # noqa: F811
     add_signal(e.conn, e.cfg, a, "hiring_cluster", 8, as_of=today)
     score_accounts(e.conn, e.cfg, today)
     e.post(f"/accounts/{a}/stage", {"stage": "pursuing", "note": "Intro via board"})
-    body = e.get(f"/accounts/{a}/onepager").body
-    assert "Acme" in body and "Health care" in body and "12,000 employees" in body and "Where the score comes from" in body
+    r = e.get(f"/accounts/{a}/onepager")
+    assert r.code == 303 and r.h["Location"] == f"/companies/{a}"                      # the printable page is now the profile
+    body = e.get(f"/companies/{a}").body
+    assert "Acme" in body and "Health care" in body and "12,000 employees" in body and "Why this score" in body
     assert "Signals over the last 180 days" in body and body.count("<circle") == 2 and "Chief Information Officer" in body
     assert "New CIO named &lt;b&gt;today&lt;/b&gt;." in body and "Intro via board" in body and "Pursuing" in body
-    assert "Research only" in body and f"/accounts/{a}" in body
-    assert "One-page summary" in e.get(f"/accounts/{a}").body
-    assert e.get("/accounts/999/onepager").code == 404
+    assert "Research only" in body and f"/accounts/{a}" in body and "Manage this company" in body
+    assert e.get("/companies/999").code == 404
 
 
-def test_the_onepager_works_for_an_unscored_company(app_env):  # noqa: F811
+def test_the_profile_works_for_an_unscored_company(app_env):  # noqa: F811
     e = app_env
     a = add_account(e.conn, "Quietco")
-    body = e.get(f"/accounts/{a}/onepager").body
-    assert e.get(f"/accounts/{a}/onepager").code == 200 and "not scored" in body and "No signals stored" in body
+    page = e.get(f"/companies/{a}")
+    assert page.code == 200 and "not scored" in page.body and "No signals in the last 180 days" in page.body and "Why this score" not in page.body

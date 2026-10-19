@@ -2,7 +2,7 @@
 {% from "_facts.html" import facts_form, errors_box %}
 {% block title %}{{ a.name }}{% endblock %}
 {% block body %}
-<p class="meta"><a href="/opportunities">← Opportunities</a> · <a href="/accounts/{{ a.id }}/onepager">One-page summary (printable)</a></p>
+<p class="meta"><a href="/accounts">← All companies</a> · <a href="/companies/{{ a.id }}">View the analysis</a></p>
 <div class="row"><div><h1>{{ a.name }}</h1>
 <p class="sub">{{ [a.industry, a.hq_city, a.ownership, (a.revenue|money ~ ' revenue') if a.revenue else none]|select|join(' · ') or 'no company details recorded yet' }}</p></div>
 <div class="tags">{% if scores %}<span class="badge {{ 'hot' if scores[0]['band'] == 'Hot' else ('warm' if scores[0]['band'] == 'Warm' else '') }}">{{ scores[0]['band'] }} · {{ scores[0]['score'] }}</span> {% endif %}
@@ -12,7 +12,7 @@
 
 {% if headline %}<div class="card"><h2 style="margin-top:0">Why now</h2>
 <p class="why" style="margin-top:0">{{ headline }}</p>
-<p class="meta" style="margin:0">{% if brief and brief['best_service_line'] %}Best fit: <b>{{ brief['best_service_line'] }}</b> · {% endif %}<a href="/accounts/{{ a.id }}/onepager">One-page summary</a>{% if scores %} · scored {{ scores[0]['run_date']|fdate }}{% endif %}</p></div>{% endif %}
+<p class="meta" style="margin:0">{% if brief and brief['best_service_line'] %}Best fit: <b>{{ brief['best_service_line'] }}</b> · {% endif %}<a href="/companies/{{ a.id }}">Full profile</a>{% if scores %} · scored {{ scores[0]['run_date']|fdate }}{% endif %}</p></div>{% endif %}
 
 <div class="card"><div class="filters" style="margin:0">
 <form method="post" action="/accounts/{{ a.id }}/stage" class="filters" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf }}">

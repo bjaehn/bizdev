@@ -14,7 +14,7 @@
 <div class="wrap"><table>
 <tr><th>Company</th><th>On your list</th><th>Ownership</th><th>Known from</th></tr>
 {% for l in links %}<tr><td>{{ l['company_name'] }}{% if l['company_domain'] %}<br><span class="meta">{{ l['company_domain'] }}</span>{% endif %}</td>
-<td>{% if l['account_id'] %}<a href="/accounts/{{ l['account_id'] }}">account</a> <span class="meta">({{ l['account_status'] }})</span>{% else %}<span class="meta">not an account</span>{% endif %}</td>
+<td>{% if l['account_id'] %}<a href="/companies/{{ l['account_id'] }}">account</a> <span class="meta">({{ l['account_status'] }})</span>{% else %}<span class="meta">not an account</span>{% endif %}</td>
 <td><span class="badge {{ 'good' if l['status'] == 'current' else '' }}">{{ l['status'] }}</span></td>
 <td class="meta">{{ {'account': 'account facts', 'portfolio': "firm's own site", 'manual': 'entered by hand'}[l['origin']] }}{% if l['source_url']|safe_url %} · <a href="{{ l['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ l['source_url']|host }}</a>{% endif %}</td></tr>
 {% else %}<tr><td colspan="4" class="empty">No portfolio companies recorded. Run PE portfolio research from Operate.</td></tr>{% endfor %}
