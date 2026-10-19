@@ -1,6 +1,6 @@
-{# One company card, used by Leadership and Opportunities. `full` adds the "Why this score" details (Opportunities only). #}
+{# One company card, used by the Companies list view and the admin home. `full` adds the "Why this score" details (Opportunities only). #}
 {% macro opp_card(o, stage_labels, full=false) %}
-<div class="card opp">
+<div class="card">
 <div class="row"><div><span class="meta">#{{ o.rank }}</span> <a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>
 <div class="meta">{{ [o.account.industry, o.account.hq_city]|select|join(' · ') or 'no company details recorded' }}</div></div>
 <div class="tags"><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} · {{ o.result.score }}</span>
@@ -11,7 +11,7 @@
 <div class="meta">{% if o.service_line %}Best fit: <b>{{ o.service_line }}</b> · {% endif %}{% if o.signals and o.signals[0].url|safe_url %}<a href="{{ o.signals[0].url|safe_url }}" target="_blank" rel="noopener noreferrer">source: {{ o.signals[0].url|host }}</a> · {% endif %}<a href="/companies/{{ o.account.id }}">details</a></div>
 {% if full %}
 <details><summary>Why this score</summary>
-<div class="pill-row" style="margin-top:10px">{% for r in o.reasons %}<span class="badge {{ 'warm' if r.kind in ('sponsor', 'sequence') else '' }}" title="{{ r.headline }}">{{ r.label }} +{{ r.points|round(1) }}: {{ r.headline }}</span>{% endfor %}</div>
+<div class="pill-row">{% for r in o.reasons %}<span class="badge {{ 'warm' if r.kind in ('sponsor', 'sequence') else '' }}" title="{{ r.headline }}">{{ r.label }} +{{ r.points|round(1) }}: {{ r.headline }}</span>{% endfor %}</div>
 <p class="meta">{{ o.status_text }}{% if o.posted %} · posted{% endif %}{% if o.is_new %} · new since the last run{% endif %}{% if o.watching %} · you are watching it{% endif %}{% if o.stage not in ('new', 'pursuing', 'won') %} · {{ stage_labels[o.stage] }}{% endif %}{% if o.firms %} · owned by {{ o.firms|join(', ') }}{% endif %}{% if o.open_postings %} · {{ o.open_postings }} open posting{{ '' if o.open_postings == 1 else 's' }}{% if o.leadership_postings %}, {{ o.leadership_postings }} leadership{% endif %}{% endif %}</p>
 <ul class="signals">
 {% for s in o.signals %}<li><b>{{ labels[s.type] }}</b> · {{ s.event_date|fdate }} · {{ s.confidence }}{% if s.role_or_person %} · {{ s.role_or_person }}{% endif %} · {{ s.points|round(1) }} pts<br>

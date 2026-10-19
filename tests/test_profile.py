@@ -88,7 +88,7 @@ def test_sorting_filtering_and_the_list_view_keep_working(seeded):
     assert "Deepco" not in e.get("/opportunities").body.split("<tbody>")[1]                    # below Watch: not an opportunity yet
     assert 'href="/opportunities?view=list' in e.get("/opportunities").body and "sort=types" in e.get("/opportunities").body
     lst = e.get("/opportunities?view=list&industry=Insurance").body
-    assert 'class="card opp"' in lst and '<table class="matrix">' not in lst and "Wideco" not in lst.split('class="views"')[1]
+    assert 'class="why"' in lst and '<table class="matrix">' not in lst and "Wideco" not in lst.split('class="tabs"')[1]
     assert e.get("/opportunities?view=bogus&sort=bogus&industry=<x>").code == 200
 
 

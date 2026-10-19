@@ -3,7 +3,7 @@
 {% block body %}
 <div class="row"><div><h1>Watchlist</h1>
 <p class="sub">Companies you follow, and what was found for them in the last {{ days }} day{{ '' if days == 1 else 's' }} (since {{ since }}). Follow a company from its page.</p></div>
-<form method="get" action="/watchlist" class="filters"><label for="days" style="margin:0">Look back</label>
+<form method="get" action="/watchlist" class="filters"><label for="days">Look back</label>
 <select id="days" name="days">{% for d in (1, 7, 14, 30, 90) %}<option value="{{ d }}" {{ 'selected' if d == days else '' }}>{{ d }} day{{ '' if d == 1 else 's' }}</option>{% endfor %}</select>
 <button class="ghost" type="submit">Show</button></form></div>
 <p class="meta">Pipeline: {% for k, n in counts.items() %}{{ stage_labels[k] }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</p>

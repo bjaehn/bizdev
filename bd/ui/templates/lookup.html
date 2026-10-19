@@ -3,8 +3,8 @@
 {% block body %}
 <h1>Look up a company</h1>
 <p class="sub">Type any company name. If it is on your list you see where it stands; if not, you can add it and check the SEC in seconds (free), or research and scan it (about ${{ budget }} at most).</p>
-<form method="get" action="/lookup" class="filters" style="margin:12px 0 18px">
-<input type="text" name="q" value="{{ q }}" placeholder="Company name" aria-label="Company name" autofocus maxlength="120" style="font-size:1.25rem;padding:10px 12px;min-width:min(28rem,100%)">
+<form method="get" action="/lookup" class="filters">
+<input type="text" name="q" value="{{ q }}" placeholder="Company name" aria-label="Company name" autofocus maxlength="120" class="input-lg">
 <button type="submit">Look up</button></form>
 
 {% if q %}
@@ -16,30 +16,30 @@
 {% if h.state.client %}<span class="badge good">client</span> {% endif %}
 {% if h.state.stage != 'new' %}<span class="badge">{{ stage_labels[h.state.stage] }}</span> {% endif %}
 {% if h.account.status == 'active' %}<span class="badge good">ready to scan</span>{% elif h.account.status == 'excluded' %}<span class="badge bad">excluded</span>{% else %}<span class="badge warm">waiting for facts</span>{% endif %}</div></div>
-{% if h.reasons %}<p class="meta" style="margin:8px 0 0">Why not ready: {{ h.reasons|join('; ') }}.</p>{% endif %}
-{% if h.latest_signal %}<p style="margin:8px 0 0"><b>{{ labels[h.latest_signal['type']] }}</b> · {{ h.latest_signal['event_date']|fdate }}{% if h.signals_90d > 1 %} · {{ h.signals_90d }} signals in 90 days{% endif %}<br><span class="meta">{{ h.latest_signal['summary'] }}</span>
+{% if h.reasons %}<p class="meta">Why not ready: {{ h.reasons|join('; ') }}.</p>{% endif %}
+{% if h.latest_signal %}<p><b>{{ labels[h.latest_signal['type']] }}</b> · {{ h.latest_signal['event_date']|fdate }}{% if h.signals_90d > 1 %} · {{ h.signals_90d }} signals in 90 days{% endif %}<br><span class="meta">{{ h.latest_signal['summary'] }}</span>
 {% if h.latest_signal['source_url']|safe_url %}<br><a href="{{ h.latest_signal['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ h.latest_signal['source_url']|host }}</a>{% endif %}</p>
-{% elif h.account.status == 'active' %}<p class="meta" style="margin:8px 0 0">No signals found yet.</p>{% endif %}
-<p class="meta" style="margin:8px 0 0"><a href="/companies/{{ h.account.id }}">Analysis profile</a> · <a href="/accounts/{{ h.account.id }}">Manage</a></p>
+{% elif h.account.status == 'active' %}<p class="meta">No signals found yet.</p>{% endif %}
+<p class="meta"><a href="/companies/{{ h.account.id }}">Analysis profile</a> · <a href="/accounts/{{ h.account.id }}">Manage</a></p>
 {% if can_run and h.account.status != 'excluded' %}
-<form method="post" action="/lookup/run" class="filters" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ h.account.name }}">
+<form method="post" action="/lookup/run" class="filters"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ h.account.name }}">
 {% if h.account.status != 'active' %}<button class="ghost" type="submit" {{ 'disabled' if busy else '' }}>Check the SEC (free)</button>{% endif %}
 <button class="ghost" type="submit" name="deep" value="1" {{ 'disabled' if busy else '' }}>Research and scan now</button>
-<label style="margin:0"><input type="checkbox" name="confirm" value="1"> uses paid model calls, up to ${{ budget }}</label></form>
+<label><input type="checkbox" name="confirm" value="1"> uses paid model calls, up to ${{ budget }}</label></form>
 {% endif %}
 </div>
 {% endfor %}
 
 {% if not exact %}
 <div class="card">
-<h2 style="margin-top:0">{% if hits %}Not the company you meant? Add &ldquo;{{ q }}&rdquo; as a new one{% else %}Not on your list: {{ q }}{% endif %}</h2>
+<h2>{% if hits %}Not the company you meant? Add &ldquo;{{ q }}&rdquo; as a new one{% else %}Not on your list: {{ q }}{% endif %}</h2>
 {% if can_run %}
 <p class="meta">Adding it puts it on your list as a new company. A public company's size, ownership and headquarters then come straight from the SEC. Anything else needs the research step, which also searches the web for facts and news.</p>
 {% if busy %}<p class="flash err">Another job is running. Wait for it to finish, then add the company.</p>{% endif %}
 <form method="post" action="/lookup/run" class="filters"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ q }}">
 <button type="submit" {{ 'disabled' if busy else '' }}>Add and check the SEC (free)</button>
 <button class="ghost" type="submit" name="deep" value="1" {{ 'disabled' if busy else '' }}>Add, research and scan</button>
-<label style="margin:0"><input type="checkbox" name="confirm" value="1"> uses paid model calls, up to ${{ budget }}</label></form>
+<label><input type="checkbox" name="confirm" value="1"> uses paid model calls, up to ${{ budget }}</label></form>
 {% else %}<p class="meta">Add it from <a href="/accounts/new">New company</a>.</p>{% endif %}
 </div>
 {% endif %}

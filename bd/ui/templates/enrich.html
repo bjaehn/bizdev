@@ -4,8 +4,8 @@
 <h1>Enrich review</h1>
 <p class="sub">Review what <code>bd enrich</code> proposed. Each fact comes with the page it was found on; tick the ones you accept. Nothing changes until you press Apply for that account.</p>
 <form method="get" action="/enrich" class="filters">
-<label for="file" style="margin:0">Proposals file</label>
-<input type="text" id="file" name="file" value="{{ file }}" style="min-width:280px">
+<label for="file">Proposals file</label>
+<input type="text" id="file" name="file" value="{{ file }}">
 <button class="ghost" type="submit">Load</button></form>
 <p class="meta">Files are read only from under <code>{{ root }}</code>.</p>
 
@@ -31,7 +31,7 @@
 <tr><th>Apply</th><th>Fact</th><th>Now</th><th>Proposed</th><th>Evidence</th></tr>
 {% for d in p.diffs %}
 <tr><td>{% if d.status == 'same' %}<span class="meta">same</span>{% else %}<input type="checkbox" name="apply" value="{{ d.column }}" id="{{ p.account_id }}-{{ d.column }}" {{ 'checked' if d.status == 'new' else '' }} aria-label="Apply {{ d.column }}">{% endif %}</td>
-<td><label for="{{ p.account_id }}-{{ d.column }}" style="margin:0;color:var(--ink)">{{ d.column }}</label></td>
+<td><label for="{{ p.account_id }}-{{ d.column }}">{{ d.column }}</label></td>
 <td>{{ d.current|fact(d.column) }}</td>
 <td><b>{{ d.proposed|fact(d.column) }}</b>{% if d.status == 'conflict' %}<br><span class="badge warm">differs from a known value</span>{% endif %}</td>
 <td>{% if d.evidence_url|safe_url %}<a href="{{ d.evidence_url|safe_url }}" target="_blank" rel="noopener noreferrer">source</a>{% else %}<span class="meta">none given</span>{% endif %}</td></tr>

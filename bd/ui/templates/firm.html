@@ -5,7 +5,7 @@
 <p class="sub">{{ firm['domain'] or 'website not found yet' }}{% if firm['hq_city'] %} · {{ firm['hq_city'] }}{% endif %} · <span class="badge {{ 'good' if firm['status'] == 'active' else 'bad' }}">{{ firm['status'] }}</span>
  · origin {{ firm['origin'] }}</p>{% endblock %}
 {% block body %}
-<div class="row" style="justify-content:flex-end"><form method="post" action="/firms/{{ firm['id'] }}/status"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="row end"><form method="post" action="/firms/{{ firm['id'] }}/status"><input type="hidden" name="csrf" value="{{ csrf }}">
 {% if firm['status'] == 'active' %}<input type="hidden" name="status" value="excluded"><button class="danger" type="submit">Exclude firm</button>
 {% else %}<input type="hidden" name="status" value="active"><button type="submit">Make active</button>{% endif %}</form></div>
 {% if firm['status'] == 'excluded' %}<div class="flash err">An excluded firm is not scanned and its news no longer lifts any score.</div>{% endif %}

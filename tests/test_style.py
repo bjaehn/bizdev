@@ -52,14 +52,14 @@ def test_admin_pages_have_no_header_band_and_keep_their_own_shell(seeded):
 
 def test_the_login_page_is_a_centred_card_without_a_band(app_env):  # noqa: F811
     body = call(app_env.app, "GET", "/login").body
-    assert 'class="card login"' in body and "<h1" not in band(body) and "Sign in" in body
+    assert 'class="card card--narrow"' in body and "<h1" not in band(body) and "Sign in" in body
 
 
 def test_this_week_shows_four_numbers_that_match_the_page(seeded):
     e, a = seeded
     body = e.get("/week").body
     assert "<b>1</b><span>Hot or Warm now</span>" in body and "<b>3</b><span>new signals, last 7 days</span>" in body
-    assert 'class="tile hot"' in body and 'class="tile gd"' in body and 'class="tile ac"' in body
+    assert 'class="tile hot"' in body and 'class="tile good"' in body and 'class="tile accent"' in body
     assert "<b>1</b><span>company you track</span>" in body                                      # the one watched company
 
 
@@ -77,4 +77,4 @@ def test_the_stylesheet_has_light_dark_phone_and_print_rules_and_no_script(seede
     e, a = seeded
     css = e.get("/week").body.split("<style>")[1].split("</style>")[0]
     assert "prefers-color-scheme:dark" in css and "max-width:640px" in css and "@media print" in css
-    assert "<script" not in e.get("/week").body
+    assert "<script" not in e.get("/week").body and 'class="auth"' not in e.get("/week").body

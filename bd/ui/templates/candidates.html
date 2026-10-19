@@ -14,7 +14,7 @@
 <td>{% if c['source_url']|safe_url %}<a href="{{ c['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ c['source_url']|host }}</a>{% endif %}<br><span class="meta">{{ c['found_date'] }}</span></td>
 <td>{% if c['status'] == 'queued' %}
 <form method="post" action="/candidates/{{ c['id'] }}/accept"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Add</button></form>
-<form method="post" action="/candidates/{{ c['id'] }}/reject" style="margin-top:6px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Reject</button></form>{% endif %}</td></tr>
+<form method="post" action="/candidates/{{ c['id'] }}/reject"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Reject</button></form>{% endif %}</td></tr>
 {% else %}<tr><td colspan="7" class="empty">Nothing found yet. Run Discover from the Operate page.</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

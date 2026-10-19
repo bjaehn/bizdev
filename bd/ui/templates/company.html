@@ -3,7 +3,7 @@
 {% block hero %}<p class="meta noprint"><a href="/week">← This week</a> · <a href="/opportunities">All companies</a> · <a href="/companies/{{ d.a.id }}/text">Plain-text version</a> · Print (Save as PDF) · <a href="/accounts/{{ d.a.id }}">Manage (Admin)</a></p>
 <h1>{{ d.a.name }}</h1>
 <p class="sub">{{ d.facts or 'No company details on file' }}</p>
-<div class="tags">{% if d.opp %}<span class="badge {{ 'hot' if d.opp.result.band == 'Hot' else ('warm' if d.opp.result.band == 'Warm' else '') }}" style="font-size:14px">{{ d.opp.result.band }} · {{ d.opp.result.score }}</span>
+<div class="tags">{% if d.opp %}<span class="badge {{ 'hot' if d.opp.result.band == 'Hot' else ('warm' if d.opp.result.band == 'Warm' else '') }}">{{ d.opp.result.band }} · {{ d.opp.result.score }}</span>
 {% if d.opp.delta is not none and d.opp.delta != 0 %}<span class="badge {{ 'good' if d.opp.delta > 0 else 'bad' }}">{{ '+' if d.opp.delta > 0 }}{{ d.opp.delta }} since last run</span>{% endif %}{% else %}<span class="badge">not scored</span>{% endif %}
 {% if d.state.client %}<span class="badge good">client</span>{% endif %}
 {% if d.state.watching %}<span class="badge">tracking</span>{% endif %}
@@ -11,16 +11,16 @@
 {% if d.a.status != 'active' %}<span class="badge warm">needs facts</span>{% endif %}</div>{% endblock %}
 {% block body %}
 {% set back = '/companies/' ~ d.a.id %}
-<div class="onepager">
+<div class="onepager stack">
 <h2>The short version</h2>
 <div class="card">
-{% if d.opp and d.opp.why_now %}<p class="why" style="margin-top:0"><b>Why now:</b> {{ d.opp.why_now }}</p>
-{% if d.signs %}<p style="margin:0 0 6px">{{ d.signs }}.</p>{% endif %}
-{% if d.opp.service_line %}<p style="margin:0 0 6px">Best fit: <b>{{ d.opp.service_line }}</b>.</p>{% endif %}
-{% elif d.opp %}<p style="margin-top:0">{% if d.signs %}{{ d.signs }}. {% endif %}The signals are listed below.</p>
-{% else %}<p style="margin-top:0">This company has not been scored yet{% if d.a.status != 'active' %}: it is waiting for basic facts before it is scanned{% endif %}.</p>{% endif %}
-{% if d.missing %}<p class="meta" style="margin:0">Not on file: {{ d.missing|join(', ') }}.</p>{% endif %}
-<p class="meta" style="margin:6px 0 0">Built only from the sourced signals below. Research only: no outreach advice.</p></div>
+{% if d.opp and d.opp.why_now %}<p class="why"><b>Why now:</b> {{ d.opp.why_now }}</p>
+{% if d.signs %}<p>{{ d.signs }}.</p>{% endif %}
+{% if d.opp.service_line %}<p>Best fit: <b>{{ d.opp.service_line }}</b>.</p>{% endif %}
+{% elif d.opp %}<p>{% if d.signs %}{{ d.signs }}. {% endif %}The signals are listed below.</p>
+{% else %}<p>This company has not been scored yet{% if d.a.status != 'active' %}: it is waiting for basic facts before it is scanned{% endif %}.</p>{% endif %}
+{% if d.missing %}<p class="meta">Not on file: {{ d.missing|join(', ') }}.</p>{% endif %}
+<p class="meta">Built only from the sourced signals below. Research only: no outreach advice.</p></div>
 
 <h2>What happened</h2>
 {% if d.signals %}
@@ -28,7 +28,7 @@
 {% for s in d.signals[:12] %}<li><span class="meta">{{ s['event_date']|fdate }}</span> · <b>{{ labels[s['type']] }}</b>{% if s['confidence'] != 'High' %} <span class="meta">· {{ s['confidence'] }} confidence</span>{% endif %}<br>
 {{ s['summary'] }}{% if s['role_or_person'] %} <span class="meta">({{ s['role_or_person'] }})</span>{% endif %}<br>
 {% if s['source_url']|safe_url %}<a href="{{ s['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s['source_url']|host }}</a> {% endif %}<span class="meta">{{ s['source_type']|replace('_', ' ') }}</span></li>{% endfor %}
-</ul>{% if d.signals|length > 12 %}<p class="meta" style="margin:8px 0 0">Showing the 12 most recent of {{ d.signals|length }}.</p>{% endif %}</div>
+</ul>{% if d.signals|length > 12 %}<p class="meta">Showing the 12 most recent of {{ d.signals|length }}.</p>{% endif %}</div>
 {% else %}<div class="card empty">Nothing found yet. Quiet can mean nothing is happening, or that the sources do not cover this company.</div>{% endif %}
 
 {% if d.firms or d.postings %}<h2>Context</h2>
@@ -39,34 +39,34 @@
 
 <h2>The last 180 days</h2>
 {% if d.timeline %}<div class="card">{{ d.timeline|safe }}
-<p class="meta" style="margin:6px 0 0">{% for label, color in d.legend %}<span style="color:{{ color }}">●</span> {{ label }}{{ '  ' if not loop.last }} {% endfor %}· paler dots are Medium confidence{% if d.outside_window %} · {{ d.outside_window }} older signal{{ '' if d.outside_window == 1 else 's' }} not shown{% endif %}</p></div>
+<p class="meta">{% for label, color in d.legend %}<span class="dot" style="--c:{{ color }}">●</span> {{ label }}{{ '  ' if not loop.last }} {% endfor %}· paler dots are Medium confidence{% if d.outside_window %} · {{ d.outside_window }} older signal{{ '' if d.outside_window == 1 else 's' }} not shown{% endif %}</p></div>
 {% else %}<div class="card empty">No signals in the last 180 days.</div>{% endif %}
 
-{% if d.explain and d.explain.parts %}<details class="card" style="margin-top:14px"><summary><b>How the score is built</b> <span class="meta">({{ d.opp.result.band }}, {{ d.explain.score }})</span></summary>
-<div style="margin-top:10px">{{ d.explain.svg|safe }}
-<table style="margin-top:12px"><tbody>
-{% for p in d.explain.parts %}<tr><td style="width:22px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:{{ p.color }}"></span></td>
+{% if d.explain and d.explain.parts %}<details class="card"><summary><b>How the score is built</b> <span class="meta">({{ d.opp.result.band }}, {{ d.explain.score }})</span></summary>
+<div>{{ d.explain.svg|safe }}
+<table><tbody>
+{% for p in d.explain.parts %}<tr><td class="shrink"><span class="swatch sq" style="--c:{{ p.color }}"></span></td>
 <td><b>{{ p.label }}</b>{% if p.note %}<br><span class="meta">{{ p.note }}</span>{% endif %}</td><td class="num">+{{ p.points|round(1) }}</td></tr>{% endfor %}
 <tr><td></td><td><b>Score</b>{% if d.explain.capped %} <span class="meta">(total {{ d.explain.raw|round|int }}, capped)</span>{% endif %}</td><td class="num"><b>{{ d.explain.score }}</b></td></tr>
 </tbody></table>
-<p style="margin:12px 0 0">{{ d.explain.sentence }}</p>
-<p class="meta" style="margin:6px 0 0">Each signal earns points by its type, how recent it is and how trustworthy its source is; further signals of the same type count half. Computed by plain code from the stored signals; no model is involved.{% if d.run_date %} Scored {{ d.run_date|fdate }}.{% endif %}</p></div></details>{% endif %}
+<p>{{ d.explain.sentence }}</p>
+<p class="meta">Each signal earns points by its type, how recent it is and how trustworthy its source is; further signals of the same type count half. Computed by plain code from the stored signals; no model is involved.{% if d.run_date %} Scored {{ d.run_date|fdate }}.{% endif %}</p></div></details>{% endif %}
 
 <h2 class="noprint">Track this company</h2>
 <div class="card noprint">
-<p class="meta" style="margin:0 0 10px">{% if d.state.watching %}You are tracking this company. It is listed on <a href="/week">This week</a> with anything new found about it.{% else %}Track a company to see what is new about it on <a href="/week">This week</a>.{% endif %}</p>
-<div class="filters" style="margin:0">
-<form method="post" action="/accounts/{{ d.a.id }}/watch" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+<p class="meta">{% if d.state.watching %}You are tracking this company. It is listed on <a href="/week">This week</a> with anything new found about it.{% else %}Track a company to see what is new about it on <a href="/week">This week</a>.{% endif %}</p>
+<div class="filters">
+<form method="post" action="/accounts/{{ d.a.id }}/watch"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
 <input type="hidden" name="on" value="{{ '0' if d.state.watching else '1' }}"><button type="submit" class="{{ 'ghost' if d.state.watching else '' }}">{{ 'Stop tracking' if d.state.watching else 'Track this company' }}</button></form>
-<form method="post" action="/accounts/{{ d.a.id }}/stage" class="filters" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
-<label for="stage" style="margin:0">Where it stands</label>
+<form method="post" action="/accounts/{{ d.a.id }}/stage" class="filters"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+<label for="stage">Where it stands</label>
 <select id="stage" name="stage">{% for k in stages %}<option value="{{ k }}" {{ 'selected' if d.state.stage == k else '' }}>{{ stage_labels[k] }}</option>{% endfor %}</select>
 <button class="ghost" type="submit">Save</button></form></div>
-<form method="post" action="/accounts/{{ d.a.id }}/note" style="margin-top:12px"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
-<label for="body">Add a note</label><textarea id="body" name="body" rows="2" maxlength="2000" style="width:100%"></textarea>
+<form method="post" action="/accounts/{{ d.a.id }}/note"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
+<label for="body">Add a note</label><textarea id="body" name="body" rows="2" maxlength="2000"></textarea>
 <button class="ghost" type="submit">Add note</button></form></div>
 {% if d.notes %}<h2>Your notes</h2><div class="card"><ul class="plain">{% for n in d.notes %}<li><span class="meta">{{ n['ts'][:10] }}{% if n['kind'] == 'stage' %} · moved to <b>{{ stage_labels[n['stage']] }}</b>{% endif %}</span>{% if n['body'] %}<br>{{ n['body'] }}{% endif %}</li>{% endfor %}</ul></div>{% endif %}
 
-<p class="meta" style="margin-top:24px">Built {{ d.today }} from public sources by BD Signals. Every signal above links to the page it came from; a link is shown only if the page was retrieved and resolved when found.</p>
+<p class="meta">Built {{ d.today }} from public sources by BD Signals. Every signal above links to the page it came from; a link is shown only if the page was retrieved and resolved when found.</p>
 </div>
 {% endblock %}

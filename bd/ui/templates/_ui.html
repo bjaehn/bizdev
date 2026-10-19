@@ -1,0 +1,19 @@
+{# Shared markup for design-system components used on more than one page. Styling lives only in design.css. #}
+{% macro band_badge(o) %}<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} {{ o.result.score }}</span>{% endmacro %}
+
+{# A ranked company entry: rank, name, badges, why now, how many kinds of signs agree, and the link to its brief. #}
+{% macro company_entry(o, rank, extra_badges=true) %}
+<div class="entry {{ 'is-hot' if o.result.band == 'Hot' else ('is-warm' if o.result.band == 'Warm' else '') }}"><div class="entry-rank">{{ rank }}</div><div class="entry-main">
+<div class="entry-head"><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>{{ band_badge(o) }}
+{% if o.client %}<span class="badge good">client</span>{% endif %}
+{% if extra_badges %}{% if o.is_new %}<span class="badge good">new this week</span>{% elif o.delta is not none and o.delta >= 5 %}<span class="badge good">+{{ o.delta }}</span>{% endif %}
+{% if o.watching %}<span class="badge">tracking</span>{% endif %}{% endif %}</div>
+<div class="meta">{{ [o.account.industry, o.account.hq_city, (o.account.revenue|money ~ ' revenue') if o.account.revenue else none]|select|join(' · ') }}</div>
+{% if o.why_now %}<p class="why"><b>Why now:</b> {{ o.why_now }}</p>{% endif %}
+<p class="meta">{{ signs_line(o.result) }}</p>
+<div><a class="btn" href="/companies/{{ o.account.id }}">Open brief →</a></div>
+</div></div>
+{% endmacro %}
+
+{# The four-step shade ramp used to explain heat/matrix cells. #}
+{% macro shade_legend() %}{% for v in (0.12, 0.35, 0.6, 0.9) %}<span class="swatch shade" style="--v:{{ v }}"></span>{% endfor %}{% endmacro %}

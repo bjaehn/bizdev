@@ -10,18 +10,18 @@
 <span class="badge {{ 'good' if fit.verdict == 'pass' else ('warm' if fit.verdict == 'unknown' else 'bad') }}">{{ a.status|status_label }}</span></div></div>
 {% if a.status != 'active' %}<div class="flash {{ 'err' if a.status == 'excluded' else '' }}">{{ 'Not scanned: ' if a.status == 'excluded' else 'Not scanned yet: ' }}{{ fit.reasons|join('; ') or 'waiting for facts' }}. Open <b>Edit facts</b> below to fill in what is missing.</div>{% endif %}
 
-{% if headline %}<div class="card"><h2 style="margin-top:0">Why now</h2>
-<p class="why" style="margin-top:0">{{ headline }}</p>
-<p class="meta" style="margin:0">{% if brief and brief['best_service_line'] %}Best fit: <b>{{ brief['best_service_line'] }}</b> · {% endif %}<a href="/companies/{{ a.id }}">Full profile</a>{% if scores %} · scored {{ scores[0]['run_date']|fdate }}{% endif %}</p></div>{% endif %}
+{% if headline %}<div class="card"><h2>Why now</h2>
+<p class="why">{{ headline }}</p>
+<p class="meta">{% if brief and brief['best_service_line'] %}Best fit: <b>{{ brief['best_service_line'] }}</b> · {% endif %}<a href="/companies/{{ a.id }}">Full profile</a>{% if scores %} · scored {{ scores[0]['run_date']|fdate }}{% endif %}</p></div>{% endif %}
 
-<div class="card"><div class="filters" style="margin:0">
-<form method="post" action="/accounts/{{ a.id }}/stage" class="filters" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf }}">
-<label for="stage" style="margin:0">Stage</label>
+<div class="card"><div class="filters">
+<form method="post" action="/accounts/{{ a.id }}/stage" class="filters"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="stage">Stage</label>
 <select id="stage" name="stage">{% for k in stages %}<option value="{{ k }}" {{ 'selected' if state.stage == k else '' }}>{{ stage_labels[k] }}</option>{% endfor %}</select>
 <button class="ghost" type="submit">Save</button></form>
-<form method="post" action="/accounts/{{ a.id }}/watch" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf }}">
+<form method="post" action="/accounts/{{ a.id }}/watch"><input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="on" value="{{ '0' if state.watching else '1' }}"><button class="ghost" type="submit">{{ 'Stop watching' if state.watching else 'Watch this company' }}</button></form>
-<form method="post" action="/accounts/{{ a.id }}/client" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf }}">
+<form method="post" action="/accounts/{{ a.id }}/client"><input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="on" value="{{ '0' if state.client else '1' }}"><button class="ghost" type="submit">{{ 'Not a client' if state.client else 'Mark as an existing client' }}</button></form>
 </div></div>
 
@@ -35,47 +35,47 @@
 </ul></div>
 {% else %}<div class="card empty">No signals stored for this company yet.</div>{% endif %}
 
-{% if a.origin == 'discovered' and not a.reviewed %}<div class="card"><h2 style="margin-top:0">Found by market research</h2>
+{% if a.origin == 'discovered' and not a.reviewed %}<div class="card"><h2>Found by market research</h2>
 <p class="meta">Discovered {{ a.discovered_at or '' }}{% if a.source_url|safe_url %} via <a href="{{ a.source_url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ a.source_url|host }}</a>{% endif %}. Not yet reviewed: it is scanned only up to a per-run limit.</p>
 <form method="post" action="/accounts/{{ a.id }}/reviewed"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Mark reviewed</button></form></div>{% endif %}
 
 <details class="card" {{ 'open' if errors else '' }}><summary>Edit facts</summary>
-<p class="meta" style="margin:8px 0 0">{{ 'Ready to scan.' if fit.verdict == 'pass' else ('Not ready: ' ~ (fit.reasons|join('; ')) ~ '.') }}</p>
+<p class="meta">{{ 'Ready to scan.' if fit.verdict == 'pass' else ('Not ready: ' ~ (fit.reasons|join('; ')) ~ '.') }}</p>
 {{ errors_box(errors) }}
 {{ facts_form(form, '/accounts/' ~ a.id, 'Save facts') }}
 </details>
 
 <details class="card"><summary>Notes{% if notes %} ({{ notes|length }}){% endif %}</summary>
-<form method="post" action="/accounts/{{ a.id }}/note" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf }}">
-<label for="body">Add a note</label><textarea id="body" name="body" rows="2" maxlength="2000" style="width:100%"></textarea>
+<form method="post" action="/accounts/{{ a.id }}/note"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="body">Add a note</label><textarea id="body" name="body" rows="2" maxlength="2000"></textarea>
 <button class="ghost" type="submit">Add note</button></form>
 {% if notes %}<ul class="signals">{% for n in notes %}<li><span class="meta">{{ n['ts'][:10] }}{% if n['kind'] == 'stage' %} · moved to <b>{{ stage_labels[n['stage']] }}</b>{% if n['score_at'] is not none %} at score {{ n['score_at'] }}{% endif %}{% endif %}</span>{% if n['body'] %}<br>{{ n['body'] }}{% endif %}</li>{% endfor %}</ul>{% endif %}
 </details>
 
 <details class="card"><summary>Open job postings ({{ postings|length }})</summary>
-{% if postings %}<div class="wrap" style="margin-top:8px"><table>
+{% if postings %}<div class="wrap"><table>
 <tr><th>Posted</th><th>Title</th><th>Area</th><th>Level</th></tr>
 {% for p in postings %}<tr><td>{{ p['posted_date']|fdate }}</td>
 <td>{% if p['url']|safe_url %}<a href="{{ p['url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ p['title'] }}</a>{% else %}{{ p['title'] }}{% endif %}{% if p['interim'] %} <span class="badge warm">interim</span>{% endif %}</td>
 <td>{{ p['theme']|replace('_', ' ') }}</td><td>{{ p['seniority']|replace('_', ' ') }}{% if p['seniority'] in lead %} <span class="badge hot">leadership</span>{% endif %}</td></tr>{% endfor %}
 </table></div>
 <p class="meta">{% if a.ats_board %}Read daily from the company's own {{ a.ats_provider }} job board.{% else %}Found by search; the job board has not been identified yet.{% endif %}</p>
-{% else %}<p class="meta" style="margin:8px 0 0">No open postings recorded.{% if not a.ats_board %} The job board is identified the first time a scan finds a posting on Greenhouse, Lever or Ashby.{% endif %}</p>{% endif %}
+{% else %}<p class="meta">No open postings recorded.{% if not a.ats_board %} The job board is identified the first time a scan finds a posting on Greenhouse, Lever or Ashby.{% endif %}</p>{% endif %}
 </details>
 
 {% if firms %}<details class="card"><summary>Private equity owner</summary>
-<p style="margin:8px 0 0">{% for f in firms %}<a href="/firms/{{ f.id }}">{{ f.name }}</a>{% if f.link_status == 'exited' %} <span class="badge">exited</span>{% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
+<p>{% for f in firms %}<a href="/firms/{{ f.id }}">{{ f.name }}</a>{% if f.link_status == 'exited' %} <span class="badge">exited</span>{% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>
 <p class="meta">The owner's own news (a new fund, an exit, an operating-partner hire) adds a small, capped lift to this company's score, only when it already has a signal of its own.</p></details>{% endif %}
 
 <details class="card"><summary>History</summary>
-<h3 style="font-size:15px;margin:10px 0 6px">Score history</h3>
+<h3>Score history</h3>
 {% if scores %}
 <div class="wrap"><table>
 <tr><th>Scored on</th><th class="num">Score</th><th>Band</th><th>Posted</th><th>Calculation</th></tr>
 {% for s in scores %}<tr><td>{{ s['run_date'] }}</td><td class="num">{{ s['score'] }}</td><td>{{ s['band'] }}</td><td>{{ ('yes · cooldown until ' ~ s['cooldown_until']) if s['posted'] else 'no' }}</td><td class="meta">{{ s['rationale'] }}</td></tr>{% endfor %}
 </table></div>
 {% else %}<p class="meta">Not scored yet.</p>{% endif %}
-<h3 style="font-size:15px;margin:14px 0 6px">Recent changes</h3>
+<h3>Recent changes</h3>
 {% if history %}
 <div class="wrap"><table>
 <tr><th>When (UTC)</th><th>By</th><th>What</th><th>Was</th><th>Now</th></tr>

@@ -3,7 +3,7 @@
 {% block hero %}<h1>Monday card</h1>
 <p class="sub">What the Monday card would post (the top of <a href="/week">This week's list</a> that also passes the posting gates): Hot or Warm accounts with a High-confidence signal in the last 90 days, not in cooldown.</p>{% endblock %}
 {% block body %}
-{% if dates %}<form method="get" action="/monday" class="filters"><label for="date" style="margin:0">Scored on</label>
+{% if dates %}<form method="get" action="/monday" class="filters"><label for="date">Scored on</label>
 <select id="date" name="date">{% for d in dates %}<option value="{{ d }}" {{ 'selected' if d == run_date else '' }}>{{ d }}</option>{% endfor %}</select>
 <button class="ghost" type="submit">Show</button></form>{% endif %}
 
@@ -22,7 +22,7 @@
 <div><span class="badge {{ 'hot' if l.result.band == 'Hot' else 'warm' }}">{{ l.result.band }} · {{ l.result.score }}</span>
 {% if c.posted %}<span class="badge good">posted</span>{% endif %}</div>
 </div>
-<p style="margin:10px 0 2px">{{ c.why_now }}</p>
+<p>{{ c.why_now }}</p>
 <div class="meta">{{ c.why_source }} · best fit: <b>{{ c.service_line }}</b></div>
 <ul class="signals">
 {% for s in l.signals %}

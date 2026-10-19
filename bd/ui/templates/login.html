@@ -1,17 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Sign in{% endblock %}
-{% block head %}<style>
-body{background:linear-gradient(135deg,#161b4a 0%,#2a3aa8 62%,#3b82f6 135%) fixed;min-height:100vh}
-header{background:transparent}
-footer{color:#c9d2ff}
-.login{max-width:420px;margin:48px auto;padding:28px 28px 20px;background:#fff;color:#0f172a}
-.login label{color:#667085}
-.login input{background:#fff;color:#0f172a}
-.login .sub{color:#667085}
-.login a{color:#3b4fe4}
-</style>{% endblock %}
+{% set auth = true %}
 {% block body %}
-<div class="card login">
+<div class="card card--narrow">
 <h1>Sign in</h1>
 <p class="sub">SEI Chicago BD Signals</p>
 {% if error %}<div class="errors">{{ error }}</div>{% endif %}

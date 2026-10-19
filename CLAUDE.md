@@ -1,0 +1,50 @@
+# SEI Chicago BD Signal Agent: project memory
+
+Each week this finds Chicagoland companies showing demand for SEI-type management consulting and ranks them. Claude extracts facts from
+public sources; **code scores** them deterministically. A server-rendered web app (stdlib WSGI + Jinja2, SQLite) lets people read the
+ranking and lets an admin run updates. Deployed on Railway from `main`.
+
+## Commands
+- Tests: `.venv/bin/python -m pytest -q` (must stay green; about 930 tests, about 50 seconds).
+- UI locally: `bd ui` (needs `pip install -e '.[ui]'`). Screenshots: Playwright Chromium at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
+- Everything the app can run is a whitelisted `python -m bd.cli` subprocess (see `bd/jobs.py`).
+
+## Hard rules (do not break)
+- **Do not invent data.** Every sentence on a page is built from stored, sourced signals or counts. Every source URL must have been retrieved and resolve.
+- **Scoring is deterministic code** (`bd/scoring.py`, weights in `config.yaml`); a model never sets a score.
+- **Research only**: no outreach copy, no "what to say". No LinkedIn or paywalled sites. The UI cannot post to Teams.
+- **No JavaScript.** The CSP forbids scripts. Secrets and the model name come from environment variables only.
+- Analysis (what people read) and Admin (everything that maintains data) are separate areas on one login; keep them apart.
+
+## Design system (one stylesheet, defined once, applied globally)
+**All styling lives in `bd/ui/templates/design.css`**, included once by `base.html`. Its header comment is the component catalogue; read it
+before touching any template. The rules are enforced by `tests/test_design_system.py`:
+
+1. **No per-page CSS.** No style blocks and no `style=""` attributes in any template. The only allowed inline style is passing a data
+   value to a component as a custom property (`style="--v:.4"`, `style="--w:60%"`, `style="--c:{{ color }}"`).
+2. **Use components, do not invent classes.** Every class in a template must be defined in `design.css`. Need a new look or a new
+   element? Add or extend a component **in `design.css`** so every page gets it; never solve it in one template.
+3. **Tokens only.** Colours, font sizes, spacing (`--s1..--s6`), radii and shadows come from the tokens (section 1). Hex colours
+   appear only in the two token blocks (light and dark). Dark mode, phone and print are handled in the stylesheet, not per page.
+4. **Rhythm, not margins.** Vertical spacing comes from the stack rule (`main`, `.stack`, `.card`, `.prose`, `.entry-main`), so do not
+   add margins to elements. Wrap a group in `.stack` if it needs the rhythm.
+5. **Repeated markup is a macro** in `bd/ui/templates/_ui.html` (for example `company_entry`), not copy-pasted HTML.
+6. Charts are SVG built in Python (`bd/charts.py`, `bd/timeline.py`); they use the same tokens (`var(--hotbg)` and so on), never their own palette
+   (the timeline's categorical signal-type colours are the one deliberate exception).
+
+Look: a coloured header band (`.hero`) carries each analysis page's title; white `.card`s; solid band `.badge`s; `.tiles` for big numbers;
+`.entry` for ranked list items; `table.matrix` + `.cell` for company-by-signal grids. Admin has a darker header and a sidebar in the same system.
+
+To change the look of the whole app: edit the tokens or one component in `design.css`. To add a page: build it from existing components.
+
+## Where things are
+- `bd/ui/app.py` routes and handlers; `bd/ui/templates/` pages; `design.css` the design system; `_ui.html` / `_cards.html` shared markup.
+- `bd/week.py` the This week home; `bd/matrix.py` the signal matrix; `bd/profile.py` the company brief and its plain-text copy;
+  `bd/priority.py` the priority chart data; `bd/market.py` the Market view data; `bd/charts.py` SVG charts.
+- Analysis nav is This week, Companies, Reports. `ADMIN_GROUPS` in `app.py` lists the Admin pages.
+
+## Working agreements
+- Open pull requests as drafts and subscribe to their activity; the user merges. Never merge unless explicitly told to.
+- Confirm with a question before a big change of direction; show rendered options (screenshots) for visual choices.
+- Report outcomes plainly, including mistakes and what was not verified (for example "seen on demo data, not live data").
+- New behaviour comes with tests; update the README when behaviour or structure changes.
