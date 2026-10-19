@@ -1,7 +1,8 @@
 # SEI Chicago BD Signal Agent: project memory
 
-Each week this finds Chicagoland companies showing demand for SEI-type management consulting and ranks them. Claude extracts facts from
-public sources; **code scores** them deterministically. A server-rendered web app (stdlib WSGI + Jinja2, SQLite) lets people read the
+Each week this finds Chicagoland companies showing demand for SEI-type management consulting and ranks them. **The product is signals**:
+leadership changes, hiring, press and media, company events and technology. Company facts (SEC figures, size, ownership) are background and never
+gate a scan. Claude extracts signals from public sources; **code scores** them and **code names the theme** they add up to, deterministically. A server-rendered web app (stdlib WSGI + Jinja2, SQLite) lets people read the
 ranking and lets an admin run updates. Deployed on Railway from `main`.
 
 ## Commands
@@ -12,6 +13,9 @@ ranking and lets an admin run updates. Deployed on Railway from `main`.
 ## Hard rules (do not break)
 - **Do not invent data.** Every sentence on a page is built from stored, sourced signals or counts. Every source URL must have been retrieved and resolve.
 - **Scoring is deterministic code** (`bd/scoring.py`, weights in `config.yaml`); a model never sets a score.
+- **Signals first, facts second.** Everything not *known* out of scope is scanned (`bd/fit_gate.py`: only an exclusion, a known non-Chicagoland location or a known
+  below-floor size skips a company; unknown facts mean "unverified", never "held"). The paid signal scan comes before facts research and discovery in Update,
+  so facts never use up the spending limit signals need. Themes and the feed are code rules over stored signals (`bd/insights.py`, `bd/feed.py`); no model-written prose.
 - **Research only**: no outreach copy, no "what to say". No LinkedIn or paywalled sites. The UI cannot post to Teams.
 - **No JavaScript.** The CSP forbids scripts. Secrets and the model name come from environment variables only.
 - Analysis (what people read) and Admin (everything that maintains data) are separate areas on one login; keep them apart.
@@ -39,9 +43,10 @@ To change the look of the whole app: edit the tokens or one component in `design
 
 ## Where things are
 - `bd/ui/app.py` routes and handlers; `bd/ui/templates/` pages; `design.css` the design system; `_ui.html` / `_cards.html` shared markup.
-- `bd/week.py` the This week home; `bd/readiness.py` why the list is thin (Admin Home); the viewer lookup is the free `find` job in `bd/jobs.py` + `/find` in `app.py`; `bd/matrix.py` the signal matrix; `bd/profile.py` the company brief and its plain-text copy;
+- `bd/week.py` the This week home; `bd/insights.py` opportunity themes (rules over signal types, with evidence); `bd/feed.py` the signal feed (`/signals`); `bd/signal_coverage.py` how much
+  of the list has been scanned (Admin Home); the viewer lookup is the capped (`$1`) `find` signal-scan job in `bd/jobs.py` + `/find` in `app.py`; `bd/matrix.py` the signal matrix; `bd/profile.py` the company brief and its plain-text copy;
   `bd/priority.py` the priority chart data; `bd/market.py` the Market view data; `bd/charts.py` SVG charts.
-- Analysis nav is This week, Companies, Reports. `ADMIN_GROUPS` in `app.py` lists the Admin pages.
+- Analysis nav is This week, Signals, Companies, Reports. `ADMIN_GROUPS` in `app.py` lists the Admin pages.
 
 ## Working agreements
 - Open pull requests as drafts and subscribe to their activity; the user merges. Never merge unless explicitly told to.

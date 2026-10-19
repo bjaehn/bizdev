@@ -13,10 +13,10 @@ sources only: no LinkedIn, no paywalled sites. For the external services and dat
 ## How it works
 
 ```
-accounts.csv ──bd seed──► database ──► fit gate ──► scan (leadership, events, edgar) ──► score ──► shortlist ──► card ──► Teams
- exclusions.csv            pass / HOLD / fail   │                              │          │            │
-                           (unknown is held,    │ Claude + web search          │ plain    │ cooldown,  │ briefer writes one
-                            never scored)       │ extracts; CODE verifies      │ code,    │ 90-day     │ sentence; Adaptive
+accounts.csv ──bd seed──► database ──► fit gate ──► scan (leadership, hiring, press, events) ──► score ──► shortlist ──► card ──► Teams
+ exclusions.csv            out of scope?        │                              │          │            │
+                           (only a KNOWN        │ Claude + web search          │ plain    │ cooldown,  │ briefer writes one
+                            reason skips it)    │ extracts; CODE verifies      │ code,    │ 90-day     │ sentence; Adaptive
                                                 │ every source URL             │ no LLM   │ High gate  │ Card 1.4, links only
 ```
 
@@ -26,8 +26,13 @@ accounts.csv ──bd seed──► database ──► fit gate ──► scan (
 * **Fewer, better leads.** Only Hot (75+) and Warm (60-74) accounts with a High-confidence signal in the
   last 90 days are posted, at most 10, with a 4-week cooldown unless a new signal family appears or the
   score rises 15+. Low-confidence signals are stored but never scored.
-* **Nothing is guessed.** Location or size you have not verified means the account is *held for review*,
-  not scored.
+* **Signals first, facts second.** Every company on your list is scanned for leadership changes, hiring, press and
+  company events unless it is *known* to be out of scope (an exclusion, outside Chicagoland, or below the size floor).
+  A location or size that is not confirmed does not stop a scan: the company is scanned and tagged *unverified*.
+  Nothing is guessed: facts are never inferred, and an unverified company's brief says so.
+* **Themes, not prose.** What a company's signals add up to is named by fixed rules in `bd/insights.py` (for example
+  *New leadership and a hiring push*: a leadership signal and a hiring signal both found), shown with the rule and the
+  stored, sourced signals that satisfied it. No model writes it and it never changes a score.
 
 ## Setup
 
@@ -72,11 +77,11 @@ signals validated by code; none writes outreach.
 | `sec_events` | restructuring_layoffs, ma_divestiture | accounts with a CIK | **free**: no model. Reads the company's SEC filing list for 8-Ks that report Item 2.05 (costs of exit or disposal activities) or Item 2.01 (completed acquisition or disposition); which items count, and what each becomes, is `config.yaml` `sec_events`. The filing is fetched and must carry the item's own heading; the summary is written by code from the item's title; dated by the report date on the filing. Each filing is read once |
 | `tech_procurement` | platform_migration, vendor_deal, rfp_match, risk_factor | every account | an RFP must have a future due date; a risk factor must be on sec.gov |
 
-**Free scans.** Three scanners make no model call: `ats` (job boards), `financials` and `sec_events` (SEC data). They go first in any scan and the spending limit never holds them back, and `Update my list` runs them over every ready company before its limited, paid scan, so a first look is never empty.
+**Free scans.** Three scanners make no model call: `ats` (job boards), `financials` and `sec_events` (SEC data). They go first in any scan and the spending limit never holds them back, and `Update my list` runs them over every company on the scan list before its limited, paid scan, so a first look is never empty. The paid signal scan comes before the work that fills in facts or finds new companies, so facts never use up the spending limit that signals need.
 
 **Open public RFPs** (`bd rfps`, the Open RFPs page) are a separate, market-level feed rather than a scanner: one search per agency group in `config.yaml` `rfps.groups` (City of Chicago, Cook County, State of Illinois, schools and universities, transit and water agencies, federal), each restricted to that group's own domains. A solicitation is kept only if its page is on those domains, was in the search results, resolves, and states a due date that has not passed. They are not tied to a company and are not scored. Part of the weekly run, and of `Update my list` only when its RFP setting is turned on (off by default); roughly six searches per run.
 
-**Data health** (`/health`, in Admin) and **Market view** (`/market`, under Reports) are read-only pages built from what past runs stored. Data health shows which scanners produced anything (and which failed or never ran), cost per scanned company, why companies are held, and how fresh the data is. Market view shows companies by band at every scoring run (a stacked-bar trend: Hot, Warm, Watch, one bar per run as that run scored them, so it also moves when companies become ready), an **industry heatmap** (signals in the last 90 days by industry and signal type; click a number to see those companies), the industry numbers with a 30-day trend, signal groups by month, sponsor activity, and the large companies with no signal in 180 days.
+**Data health** (`/health`, in Admin) and **Market view** (`/market`, under Reports) are read-only pages built from what past runs stored. Data health shows which scanners produced anything (and which failed or never ran), cost per scanned company, which facts are still unverified, and how fresh the data is. Market view shows companies by band at every scoring run (a stacked-bar trend: Hot, Warm, Watch, one bar per run as that run scored them, so it also moves when companies become ready), an **industry heatmap** (signals in the last 90 days by industry and signal type; click a number to see those companies), the industry numbers with a 30-day trend, signal groups by month, sponsor activity, and the large companies with no signal in 180 days.
 
 **Ask your data** (`/ask`, under More, hosted app only) answers a plain-English question about your own database. It runs as a job (paid-call tick, a few cents): a model writes one read-only query from the table layout, code checks and runs it on a read-only connection limited to an allow-list of tables, and a second call phrases the answer from the returned rows. The answer, the rows and the SQL are stored and shown together. Your free-text notes are not available to it. `bd ask --id N` is the command behind the button.
 
@@ -119,16 +124,17 @@ the company lists and review queues (including Look up, Existing clients and the
 
 | Page | What you can do |
 |---|---|
-| **Why the list is thin** (Admin Home) | When companies are waiting for facts, a card groups the fit gate's own reasons across them, says how many the free SEC step will try and how many need research, and how many presses of Update my list that takes at the saved settings and spending cap |
+| **Signal coverage** (Admin Home) | How many companies on the scan list have been scanned, how many have a signal in the last 90 days, how many have not been scanned yet and how many presses of Update my list that takes at the saved scan size, and what was found by kind (leadership, hiring, press, events, filings). Companies with an unconfirmed location or size are counted but never block a scan |
 | **Look up a company** | Type any name: where it stands, its score and newest signal. If it is not on the list, add it and check the SEC for free (a public company gets size, ownership, headquarters and CIK in seconds), or run the capped (`$3`) research-and-scan job for that one company. A name that fits two companies is never guessed |
 | **Existing clients** | Mark SEI clients (on a company's page, or paste a list: names are matched apart from Inc/Corp/punctuation/case, nothing is created). A client is still scanned and scored; this page shows news at clients apart from new business |
-| **This week** (home) | The weekly answer in plain words. *What changed* since the last run (companies that became Hot or Warm, big risers, new signals found); *Companies to look at* (new-business companies, strongest first, each with a one-sentence why-now, "3 kinds of signs agree: leadership, hiring, company events" and an **Open brief** link; if fewer than five are Hot or Warm the strongest Watch companies fill the list and it says so); *Existing clients with news*; *Companies you are tracking* (what is new at each in the last 14 days); *The market this week* (industries, busiest kinds of signs). A search box finds any company by name; the coverage line says how many companies were checked and how fresh the scores are |
-| **Find a company** (`/find`) | The search box on This week. Type any name: companies on the list show where they stand (score, why one is not scored yet, newest signal) with an **Open brief** link. A name not on the list can be added with a **free check**: it reads size, ownership and headquarters from SEC filings, checks the job-board feed and SEC event filings for signals, scores it, and opens its brief, in about a minute and with no model call (so no spend). Anyone signed in can run it. A private company the SEC does not list is added as waiting for facts, and the page says an admin can research it. Below Watch scores read "Below Watch" |
-| **How this works** | A one-page plain guide: the four jobs (see what to look at, prepare for one company, show the market, track a company), a short glossary (sign, kinds of signs, score, bands with the real thresholds, client), how fresh the data is, and what the tool does not do |
+| **This week** (home) | The weekly answer in plain words. Four number tiles (leadership changes, hiring signals, press and media items in the last 30 days, Hot or Warm opportunities); *Opportunities* (new-business companies, strongest first, each named by its theme with the evidence behind it, the best-fit service line, "3 kinds of signs agree: leadership, hiring, company events" and an **Open brief** link; if fewer than five are Hot or Warm the strongest Watch companies fill the list and it says so); *Newest signals* (the feed, grouped as leadership changes, hiring, press and media, company events and technology); *What changed* since the last run; *Existing clients with news*; *Companies you are tracking*; *The market this week*. A search box finds any company by name; the coverage line says how many companies were scanned and how fresh the scores are |
+| **Signals** (`/signals`) | The whole feed: every stored signal of the last 7, 30 or 90 days, newest first, filtered by kind (leadership changes, hiring, press and media, company events and technology, filings and financials). A signal reported in a press release or news article is *press and media*; one from a filing, a notice or the company's own site is a *company event*. Rumours (Low confidence) are never shown, and one event found at several sources shows once, at the most trustworthy one |
+| **Find a company** (`/find`) | The search box on This week. Type any name: companies on the list show their score and newest signal (or when they were last scanned and that nothing was found) with an **Open brief** link. A company never scanned, or a name not on the list, can be **scanned for signals**: job boards are read first (free), then the model searches for leadership changes, hiring, press and company events, capped at **$1** of model spend and started only with the confirmation tick; the page then opens its brief. Anyone signed in can run it, one job at a time. Below Watch scores read "Below Watch" |
+| **How this works** | A one-page plain guide: the jobs (see what changed, browse every signal, prepare for one company, show the market, track a company), a short glossary (sign, kinds of signs, theme, score, bands with the real thresholds, client, unverified), how fresh the data is, and what the tool does not do |
 | **Companies** | The complete ranking for comparing and searching: a **signal matrix** (one row per company scored Watch or better, one column per signal type; a cell is shaded by the points that type added, a dot means news in the last 30 days, **Types** counts how many different kinds agree), a **priority chart** (`?view=chart`: score up, revenue across on a log scale, dot size = signal types, linked to the brief; a company with no revenue on file is listed under the chart rather than drawn at a guessed size) and a card list (`?view=list`). Sort by score, types, newest signal or change; filter by name, band, industry (more filters: signal group, service line, PE-backed, new, status) |
-| **Company brief** | Open any company: a two-minute read. *The short version* (why now, how many kinds of signs agree, best-fit service line, and which basic facts are not on file), *What happened* (every dated signal with its source link), context (PE owner, open postings), the last 180 days as a timeline, and a collapsed *How the score is built* (stacked bar of points per signal type plus the stacking bonus, summing to the score). **Plain-text version** (`/companies/<id>/text`) is the same brief to paste into an email; the page also prints cleanly (Save as PDF). **Track this company**, a stage (New, Reviewing, Pursuing, Passed, Won, Lost) and notes are set on the page; tracked companies appear on This week with what is new. "Manage (Admin)" opens the page where facts are edited |
+| **Company brief** | Open any company: a two-minute read. *What this adds up to* (the main theme with its rule, best-fit service line and the signals behind it, then the other themes that also match), *What happened* (every dated signal with its source link), the last 180 days as a timeline, *Background* (company facts, PE owner, open postings, and a note when location or size is unconfirmed) and a collapsed *How the score is built* (stacked bar of points per signal type plus the stacking bonus, summing to the score). A company not yet scanned says so and offers the capped scan. **Plain-text version** (`/companies/<id>/text`) is the same brief to paste into an email; the page also prints cleanly (Save as PDF). **Track this company**, a stage (New, Reviewing, Pursuing, Passed, Won, Lost) and notes are set on the page; tracked companies appear on This week with what is new. "Manage (Admin)" opens the page where facts are edited |
 | **Monday card** | The part of the ranking the weekly run would post (Hot or Warm, a High-confidence signal in the last 90 days, not in cooldown, capped): score, why-now, every source link, and a "how the score was calculated" table |
-| **Accounts** | List and search; see why an account is held; edit its facts (blank = unknown) and see the fit-gate verdict at once; add an account |
+| **Accounts** | List and search; see which companies are scanned, unverified (scanned, with a fact still unconfirmed) or out of scope and why; edit facts (blank = unknown) and see the fit-gate verdict at once; add an account |
 | **Enrich review** | Go through `bd enrich`'s proposals fact by fact, each with its evidence link. New facts are ticked, ones that would replace a known value are not. **Apply** writes only the ticked facts, using the values in the file (not the page) |
 | **Exclusions** | Add or remove clients and do-not-pursue companies; every account's status is re-checked immediately |
 | **Runs & cost** | Tokens and estimated cost per step and per account; unpriced calls shown as unpriced, never as $0 |
@@ -144,10 +150,12 @@ Content-Security-Policy; see SECURITY.md. Stop it with Ctrl-C.
 
 ## First live run
 
-1. **Facts.** `bd seed accounts.csv` holds your 58 account names with every fact blank, so the fit gate
-   holds all of them. Fill in `chicagoland` (yes/no), `revenue` or `employees`, `ownership`, `domain`,
-   and `cik` for public companies: in `bd ui`, in the CSV before seeding, or with `bd enrich --limit 3`
-   first (to see real per-account cost) and then reviewing the proposals in the UI's **Enrich review** page.
+1. **Facts (optional).** `bd seed accounts.csv` holds your 58 account names with every fact blank. They are all
+   scanned anyway and shown as *unverified*; only a known exclusion, a known non-Chicagoland location or a known
+   below-floor size takes one out. Filling in `chicagoland` (yes/no), `revenue` or `employees`, `ownership`,
+   `domain` and `cik` for public companies helps: a domain lets the press scanner run, a CIK the filing scanners.
+   Do it in `bd ui`, in the CSV before seeding, or with `bd enrich --limit 3` first (to see real per-account
+   cost) and then reviewing the proposals in the UI's **Enrich review** page.
 2. **Measure accuracy.** Copy `tests/gold.template.csv` to `tests/gold.csv` and fill in expected signals you
    have verified yourself (write `none` for accounts with no signal), then `bd evaluate`.
 3. **Dry-run the pipeline.** `bd scan --limit 3`, `bd score`, `bd shortlist`, `bd card --dry-run`, and
