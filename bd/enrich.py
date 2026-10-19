@@ -82,8 +82,33 @@ class EnrichResult:
     account: Account
     row: dict[str, str] = field(default_factory=dict)      # CSV row (proposals only)
     dropped: list[str] = field(default_factory=list)       # what was found but not accepted, and why
+    missing: list[str] = field(default_factory=list)       # facts still needed that the model did not return at all
     usage: Usage = field(default_factory=Usage)
     error: str | None = None
+
+
+def needed_facts(a: Account) -> list[str]:
+    """The facts this account still lacks, in the model's field names (what the search should be about)."""
+    need = []
+    if not a.domain:
+        need.append("domain")
+    if not a.hq_city:
+        need.append("hq_city and hq_state")
+    if not a.industry:
+        need.append("industry")
+    if a.chicagoland == "unknown":
+        need.append("il_county")
+    if a.revenue is None:
+        need.append("revenue_usd")
+    if a.employees is None:
+        need.append("employees")
+    if not a.ownership:
+        need.append("ownership")
+    if not a.sponsor and a.ownership in (None, "pe-backed"):
+        need.append("sponsor")
+    if not a.cik and a.ownership in (None, "public"):
+        need.append("cik")
+    return need
 
 
 def _county(raw: str, configured: list[str]) -> str:
@@ -101,8 +126,10 @@ class Enricher:
 
     def enrich(self, account: Account, as_of: date) -> EnrichResult:
         res = EnrichResult(account=account, row={"name": account.name})
+        need = needed_facts(account)
         user = (f"Company: {account.name}\nKnown website domain: {account.domain or 'unknown'}\n"
-                f"Known headquarters city: {account.hq_city or 'unknown'}\nToday's date: {as_of.isoformat()}\n\n"
+                f"Known headquarters city: {account.hq_city or 'unknown'}\nToday's date: {as_of.isoformat()}\n"
+                f"Facts still needed: {', '.join(need) or 'none'}. Search for these; the others are already on file, so return null for them.\n\n"
                 "Find the facts per your instructions. Return the JSON object only.")
         try:
             resp, llm_res = generate_validated(self.llm, self.system_prompt(), user, EnrichResponse,
@@ -112,6 +139,17 @@ class Enricher:
             return res
         res.usage = llm_res.usage
         self._accept(account, resp.facts, llm_res.retrieved_urls, res)
+        got = set(res.row)
+        want = {"domain": "domain", "hq_city and hq_state": "hq_city", "industry": "industry", "il_county": "chicagoland",
+                "revenue_usd": "revenue", "employees": "employees", "ownership": "ownership", "sponsor": "sponsor", "cik": "cik"}
+        found_but_dropped = " ".join(res.dropped)
+        own = account.ownership or res.row.get("ownership")
+        res.missing = [n for n in need if want[n] not in got and want[n] not in found_but_dropped and n.split(" ")[0] not in found_but_dropped
+                       and not (n == "sponsor" and own != "pe-backed") and not (n == "cik" and own not in (None, "public"))]
+        if res.missing and res.row.get("notes") is None:
+            res.row["notes"] = "not found: " + ", ".join(m.split(" ")[0] for m in res.missing)
+        elif res.missing:
+            res.row["notes"] += " | not found: " + ", ".join(m.split(" ")[0] for m in res.missing)
         return res
 
     # -- acceptance rules -----------------------------------------------------------------------
@@ -244,6 +282,11 @@ def select_accounts(conn: sqlite3.Connection, all_accounts: bool, only: str | No
     accts = [a for a in accts if a.status != "excluded" and (all_accounts or a.status == "hold_review")]
     if only:
         accts = [a for a in accts if only.lower() in a.name.lower()]
+    # Never-researched companies first, then the ones tried longest ago, so a hard case that yields nothing cannot use the whole
+    # batch on every run while the rest wait.
+    last = {r["account_id"]: r["d"] for r in conn.execute(
+        "SELECT account_id, MAX(run_date) AS d FROM runs WHERE step = 'enrich' AND account_id IS NOT NULL GROUP BY account_id")}
+    accts.sort(key=lambda a: (a.id in last, last.get(a.id, ""), a.id))
     return accts[:limit] if limit else accts
 
 
@@ -283,7 +326,7 @@ def run_enrich(conn: sqlite3.Connection, cfg: Config, enricher: Enricher, accoun
                         (as_of.isoformat(), "enrich", a.id, 1, 0, r.usage.total_tokens, cost, r.error))
                 done_results[a.id] = r
                 got = [k for k in r.row if k in SEED_COLUMNS[1:]]
-                log(f"  {a.name}: proposed {got or 'nothing'}, {len(r.dropped)} dropped, {r.usage.total_tokens:,} tokens, "
+                log(f"  {a.name}: proposed {got or 'nothing'}, {len(r.dropped)} dropped, {len(r.missing)} not found, {r.usage.total_tokens:,} tokens, "
                     + ("unpriced" if cost is None else f"${cost:.4f}") + (f"  ERROR {r.error}" if r.error else ""))
             if cap is not None and queue and (spent >= cap or not reserve.allows(spent, len(inflight), cap)):
                 hit = True

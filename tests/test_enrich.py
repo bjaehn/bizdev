@@ -250,3 +250,45 @@ def test_run_enrich_budget_cap_and_failure_isolation(cfg, tmp_path):
             raise RuntimeError("bug")
     results, *_ = run_enrich(conn, cfg, Boom(), accts[:2], AS_OF, None, workers=1)
     assert all(r.error == "RuntimeError: bug" for r in results) and len(results) == 2
+
+
+def test_the_prompt_names_only_the_facts_still_needed(cfg):
+    from bd.enrich import needed_facts
+    known = Account(id=1, name="Acme Corp", domain="acme.com", hq_city="Chicago", industry="Food", chicagoland="yes", revenue=5e8,
+                    employees=900, ownership="private", sponsor=None, cik=None)
+    assert needed_facts(known) == []                      # private: neither sponsor nor CIK is needed
+    assert needed_facts(Account(id=1, name="X", ownership="public", domain="x.com", hq_city="Chicago", industry="Food", revenue=1, employees=1)) == ["il_county", "cik"]
+    r, llm = enrich(cfg, {"il_county": None}, acct=Account(id=1, name="HCSC", domain="hcsc.com", hq_city="Chicago", industry="Insurance", revenue=1e10,
+                                                           employees=20000, ownership="private"))
+    assert "Facts still needed: il_county." in llm.calls[0][1][0]["content"]
+
+
+def test_facts_the_model_did_not_return_are_noted_not_silent(cfg):
+    a = Account(id=1, name="HCSC", domain="hcsc.com", hq_city="Chicago", industry="Insurance", revenue=1e10, employees=20000, ownership="private")
+    r, _ = enrich(cfg, {"il_county": None}, acct=a)
+    assert r.missing == ["il_county"] and r.dropped == [] and r.row["notes"] == "not found: il_county"
+    r, _ = enrich(cfg, facts(il_county="Cook"), acct=a)
+    assert r.missing == [] and r.row["chicagoland"] == "yes"
+    r, _ = enrich(cfg, {"il_county": "Winnebago", "evidence": {"il_county": {"url": COUNTY_PAGE, "source_type": "company_site"}}}, acct=a)
+    assert r.missing == [] and any("Winnebago" in d for d in r.dropped)       # found but refused is a drop, not 'not found'
+
+
+def test_the_county_may_come_from_the_address_the_page_states():
+    from importlib import resources
+    p = resources.files("bd.prompts").joinpath("enrich.md").read_text(encoding="utf-8")
+    assert "a company page rarely states the county itself" in p
+    assert "Cite the page that states the address" in p
+
+
+def test_companies_never_researched_come_first_and_stuck_ones_do_not_hog_the_batch(tmp_path):
+    from bd.enrich import select_accounts
+    from tests.conftest import add_account, make_db
+    conn = make_db(tmp_path)
+    ids = [add_account(conn, n, status="hold_review", chicagoland="unknown", revenue=None) for n in ("Alpha", "Beta", "Gamma", "Delta")]
+    assert [a.name for a in select_accounts(conn, False, None, None)] == ["Alpha", "Beta", "Gamma", "Delta"]
+    for i, day in ((0, "2026-10-10"), (1, "2026-10-12")):
+        conn.execute("INSERT INTO runs(run_date,step,account_id,accounts_scanned,signals_found,tokens,est_cost) VALUES (?,?,?,?,?,?,?)",
+                     (day, "enrich", ids[i], 1, 0, 100, 0.1))
+    conn.commit()
+    assert [a.name for a in select_accounts(conn, False, None, None)] == ["Gamma", "Delta", "Alpha", "Beta"]      # untried, then oldest attempt
+    assert [a.name for a in select_accounts(conn, False, None, 2)] == ["Gamma", "Delta"]
