@@ -185,6 +185,7 @@ CREATE TABLE IF NOT EXISTS lead_state (
     account_id INTEGER PRIMARY KEY REFERENCES accounts(id),
     stage      TEXT NOT NULL DEFAULT 'new' CHECK (stage IN ('new','reviewing','pursuing','passed','won','lost')),
     watching   INTEGER NOT NULL DEFAULT 0,
+    client     INTEGER NOT NULL DEFAULT 0,   -- 1 = an existing SEI client: shown as expansion, still scanned (unlike the do-not-pursue list)
     updated    TEXT NOT NULL
 );
 
@@ -276,4 +277,6 @@ def init_db(conn: sqlite3.Connection) -> None:
                      ("reviewed", "INTEGER NOT NULL DEFAULT 1"), ("discovered_at", "TEXT")):
         if col not in cols:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")
+    if "client" not in {r[1] for r in conn.execute("PRAGMA table_info(lead_state)")}:
+        conn.execute("ALTER TABLE lead_state ADD COLUMN client INTEGER NOT NULL DEFAULT 0")
     conn.commit()

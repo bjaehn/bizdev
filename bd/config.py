@@ -11,7 +11,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from bd.models import FIRM_SIGNAL_TYPES, SIGNAL_TYPES, SOURCE_TYPES
+from bd.models import FIRM_SIGNAL_TYPES, MAX_SUMMARY_WORDS, SIGNAL_TYPES, SOURCE_TYPES
 
 
 class _Strict(BaseModel):
@@ -242,6 +242,21 @@ class SecFill(_Strict):
     max_accounts_per_run: int         # companies whose SEC record is read per `bd sec-fill` (about two requests each)
 
 
+class SecEventItem(_Strict):
+    type: str                         # the signal type this 8-K item becomes
+    label: str                        # the item's title, used in the summary
+    service_lines: list[str]
+
+
+class SecEvents(_Strict):
+    """Signals read straight from SEC 8-K item codes, with no model call (bd.scanners.sec_events)."""
+    max_filings_per_scan: int
+    items: dict[str, SecEventItem]    # "2.05" -> what it means
+
+    def summary(self, item: str) -> str:
+        return f"Filed an 8-K reporting {self.items[item].label} (Item {item})."
+
+
 class Config(_Strict):
     scoring: Scoring
     post_gate: PostGate
@@ -256,12 +271,26 @@ class Config(_Strict):
     edgar: Edgar
     financials: Financials
     sec_fill: SecFill
+    sec_events: SecEvents
     rfps: Rfps
     ask: Ask
     briefer: Briefer
     card: Card
     discovery: Discovery
     pe_firms: PeFirms
+
+    @model_validator(mode="after")
+    def _sec_events(self) -> "Config":
+        for item, it in self.sec_events.items.items():
+            if not re.fullmatch(r"\d\.\d{2}", item):
+                raise ValueError(f"sec_events item {item!r} must look like '2.05'")
+            if it.type not in SIGNAL_TYPES:
+                raise ValueError(f"sec_events item {item} names {it.type!r}, which is not a signal type")
+            if not it.service_lines or not set(it.service_lines) <= set(self.service_lines):
+                raise ValueError(f"sec_events item {item} needs service_lines from {self.service_lines}")
+            if len(self.sec_events.summary(item).split()) > MAX_SUMMARY_WORDS:
+                raise ValueError(f"sec_events item {item}: the summary would exceed {MAX_SUMMARY_WORDS} words; shorten the label")
+        return self
 
     @model_validator(mode="after")
     def _status_bounds(self) -> "Config":

@@ -100,6 +100,7 @@ class Scanner:
         return cls(cfg, web, verifier)
 
     reads_filings: ClassVar[bool] = False    # True for scanners that take `known_accessions` (SEC filings already read)
+    free: ClassVar[bool] = False             # True when a scan makes no model call: it costs nothing, so the spending limit never holds it back
 
     def llm_kwargs(self, account: Account) -> dict:
         """Extra arguments for this account's model calls (e.g. a search allow-list). Default: none."""

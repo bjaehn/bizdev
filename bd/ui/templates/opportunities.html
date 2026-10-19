@@ -22,6 +22,7 @@
 {% for k, t in [('card','on the Monday card'),('over_cap','over the cap'),('held','held back'),('tracking','tracking only')] %}<option value="{{ k }}" {{ 'selected' if q.status == k else '' }}>{{ t }}</option>{% endfor %}</select>
 <select name="stage" aria-label="Your stage"><option value="">any stage</option><option value="open" {{ 'selected' if q.stage == 'open' else '' }}>open (not passed, won or lost)</option>
 {% for k in stages %}<option value="{{ k }}" {{ 'selected' if q.stage == k else '' }}>{{ stage_labels[k] }}</option>{% endfor %}</select>
+<select name="client" aria-label="Client"><option value="">clients and new logos</option><option value="yes" {{ 'selected' if q.client == 'yes' else '' }}>existing clients only</option><option value="no" {{ 'selected' if q.client == 'no' else '' }}>new logos only</option></select>
 <select name="sort" aria-label="Sort"><option value="score">sort: score</option><option value="change" {{ 'selected' if q.sort == 'change' else '' }}>sort: biggest change</option><option value="hiring" {{ 'selected' if q.sort == 'hiring' else '' }}>sort: hiring</option></select>
 <label style="margin:0"><input type="checkbox" name="pe" value="1" {{ 'checked' if q.pe else '' }}> PE-backed</label>
 <label style="margin:0"><input type="checkbox" name="new" value="1" {{ 'checked' if q.new else '' }}> new since last run</label>
@@ -37,7 +38,7 @@
 <div><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} · {{ o.result.score }}</span>
 {% if o.delta is not none and o.delta != 0 %}<span class="badge {{ 'good' if o.delta > 0 else 'bad' }}">{{ '+' if o.delta > 0 }}{{ o.delta }}</span>{% endif %}
 {% if o.is_new %}<span class="badge warm">new</span>{% endif %}
-{% if o.stage != 'new' %}<span class="badge {{ 'good' if o.stage in ('pursuing','won') else '' }}">{{ stage_labels[o.stage] }}</span>{% endif %}{% if o.watching %}<span class="badge warm">watching</span>{% endif %}
+{% if o.client %}<span class="badge good">client</span>{% endif %}{% if o.stage != 'new' %}<span class="badge {{ 'good' if o.stage in ('pursuing','won') else '' }}">{{ stage_labels[o.stage] }}</span>{% endif %}{% if o.watching %}<span class="badge warm">watching</span>{% endif %}
 <span class="badge {{ 'good' if o.status == 'card' else '' }}">{{ o.status_text }}</span>{% if o.posted %} <span class="badge good">posted</span>{% endif %}</div>
 </div>
 <p style="margin:10px 0 4px">{{ o.why_now }}</p>

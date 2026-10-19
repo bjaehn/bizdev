@@ -64,13 +64,17 @@ def cik_cleared(conn: sqlite3.Connection) -> set[int]:
                                        "AND old IS NOT NULL AND new IS NULL AND account_id IS NOT NULL")}
 
 
-def select(conn: sqlite3.Connection, only: str | None = None) -> list[Account]:
+def name_matches(account: Account, only: str, exact: bool) -> bool:
+    return account.name.lower() == only.lower() if exact else only.lower() in account.name.lower()
+
+
+def select(conn: sqlite3.Connection, only: str | None = None, exact: bool = False) -> list[Account]:
     """Companies worth a look, those on hold first (that is where the SEC data changes something), then the ones tried longest ago."""
     cleared = cik_cleared(conn)
     accts = [a for a in list_accounts(conn, status=None)
              if a.status != "excluded" and ((wants_lookup(a) and a.id not in cleared) or wants_read(a))]
     if only:
-        accts = [a for a in accts if only.lower() in a.name.lower()]
+        accts = [a for a in accts if name_matches(a, only, exact)]
     last = {r["account_id"]: r["d"] for r in conn.execute(
         "SELECT account_id, MAX(run_date) AS d FROM runs WHERE step = ? AND account_id IS NOT NULL GROUP BY account_id", (STEP,))}
     accts.sort(key=lambda a: (a.status != "hold_review", a.id in last, last.get(a.id, ""), a.id))
@@ -153,9 +157,9 @@ def fill_one(conn: sqlite3.Connection, cfg: Config, edgar: EdgarClient, index: I
 
 
 def run_sec_fill(conn: sqlite3.Connection, cfg: Config, edgar: EdgarClient, as_of: date, limit: int | None = None,
-                 only: str | None = None, log: Callable[[str], None] = lambda s: None) -> FillSummary:
+                 only: str | None = None, exact: bool = False, log: Callable[[str], None] = lambda s: None) -> FillSummary:
     summary = FillSummary()
-    accts = select(conn, only)
+    accts = select(conn, only, exact)
     summary.candidates = len(accts)
     if not accts:
         return summary

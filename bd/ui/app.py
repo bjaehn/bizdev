@@ -40,15 +40,17 @@ from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
 from bd.health import build_health
 from bd.market import build_market
-from bd.jobs import KINDS, SCANNER_NAMES, JobError, JobRunner
+from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
+from bd.leadership import MIN_RISE, NEW_SIGNAL_DAYS, STALE_SCORE_DAYS, build_leadership
+from bd.lookup import find as find_company
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
 from bd.ask_store import add_question, clean_question, recent as recent_questions
 from bd.rfp_store import list_open as list_open_rfps
-from bd.pipeline import (STAGE_LABELS, STAGES, add_note, default_since, get_state, notes_for, set_stage, set_watching, stage_counts,
-                         watchlist_changes)
+from bd.pipeline import (MAX_CLIENT_NAMES, STAGE_LABELS, STAGES, add_note, client_rows, default_since, get_state, mark_clients, notes_for, set_client,
+                         set_stage, set_watching, stage_counts, watchlist_changes)
 from bd.opportunities import build_opportunities, filter_opportunities, score_dates
 from bd.setup_check import static_problems
 from bd.settings_store import (UPDATE_FIELDS, load_update, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
@@ -333,12 +335,15 @@ class App:
             return self.redirect("/operate")
         return self.redirect(f"/jobs/{job_id}")
 
-    def job_page(self, job_id: int) -> Response:
+    def job_page(self, job_id: int, conn: sqlite3.Connection) -> Response:
         assert self.jobs is not None
         job = self.jobs.get(job_id)
         if job is None:
             return self.error("404 Not Found", "No such job.")
-        return self.render("job.html", page="operate", job=job, log=self.jobs.log_tail(job_id),
+        company = None
+        if job.kind in ("lookup", "sec_fill") and "--only" in job.args:        # a one-company job: link straight to the company
+            company = conn.execute("SELECT id, name FROM accounts WHERE lower(name) = lower(?)", (job.args[job.args.index("--only") + 1],)).fetchone()
+        return self.render("job.html", page="operate", job=job, log=self.jobs.log_tail(job_id), company=company,
                            running=job.status in ("queued", "running"), label=KINDS.get(job.kind, (job.kind,))[0])
 
     def route(self, req: Request, conn: sqlite3.Connection) -> Response:
@@ -348,8 +353,10 @@ class App:
                 return self.operate(conn)
             if (m, p) == ("POST", "/operate/run"):
                 return self.job_start(req)
+            if (m, p) == ("POST", "/lookup/run"):
+                return self.lookup_run(req, conn)
             if m == "GET" and p.startswith("/jobs/") and p[6:].isdigit():
-                return self.job_page(int(p[6:]))
+                return self.job_page(int(p[6:]), conn)
         parts = p.strip("/").split("/")
         table = {
             ("GET", "/"): lambda: self.home(conn) if self.jobs is not None else self.opportunities(req, conn),
@@ -359,6 +366,10 @@ class App:
             ("POST", "/settings/update"): lambda: self.settings_update(req, conn),
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
+            ("GET", "/leadership"): lambda: self.leadership_page(conn),
+            ("GET", "/lookup"): lambda: self.lookup_page(req, conn),
+            ("GET", "/clients"): lambda: self.clients_page(conn),
+            ("POST", "/clients/mark"): lambda: self.clients_mark(req, conn),
             ("GET", "/rfps"): lambda: self.rfps_page(req, conn),
             ("GET", "/ask"): lambda: self.ask_page(conn),
             ("POST", "/ask"): lambda: self.ask_start(req, conn),
@@ -394,7 +405,7 @@ class App:
             ok = set_firm_status(conn, int(parts[1]), req.f("status"))
             self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
             return self.redirect(f"/firms/{int(parts[1])}")
-        if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch"):
+        if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch", "client"):
             return self.pipeline_update(req, conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
             return self.reviewed(conn, int(parts[1]))
@@ -475,12 +486,12 @@ class App:
         except ShortlistError as e:
             return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=[], total=0, error=str(e),
                                q={}, families=[], lines=[], stale=[], prev_date=None)
-        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage")}
+        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage", "client")}
         q["pe"] = req.q("pe") == "1"
         q["new"] = req.q("new") == "1"
         items = filter_opportunities(ol.items, band=q["band"], family=q["family"], service_line=q["service_line"], pe_only=q["pe"],
                                      q=q["q"], new_only=q["new"], status=q["status"], sort=q["sort"] or "score",
-                                     stage=q["stage"])
+                                     stage=q["stage"], client=q["client"])
         families = sorted({r.kind for o in ol.items for r in o.reasons})
         return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=items, total=len(ol.items),
                            error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale,
@@ -494,12 +505,64 @@ class App:
         elif what == "note":
             ok = add_note(conn, account_id, req.f("body"))
             self.say("ok" if ok else "err", "Note added." if ok else "Write something first.")
+        elif what == "client":
+            on = req.f("on") == "1"
+            ok = set_client(conn, account_id, on)
+            self.say("ok" if ok else "err", ("Marked as an existing client." if on else "No longer marked as a client.") if ok else "No such account.")
         else:
             on = req.f("on") == "1"
             ok = set_watching(conn, account_id, on)
             self.say("ok" if ok else "err", ("Added to" if on else "Removed from") + " your watchlist." if ok else "No such account.")
         back = req.f("back")
         return self.redirect(back if back.startswith("/") and not back.startswith("//") else f"/accounts/{account_id}")
+
+    def leadership_page(self, conn: sqlite3.Connection) -> Response:
+        v = build_leadership(conn, self.cfg, date.today())
+        return self.render("leadership.html", page="leadership", c=v.coverage, act=v.act, changes=v.changes, pulse=v.pulse, clients=v.clients,
+                           problem=v.problem, labels=TYPE_LABELS, stage_labels=STAGE_LABELS, stale_days=STALE_SCORE_DAYS,
+                           min_rise=MIN_RISE, new_signal_days=NEW_SIGNAL_DAYS)
+
+    def lookup_page(self, req: Request, conn: sqlite3.Connection) -> Response:
+        q = " ".join(req.q("q").split())[:120]
+        hits = find_company(conn, self.cfg, q, date.today().isoformat()) if q else []
+        return self.render("lookup.html", page="lookup", q=q, hits=hits, exact=any(h.exact for h in hits), labels=TYPE_LABELS,
+                           stage_labels=STAGE_LABELS, can_run=bool(self.jobs is not None and self.hosted),
+                           busy=bool(self.jobs and self.jobs.busy()), budget=LOOKUP_BUDGET)
+
+    def lookup_run(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """Check one company: add it if it is not on the list, then run the free SEC check or the paid research-and-scan job."""
+        assert self.jobs is not None
+        typed = " ".join(req.f("name").split())
+        back = "/lookup?q=" + quote(typed[:120])
+        exact = [h for h in find_company(conn, self.cfg, typed, date.today().isoformat()) if h.exact]
+        if len(exact) > 1:
+            self.say("err", "More than one company on your list has that name; open the one you mean and use its page.")
+            return self.redirect(back)
+        added = False
+        try:
+            name = company_name({"only": exact[0].account.name if exact else typed}, required=True)
+            if not exact:
+                res = create_account(conn, self.cfg, name, {"tier": "B"}, "ui", extra={"origin": "manual"})
+                if not res.ok:
+                    self.say("err", "; ".join(res.errors))
+                    return self.redirect(back)
+                added = True
+            job_id = self.jobs.submit("lookup" if req.f("deep") == "1" else "sec_fill", {"only": name}, confirmed=bool(req.f("confirm")))
+        except JobError as e:
+            self.say("err", ("Added the company. " if added else "") + str(e))
+            return self.redirect(back)
+        return self.redirect(f"/jobs/{job_id}")
+
+    def clients_page(self, conn: sqlite3.Connection, result=None) -> Response:
+        return self.render("clients.html", page="clients", rows=client_rows(conn, date.today()), result=result, labels=TYPE_LABELS,
+                           max_names=MAX_CLIENT_NAMES)
+
+    def clients_mark(self, req: Request, conn: sqlite3.Connection) -> Response:
+        raw = req.f("names")
+        if not raw.strip():
+            self.say("err", "Paste at least one company name.")
+            return self.redirect("/clients")
+        return self.clients_page(conn, result=mark_clients(conn, raw))
 
     def watchlist(self, req: Request, conn: sqlite3.Connection) -> Response:
         try:

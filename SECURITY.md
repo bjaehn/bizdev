@@ -143,7 +143,12 @@ Origin and Sec-Fetch-Site checks on every POST including login; Content-Security
 `/healthz` returns only `ok`; the login page never shows flash messages or navigation. Jobs: a fixed whitelist run
 as `python -m bd.cli` subprocesses with validated argv (no shell), one at a time, 2-hour timeout, secrets
 redacted from displayed logs, paid-call confirmation, and **no job or button that posts to Teams** - only the
-scheduled Monday run can, and only when `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not 1. The Operate page
+scheduled Monday run can, and only when `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not 1. The **Look up a company**
+page can add a company and start two one-company jobs (`sec_fill`, free; `lookup`, paid and hard-capped at $3 whatever the
+company); the name is limited to letters, digits and basic punctuation (60 characters, never starting with a dash) before it
+becomes an argv element, a name that matches two companies is refused rather than guessed, and the paid job still needs the
+confirmation tick. The **Existing clients** flag is pipeline bookkeeping (audited as `client`); it never changes a score or
+removes a company from scanning. The Operate page
 shows whether each secret is set, never its value. The container drops root before serving.
 
 ## 5. Known gaps and limits
@@ -191,6 +196,7 @@ shows whether each secret is set, never its value. The container drops root befo
 23. **WARN notices depend on web search finding the state's page.** The `warn` scanner is restricted to `illinois.gov`, but the state's notice list may be a table or PDF that the search tool does not surface for every company, so a missing signal does not prove there was no notice. Whether it finds real notices has not been seen live.
 24. **The RFP feed depends on web search reaching agency procurement pages.** `bd rfps` is restricted to the domains in `config.yaml` `rfps.groups` and keeps only pages that were returned, resolve, are on those domains and state a future due date. Many procurement portals are JavaScript-heavy or behind a login (notably sam.gov), so the search may see little of them and a short or empty list does not mean there are no open solicitations. The domain list is my best knowledge of the agencies' sites and has not been checked live. The model decides whether a solicitation asks for consulting-type work; code cannot check that.
 25. **Ask your data runs model-written SQL.** It is limited by code, not trust: one SELECT, no comments, a separate read-only connection, an authorizer that allows only the listed tables and a short list of functions (a column outside the list reads as NULL, anything else is refused), a 5-second limit and a 200-row cap. A query that is wrong but safe is still possible (the model may misread a column), so the SQL and the rows are shown under every answer. The returned rows include web-derived text (signal summaries); the answer step is told to treat them as data and has no tools, and the answer is shown escaped. Not tested against the live model.
+26. **SEC event signals rest on the 8-K item codes in the SEC's filing list.** The `sec_events` scanner trusts the `items` field of `data.sec.gov/submissions/CIK##########.json` (documented layout; unverified here) to say which items a filing reports, then fetches the filing and requires the item's own heading in the text, so a wrong code gives no signal rather than a false one. The mapping (Item 2.05 to `restructuring_layoffs`, Item 2.01 to `ma_divestiture`) is a judgement in `config.yaml`: 2.05 covers exit and disposal costs, which are usually restructurings but not always layoffs, and 2.01 covers any completed acquisition or disposition the company thought material. The summary says exactly what the item is and nothing more. No model sees the filing, so nothing is paraphrased.
 
 ## 6. Decisions for IT
 

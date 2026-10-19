@@ -361,13 +361,13 @@ def write_proposals(results: list[EnrichResult], path: str | Path) -> int:
     return n
 
 
-def select_accounts(conn: sqlite3.Connection, all_accounts: bool, only: str | None, limit: int | None) -> list[Account]:
+def select_accounts(conn: sqlite3.Connection, all_accounts: bool, only: str | None, limit: int | None, exact: bool = False) -> list[Account]:
     from bd.accounts import list_accounts
 
     accts = list_accounts(conn, status=None)
     accts = [a for a in accts if a.status != "excluded" and (all_accounts or a.status == "hold_review")]
     if only:
-        accts = [a for a in accts if only.lower() in a.name.lower()]
+        accts = [a for a in accts if (a.name.lower() == only.lower() if exact else only.lower() in a.name.lower())]
     # Never-researched companies first, then the ones tried longest ago, so a hard case that yields nothing cannot use the whole
     # batch on every run while the rest wait.
     last = {r["account_id"]: r["d"] for r in conn.execute(

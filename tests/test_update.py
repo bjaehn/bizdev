@@ -29,12 +29,12 @@ def test_update_job_is_validated_and_runs_the_steps_in_order():
     args = validate("update", UPD)
     assert args == ["update", "--research", "25", "--segments", "2", "--scan", "25", "--budget", "8", "--rfps", "0"]
     steps = sequence_for("update", args, "2026-10-16")
-    assert [s[0] for s in steps] == ["check", "sec-fill", "enrich", "apply-proposals", "discover", "pe-sync", "scan", "score"]
+    assert [s[0] for s in steps] == ["check", "sec-fill", "enrich", "apply-proposals", "discover", "pe-sync", "scan", "scan", "score"]
     assert steps[1] == ["sec-fill", "--as-of", "2026-10-16"]
     assert steps[2] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
     assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[-2]
     skip = sequence_for("update", validate("update", {**UPD, "research": "0", "segments": "0"}), "2026-10-16")
-    assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "scan", "score"]
+    assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "scan", "scan", "score"]
     for bad in ({**UPD, "budget": "0"}, {**UPD, "budget": "101"}, {**UPD, "scan": "0"}, {**UPD, "research": "x"}, {}):
         with pytest.raises(JobError):
             validate("update", bad)
@@ -61,7 +61,8 @@ step = sys.argv[1]
 with open({str(tmp_path / "calls.jsonl")!r}, "a") as f:
     f.write(json.dumps({{"step": step, "args": sys.argv[1:], "budget": os.environ.get("BD_MAX_COST_USD")}}) + "\\n")
 costs = json.loads(os.environ.get("FAKE_COSTS", "{{}}"))
-if step in costs:
+free_scan = step == "scan" and "--scanners" in sys.argv          # the free-sources scan costs nothing
+if step in costs and not free_scan:
     c = sqlite3.connect(os.environ["BD_DB_PATH"])
     c.execute("INSERT INTO runs(run_date,step,accounts_scanned,signals_found,tokens,est_cost) VALUES ('2026-10-16', ?, 0, 0, 10, ?)", (step, costs[step]))
     if step == "scan":
@@ -83,9 +84,11 @@ def test_one_spending_limit_covers_the_whole_update(fake, monkeypatch):
     jid = runner_.submit("update", {**UPD, "budget": "5"}, confirmed=True)
     runner_.wait()
     job = runner_.get(jid)
-    by = {c["step"]: c for c in calls(tmp)}
+    by = {c["step"]: c for c in calls(tmp) if "--scanners" not in c["args"]}
     assert float(by["enrich"]["budget"]) == 5.0 and float(by["discover"]["budget"]) == 2.0     # what was left after enrich
     assert "scan" not in by                                                                      # 5.5 spent: limit used up, scan skipped
+    free = [c for c in calls(tmp) if c["step"] == "scan"]
+    assert len(free) == 1 and "--scanners" in free[0]["args"] and free[0]["budget"] is None      # the free sources still run, with no limit applied
     assert "apply-proposals" in by and "pe-sync" in by and "score" in by                         # the free steps still run
     assert job.status == "ok" and "Spent about $5.50 of the $5 limit" in job.note and "skipped" in job.note
     assert "spending limit for this update is used up" in runner_.log_tail(jid)
@@ -297,8 +300,8 @@ def test_a_failed_update_shows_why_on_home(app_env):
 def test_navigation_is_short_and_local_mode_is_unchanged(app_env, cfg, tmp_path):
     body = app_env.get("/").body
     nav = body.split("<nav>")[1].split("</nav>")[0]
-    assert nav.count('<a class="top') + nav.count('<div class="menu ') == 5
-    for label in ("Home", "Opportunities", "Companies", "Hiring", "More", "Advanced tools"):
+    assert nav.count('<a class="top') + nav.count('<div class="menu ') == 6
+    for label in ("Home", "Leadership", "Opportunities", "Companies", "Hiring", "More", "Advanced tools"):
         assert label in nav
     from bd.ui.app import App
     local = App(cfg, str(tmp_path / "l.sqlite"), "tok", root=tmp_path)

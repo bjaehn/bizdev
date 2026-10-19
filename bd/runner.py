@@ -70,11 +70,15 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
     for acc in accounts:
         (due if is_due(acc, as_of, cfg, force) else summary.skipped_not_due).append(acc)
 
-    queue: deque[tuple[Account, Scanner]] = deque((a, s) for a in due for s in scanners if s.applies_to(a))
+    # Free scans (no model call) go first and are never held back by the spending limit; paid calls follow in account order.
+    queue: deque[tuple[Account, Scanner]] = deque(sorted(((a, s) for a in due for s in scanners if s.applies_to(a)), key=lambda p: not p[1].free))
     remaining = {a.id: sum(s.applies_to(a) for s in scanners) for a in due}
     failed: set[int] = set()
     reserve = Reserve(cfg.llm.call_reserve_usd)
     inflight: dict[Future[ScanOutcome], tuple[Account, Scanner]] = {}
+
+    def paid_inflight() -> int:
+        return sum(1 for _, s in inflight.values() if not s.free)
 
     def finish(acc: Account, sc: Scanner, out: ScanOutcome) -> None:
         run = summary.accounts.setdefault(acc.id, AccountRun(acc))
@@ -124,8 +128,8 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         while queue or inflight:
-            while queue and len(inflight) < workers and not summary.budget_hit \
-                    and reserve.allows(summary.est_cost, len(inflight), cap):
+            while queue and len(inflight) < workers and (queue[0][1].free or (
+                    not summary.budget_hit and reserve.allows(summary.est_cost, paid_inflight(), cap))):
                 acc, sc = queue.popleft()
                 if sc.reads_filings:
                     inflight[ex.submit(sc.scan, acc, as_of, known_accessions(conn, acc.id, sc.name))] = (acc, sc)
@@ -142,8 +146,8 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
                     out = ScanOutcome(account=acc, scanner=sc.name, usage=Usage(),
                                       error=f"{type(e).__name__}: {e}")
                 finish(acc, sc, out)
-            if cap is not None and not summary.budget_hit and queue and (
-                    summary.est_cost >= cap or not reserve.allows(summary.est_cost, len(inflight), cap)):
+            if cap is not None and not summary.budget_hit and queue and not queue[0][1].free and (
+                    summary.est_cost >= cap or not reserve.allows(summary.est_cost, paid_inflight(), cap)):
                 summary.budget_hit = True
         summary.skipped_budget = len(queue)
 
