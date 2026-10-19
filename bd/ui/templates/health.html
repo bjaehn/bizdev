@@ -35,12 +35,12 @@
 <div class="card">
 <p><b>{{ h.accounts_total }}</b> companies: {% for k, n in h.by_status.items() %}{{ k|status_label }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}.
 {% if h.by_origin %}By origin: {% for k, n in h.by_origin.items() %}{{ k }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}.{% endif %}{% if h.unreviewed %} {{ h.unreviewed }} auto-added and not yet reviewed.{% endif %}</p>
-<p class="meta">Ready-to-scan companies by last scan: never {{ h.scan_age.get('never', 0) }} · within a week {{ h.scan_age.get('week', 0) }} · within a month {{ h.scan_age.get('month', 0) }} · older {{ h.scan_age.get('older', 0) }}. With an SEC id (CIK): {{ h.with_cik }} · with a website: {{ h.with_domain }}.</p>
+<p class="meta">Companies by last scan: never {{ h.scan_age.get('never', 0) }} · within a week {{ h.scan_age.get('week', 0) }} · within a month {{ h.scan_age.get('month', 0) }} · older {{ h.scan_age.get('older', 0) }}. With an SEC id (CIK): {{ h.with_cik }} · with a website: {{ h.with_domain }}.</p>
 </div>
-{% if h.hold_reasons %}<h3>Why companies are held</h3>
+{% if h.hold_reasons %}<h3>Facts still unverified</h3>
 <div class="wrap"><table><tr><th>Reason</th><th class="num">Companies</th></tr>
 {% for r, n in h.hold_reasons %}<tr><td>{{ r }}</td><td class="num">{{ n }}</td></tr>{% endfor %}</table></div>
-<p class="meta">Held companies are never scanned or scored. Run <b>Update my list</b> (it researches the next batch) or fill the facts in on a company page.</p>{% endif %}
+<p class="meta">These companies are scanned for signals anyway; their brief carries an "unverified" tag. Run <b>Update my list</b> (it researches the next batch) or fill the facts in on a company page.</p>{% endif %}
 
 <h2>What was found (last 90 days)</h2>
 {% if h.signals_90d %}

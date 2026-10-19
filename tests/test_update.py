@@ -245,11 +245,11 @@ def app_env(cfg, tmp_path, monkeypatch):
 def test_home_says_what_to_do_next_in_each_state(app_env, monkeypatch):
     e = app_env
     assert "no companies yet" in e.get("/").body and "Press Update my list" in e.get("/").body
-    add_account(e.conn, "Needco", status="hold_review", chicagoland="unknown", revenue=None, ownership=None)
+    add_account(e.conn, "Needco", chicagoland="unknown", revenue=None, ownership=None)      # unverified facts do not stop the scan
     body = e.get("/").body
-    assert "1 companies are waiting for facts" in body and "1 need facts" in body
+    assert "1 companies are on the scan list" in body and "scans them" in body
     add_account(e.conn, "Readyco")
-    assert "1 companies are ready" in e.get("/").body and "scans them" in e.get("/").body
+    assert "2 companies are on the scan list" in e.get("/").body
     add_signal(e.conn, e.cfg, 2, "leadership_change", 5)
     add_signal(e.conn, e.cfg, 2, "hiring_cluster", 5)
     from bd.score_store import score_accounts

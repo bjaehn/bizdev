@@ -195,7 +195,7 @@ def test_a_matched_company_keeps_its_cik_even_when_its_sec_files_cannot_be_read(
     logs = []
     s = run_sec_fill(conn, cfg, edgar, AS_OF, log=logs.append)
     a = list_accounts(conn, status=None)[0]
-    assert (a.cik, a.revenue, a.ownership, a.status) == ("0000005678", None, None, "hold_review") and s.errors == 2
+    assert (a.cik, a.revenue, a.ownership, a.status) == ("0000005678", None, None, "active") and s.errors == 2
     assert "filled cik" in logs[0] and "SEC record not read (HTTP 503)" in logs[0]
     s = run_sec_fill(conn, cfg, SecEdgar(), AS_OF)                         # the next run reads the files it could not before
     assert list_accounts(conn, status=None)[0].revenue == 1_200_000_000 and s.read == 1

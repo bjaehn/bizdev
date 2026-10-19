@@ -7,8 +7,9 @@
 <p class="sub">{{ [a.industry, a.hq_city, a.ownership, (a.revenue|money ~ ' revenue') if a.revenue else none]|select|join(' · ') or 'no company details recorded yet' }}</p></div>
 <div class="tags">{% if scores %}<span class="badge {{ 'hot' if scores[0]['band'] == 'Hot' else ('warm' if scores[0]['band'] == 'Warm' else '') }}">{{ scores[0]['band'] }} · {{ scores[0]['score'] }}</span> {% endif %}
 {% if state.client %}<span class="badge good">client</span> {% endif %}
-<span class="badge {{ 'good' if fit.verdict == 'pass' else ('warm' if fit.verdict == 'unknown' else 'bad') }}">{{ a.status|status_label }}</span></div></div>
-{% if a.status != 'active' %}<div class="flash {{ 'err' if a.status == 'excluded' else '' }}">{{ 'Not scanned: ' if a.status == 'excluded' else 'Not scanned yet: ' }}{{ fit.reasons|join('; ') or 'waiting for facts' }}. Open <b>Edit facts</b> below to fill in what is missing.</div>{% endif %}
+<span class="badge {{ 'good' if fit.verdict == 'pass' else ('warm' if fit.verdict == 'unknown' else 'bad') }}">{{ 'Unverified' if fit.verdict == 'unknown' else a.status|status_label }}</span></div></div>
+{% if a.status == 'excluded' %}<div class="flash err">Not scanned: {{ fit.reasons|join('; ') }}. Open <b>Edit facts</b> below if that is wrong.</div>
+{% elif fit.verdict == 'unknown' %}<div class="flash">Scanned for signals, but not confirmed: {{ fit.reasons|join('; ') }}. Open <b>Edit facts</b> below to fill that in when you know it.</div>{% endif %}
 
 {% if headline %}<div class="card"><h2>Why now</h2>
 <p class="why">{{ headline }}</p>

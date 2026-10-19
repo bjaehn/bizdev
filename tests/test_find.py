@@ -117,7 +117,7 @@ def test_running_the_free_check_adds_the_company_and_starts_exactly_one_free_job
     job = e.app.jobs.recent()[0]
     assert job.kind == "find" and job.args == ["find", "--only", "Zeta Holdings"] and job.status == "ok"
     zeta = [x for x in list_accounts(e.conn, status=None) if x.name == "Zeta Holdings"][0]
-    assert zeta.origin == "manual" and zeta.tier == "B" and zeta.status == "hold_review"
+    assert zeta.origin == "manual" and zeta.tier == "B" and zeta.status == "active"
     log = e.app.jobs.log_tail(job.id)
     assert "ARGS: sec-fill --only Zeta Holdings --exact" in log and "ARGS: scan --only Zeta Holdings --exact --scanners" in log and "ARGS: score" in log
     assert e.conn.execute("SELECT actor FROM audit_log WHERE account_id = ? ORDER BY id LIMIT 1", (zeta.id,)).fetchone()["actor"] == "ui"
@@ -206,10 +206,7 @@ def test_a_score_below_the_watch_band_reads_below_watch_not_stored(world):
 
 def test_the_free_check_is_only_offered_where_it_can_help(world):
     e, ids = world
-    private = add_account(e.conn, "Privateco", status="hold_review", chicagoland="yes", revenue=None, ownership="private")
-    page = e.get("/find?q=Privateco").body
-    assert "Check again (free)" not in page and "The SEC does not list this company, so the free check cannot fill it in" in page
-    brief = e.get(f"/companies/{private}").body
-    assert "Check now (free)" not in brief and "an admin can research it" in brief
-    assert "Check now (free)" in e.get(f"/companies/{ids['held']}").body and "an admin can research it" not in e.get(f"/companies/{ids['held']}").body
+    private = add_account(e.conn, "Privateco", chicagoland="yes", revenue=None, ownership="private")
+    assert "Check again (free)" in e.get("/find?q=Privateco").body                               # job boards and SEC events can be read for anyone
+    assert "Check now (free)" in e.get(f"/companies/{private}").body
     assert "Check again (free)" not in e.get("/find?q=Goneco").body                              # excluded: nothing to check

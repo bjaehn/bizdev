@@ -47,7 +47,7 @@ def find(conn: sqlite3.Connection, cfg: Config, q: str, today: str) -> list[Hit]
         sc = conn.execute("SELECT score, band, run_date FROM scores WHERE account_id = ? ORDER BY run_date DESC LIMIT 1", (a.id,)).fetchone()
         last = conn.execute("SELECT * FROM signals WHERE account_id = ? ORDER BY event_date DESC, id DESC LIMIT 1", (a.id,)).fetchone()
         n = conn.execute("SELECT COUNT(*) FROM signals WHERE account_id = ? AND event_date >= date(?, '-90 days')", (a.id, today)).fetchone()[0]
-        reasons = () if a.status == "active" else check_fit(a, exclusions, cfg).reasons
+        reasons = check_fit(a, exclusions, cfg).reasons
         out.append(Hit(a, exact, states.get(a.id, LeadState()), reasons, sc["score"] if sc else None, sc["band"] if sc else None,
                        sc["run_date"] if sc else None, last, n, can_check_free(a)))
     out.sort(key=lambda h: (not h.exact, h.account.name.lower()))

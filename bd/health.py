@@ -96,9 +96,11 @@ def build_health(conn: sqlite3.Connection, cfg: Config, as_of: date, days: int =
     exclusions = load_exclusions(conn)
     reasons: Counter[str] = Counter()
     for a in accounts:
-        if a.status == "hold_review":
-            for r in check_fit(a, exclusions, cfg).reasons:
-                reasons[r] += 1
+        if a.status != "excluded":
+            res = check_fit(a, exclusions, cfg)
+            if res.unverified:
+                for r in res.reasons:
+                    reasons[r] += 1
     h.hold_reasons = reasons.most_common()
 
     age = Counter()

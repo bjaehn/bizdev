@@ -44,7 +44,7 @@ def test_a_blank_form_field_clears_the_fact(cfg, conn):
     r = update_account(conn, cfg, 1, {"chicagoland": "", "revenue": "", "ownership": "", "industry": ""})
     a = conn.execute("SELECT * FROM accounts WHERE id=1").fetchone()
     assert (a["chicagoland"], a["revenue"], a["ownership"], a["industry"]) == ("unknown", None, None, None)
-    assert r.fit.verdict == "unknown" and a["status"] == "hold_review"
+    assert r.fit.verdict == "unknown" and r.fit.unverified and a["status"] == "active"      # unverified is still scanned
 
 
 def test_unchanged_submit_writes_nothing(cfg, conn):

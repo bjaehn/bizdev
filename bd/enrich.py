@@ -361,11 +361,16 @@ def write_proposals(results: list[EnrichResult], path: str | Path) -> int:
     return n
 
 
-def select_accounts(conn: sqlite3.Connection, all_accounts: bool, only: str | None, limit: int | None, exact: bool = False) -> list[Account]:
+def select_accounts(conn: sqlite3.Connection, all_accounts: bool, only: str | None, limit: int | None, exact: bool = False,
+                    cfg: Config | None = None) -> list[Account]:
+    """Companies whose location or size is still unverified (all of them with `all_accounts`); known out-of-scope ones are never enriched."""
     from bd.accounts import list_accounts
+    from bd.config import load_config
+    from bd.fit_gate import check_fit, load_exclusions
 
+    exclusions, cfg = load_exclusions(conn), cfg or load_config()
     accts = list_accounts(conn, status=None)
-    accts = [a for a in accts if a.status != "excluded" and (all_accounts or a.status == "hold_review")]
+    accts = [a for a in accts if a.status != "excluded" and (all_accounts or check_fit(a, exclusions, cfg).unverified)]
     if only:
         accts = [a for a in accts if (a.name.lower() == only.lower() if exact else only.lower() in a.name.lower())]
     # Never-researched companies first, then the ones tried longest ago, so a hard case that yields nothing cannot use the whole

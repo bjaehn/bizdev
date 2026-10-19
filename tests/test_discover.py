@@ -185,7 +185,7 @@ def test_accept_and_reject_queued_candidates(cfg, conn):
     res = accept_candidate(conn, cfg, ids["Mystery Co"])
     assert res.ok
     a = list_accounts(conn, status=None)[0]
-    assert (a.origin, a.reviewed, a.status) == ("discovered", 1, "hold_review")      # size still unknown: held, never scanned
+    assert (a.origin, a.reviewed, a.status) == ("discovered", 1, "active")      # size still unknown: scanned anyway, tagged unverified
     assert reject_candidate(conn, ids["Other Co"]) and not reject_candidate(conn, ids["Other Co"])
     assert not accept_candidate(conn, cfg, ids["Mystery Co"]).ok                      # already added
 

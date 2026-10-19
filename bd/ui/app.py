@@ -42,7 +42,6 @@ from bd.charts import priority_svg, trend_svg
 from bd.priority import build_priority
 from bd.week import build_week, signs_line
 from bd.profile import brief_text, build_profile
-from bd.readiness import waiting_for_facts
 from bd.health import build_health
 from bd.market import build_market
 from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
@@ -160,7 +159,7 @@ class App:
         self._flash: list[tuple[str, str]] = []
         self.env = Environment(loader=PackageLoader("bd.ui", "templates"), autoescape=select_autoescape(["html"]),
                                trim_blocks=True, lstrip_blocks=True)
-        self.env.filters.update(band_name=lambda b: {'Stored': 'Below Watch'}.get(b, b), status_label=lambda v: {'active': 'Ready to scan', 'hold_review': 'Needs facts', 'excluded': 'Excluded'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
+        self.env.filters.update(band_name=lambda b: {'Stored': 'Below Watch'}.get(b, b), status_label=lambda v: {'active': 'Scanned for signals', 'hold_review': 'Unverified', 'unverified': 'Unverified', 'excluded': 'Out of scope'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
                                 hosted=hosted is not None, operate=jobs is not None, signs_line=signs_line, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
                                 report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"})
@@ -462,7 +461,7 @@ class App:
         problems = static_problems(self.cfg, os.environ)
         rows = conn.execute("SELECT status, COUNT(*) n FROM accounts GROUP BY status").fetchall()
         by = {r["status"]: r["n"] for r in rows}
-        total, ready, need = sum(by.values()), by.get("active", 0), by.get("hold_review", 0)
+        total, ready = sum(by.values()), by.get("active", 0)
         top, opps = [], 0
         dates = score_dates(conn)
         if dates:
@@ -477,14 +476,14 @@ class App:
         elif total == 0:
             step = ("Press Update my list", "There are no companies yet. The update searches for Chicagoland companies to add.", "update")
         elif ready == 0:
-            step = ("Press Update my list", f"{need} companies are waiting for facts (location and size). The update researches them.", "update")
+            step = ("Add companies", "Every company is known to be out of scope. Add companies on the Companies page.", "accounts")
         elif opps == 0:
-            step = ("Press Update my list", f"{ready} companies are ready. The update scans them for news, hiring and leadership changes.", "update")
+            step = ("Press Update my list", f"{ready} companies are on the scan list. The update scans them for leadership changes, hiring and press.", "update")
         else:
             step = ("Open This week", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
         last = self.jobs.last_job(("update",))
-        return self.render("home.html", page="home", problems=problems, total=total, ready=ready, need=need, opps=opps, top=top, u=u,
-                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, waiting=waiting_for_facts(conn, self.cfg, u),
+        return self.render("home.html", page="home", problems=problems, total=total, ready=ready, opps=opps, top=top, u=u,
+                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS,
                            last_log=self.jobs.log_tail(last.id)[-1500:] if last and last.status == "failed" else "")
 
     def update_start(self, req: Request, conn: sqlite3.Connection) -> Response:
@@ -777,15 +776,22 @@ class App:
         status = req.q("status")
         q = req.q("q").strip().lower()
         accts = list_accounts(conn, status=None)
-        counts = {s: sum(a.status == s for a in accts) for s in ("active", "hold_review", "excluded")}
         unreviewed = sum(not a.reviewed for a in accts)
         only_new = req.q("origin") == "unreviewed"
         excl = load_exclusions(conn)
+        fits = {a.id: check_fit(a, excl, self.cfg) for a in accts}
+        counts = {"active": sum(a.status == "active" for a in accts), "excluded": sum(a.status == "excluded" for a in accts),
+                  "unverified": sum(a.status == "active" and fits[a.id].unverified for a in accts)}
         rows = []
         for a in accts:
-            if (status in counts and a.status != status) or (q and q not in a.name.lower()) or (only_new and a.reviewed):
+            if status == "unverified":
+                if a.status != "active" or not fits[a.id].unverified:
+                    continue
+            elif status in counts and a.status != status:
                 continue
-            rows.append({"a": a, "fit": check_fit(a, excl, self.cfg)})
+            if (q and q not in a.name.lower()) or (only_new and a.reviewed):
+                continue
+            rows.append({"a": a, "fit": fits[a.id]})
         return self.render("accounts.html", page="accounts", rows=rows, counts=counts, status=status, q=req.q("q"), total=len(accts),
                            unreviewed=unreviewed, only_new=only_new)
 

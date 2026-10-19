@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
-from bd.accounts import Account, list_accounts, log_audit, wants_lookup, wants_read
+from bd.accounts import Account, facts_missing, list_accounts, log_audit, wants_lookup, wants_read
 from bd.config import Config
 from bd.curate import apply_selected
 from bd.edgar import EdgarClient, EdgarError, facts_url, submissions_url
@@ -60,7 +60,7 @@ def name_matches(account: Account, only: str, exact: bool) -> bool:
 
 
 def select(conn: sqlite3.Connection, only: str | None = None, exact: bool = False) -> list[Account]:
-    """Companies worth a look, those on hold first (that is where the SEC data changes something), then the ones tried longest ago."""
+    """Companies worth a look, those with location or size missing first (that is where the SEC data changes something), then the ones tried longest ago."""
     cleared = cik_cleared(conn)
     accts = [a for a in list_accounts(conn, status=None)
              if a.status != "excluded" and ((wants_lookup(a) and a.id not in cleared) or wants_read(a))]
@@ -68,7 +68,7 @@ def select(conn: sqlite3.Connection, only: str | None = None, exact: bool = Fals
         accts = [a for a in accts if name_matches(a, only, exact)]
     last = {r["account_id"]: r["d"] for r in conn.execute(
         "SELECT account_id, MAX(run_date) AS d FROM runs WHERE step = ? AND account_id IS NOT NULL GROUP BY account_id", (STEP,))}
-    accts.sort(key=lambda a: (a.status != "hold_review", a.id in last, last.get(a.id, ""), a.id))
+    accts.sort(key=lambda a: (not facts_missing(a), a.id in last, last.get(a.id, ""), a.id))
     return accts
 
 

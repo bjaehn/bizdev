@@ -49,7 +49,7 @@ def test_an_empty_database_says_what_to_do_and_still_reports_coverage(conn, cfg)
 def test_coverage_counts_what_is_actually_there(conn, cfg):
     seeded(conn, cfg)
     c = build_leadership(conn, cfg, AS_OF).coverage
-    assert (c.total, c.ready, c.waiting) == (5, 4, 1) and c.with_signal_90d == 3 and c.clients == 2
+    assert (c.total, c.ready, c.unscanned) == (5, 4, 4) and c.with_signal_90d == 3 and c.clients == 2
     assert c.scored >= 2 and c.hot + c.warm >= 1 and c.score_date == AS_OF.isoformat() and c.score_age_days == 0
 
 

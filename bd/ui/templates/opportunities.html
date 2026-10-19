@@ -12,7 +12,7 @@
 {% elif error %}<div class="errors"><b>{{ error }}</b></div>
 {% else %}
 {% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} compan{{ 'y' if stale|length == 1 else 'ies' }} ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). An admin needs to run Score again.</div>{% endif %}
-<p class="meta"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> ready · <b>{{ cov.with_signal_90d }}</b> with news in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.waiting %} · {{ cov.waiting }} still waiting for facts{% endif %}</p>
+<p class="meta"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> scanned · <b>{{ cov.with_signal_90d }}</b> with news in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
 {% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err">These scores are {{ cov.score_age_days }} days old.</div>{% endif %}
 
 <form method="get" action="/opportunities" class="filters">

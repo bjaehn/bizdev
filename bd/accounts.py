@@ -271,7 +271,11 @@ def wants_read(a: Account) -> bool:
     return bool(a.cik) and (a.revenue is None or not a.ownership or not a.hq_city)
 
 
+def facts_missing(a: Account) -> bool:
+    """Location or size not on file. Such a company is still scanned for signals; this only orders the work that fills the gap in."""
+    return a.chicagoland not in ("yes", "no") or (a.revenue is None and a.employees is None)
+
+
 def can_check_free(a: Account) -> bool:
-    """Can the free check (SEC filings, job boards, SEC event filings) add anything? A ready company has free sources to read; a company on
-    hold only if the SEC could answer for it. An excluded company, or a private one the SEC does not list, gets nothing from it."""
-    return a.status == "active" or (a.status == "hold_review" and (wants_lookup(a) or wants_read(a)))
+    """Can the free check (job boards, SEC event filings) read anything for this company? Every company that is not known out of scope."""
+    return a.status != "excluded"

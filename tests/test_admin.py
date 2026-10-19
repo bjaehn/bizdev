@@ -101,12 +101,18 @@ def test_a_failed_save_opens_the_edit_block_and_keeps_the_input(app_env):  # noq
     assert 'value="lots"' in r.body and "Not saved" in r.body
 
 
-def test_a_company_waiting_for_facts_says_why_in_plain_words(app_env):  # noqa: F811
+def test_a_company_with_unconfirmed_facts_is_scanned_and_says_what_is_unconfirmed(app_env):  # noqa: F811
     e = app_env
-    a = add_account(e.conn, "Waitco", status="hold_review", chicagoland="unknown", revenue=None, ownership=None)
+    a = add_account(e.conn, "Waitco", chicagoland="unknown", revenue=None, ownership=None)
     body = e.get(f"/accounts/{a}").body
-    assert "Needs facts" in body and "Not scanned yet:" in body and "Chicagoland status unverified" in body
-    assert "Fit gate" not in body and "hold_review" not in body
+    assert "Unverified" in body and "Scanned for signals, but not confirmed:" in body and "Chicagoland status unverified" in body
+    assert "Fit gate" not in body and "hold_review" not in body and "Not scanned" not in body
+    x = add_account(e.conn, "Outco", chicagoland="no")
+    gone = e.get(f"/accounts/{x}").body
+    e.conn.execute("UPDATE accounts SET status='excluded' WHERE id=?", (x,))
+    e.conn.commit()
+    gone = e.get(f"/accounts/{x}").body
+    assert "Out of scope" in gone and "Not scanned: not in Chicagoland" in gone
 
 
 def test_opportunities_keeps_every_filter_under_more_filters(app_env):  # noqa: F811

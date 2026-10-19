@@ -30,7 +30,7 @@
 {% set ch = w.changes %}
 {% if ch.new_leads %}<p><b>Newly Hot or Warm:</b> {% for o in ch.new_leads %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> ({{ o.result.band|band_name }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
 {% if ch.risers %}<p><b>Moving up:</b> {% for o in ch.risers %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> +{{ o.delta }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
-<p class="meta">Scored {{ w.run_date|fdate }} · {{ cov.ready }} compan{{ 'y' if cov.ready == 1 else 'ies' }} checked · {{ cov.with_signal_90d }} with news in the last 90 days{% if cov.waiting %} · {{ cov.waiting }} waiting for facts, not yet scored{% endif %}</p>
+<p class="meta">Scored {{ w.run_date|fdate }} · {{ cov.ready }} compan{{ 'y' if cov.ready == 1 else 'ies' }} checked · {{ cov.with_signal_90d }} with news in the last 90 days{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
 </div>
 
 <h2>Companies to look at</h2>

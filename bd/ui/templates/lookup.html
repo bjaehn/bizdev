@@ -15,15 +15,15 @@
 <div>{% if h.score is not none %}<span class="badge {{ 'hot' if h.band == 'Hot' else ('warm' if h.band == 'Warm' else '') }}">{{ h.band|band_name }} · {{ h.score }}</span> {% endif %}
 {% if h.state.client %}<span class="badge good">client</span> {% endif %}
 {% if h.state.stage != 'new' %}<span class="badge">{{ stage_labels[h.state.stage] }}</span> {% endif %}
-{% if h.account.status == 'active' %}<span class="badge good">ready to scan</span>{% elif h.account.status == 'excluded' %}<span class="badge bad">excluded</span>{% else %}<span class="badge warm">waiting for facts</span>{% endif %}</div></div>
-{% if h.reasons %}<p class="meta">Why not ready: {{ h.reasons|join('; ') }}.</p>{% endif %}
+{% if h.account.status == 'excluded' %}<span class="badge bad">out of scope</span>{% elif h.reasons %}<span class="badge warm">unverified</span>{% else %}<span class="badge good">scanned for signals</span>{% endif %}</div></div>
+{% if h.reasons %}<p class="meta">{{ 'Not scanned' if h.account.status == 'excluded' else 'Scanned anyway, not confirmed' }}: {{ h.reasons|join('; ') }}.</p>{% endif %}
 {% if h.latest_signal %}<p><b>{{ labels[h.latest_signal['type']] }}</b> · {{ h.latest_signal['event_date']|fdate }}{% if h.signals_90d > 1 %} · {{ h.signals_90d }} signals in 90 days{% endif %}<br><span class="meta">{{ h.latest_signal['summary'] }}</span>
 {% if h.latest_signal['source_url']|safe_url %}<br><a href="{{ h.latest_signal['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ h.latest_signal['source_url']|host }}</a>{% endif %}</p>
-{% elif h.account.status == 'active' %}<p class="meta">No signals found yet.</p>{% endif %}
+{% elif h.account.status != 'excluded' %}<p class="meta">No signals found yet.</p>{% endif %}
 <p class="meta"><a href="/companies/{{ h.account.id }}">Analysis profile</a> · <a href="/accounts/{{ h.account.id }}">Manage</a></p>
 {% if can_run and h.account.status != 'excluded' %}
 <form method="post" action="/lookup/run" class="filters"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ h.account.name }}">
-{% if h.account.status != 'active' %}<button class="ghost" type="submit" {{ 'disabled' if busy else '' }}>Check the SEC (free)</button>{% endif %}
+{% if h.reasons %}<button class="ghost" type="submit" {{ 'disabled' if busy else '' }}>Check the SEC (free)</button>{% endif %}
 <button class="ghost" type="submit" name="deep" value="1" {{ 'disabled' if busy else '' }}>Research and scan now</button>
 <label><input type="checkbox" name="confirm" value="1"> uses paid model calls, up to ${{ budget }}</label></form>
 {% endif %}

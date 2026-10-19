@@ -2,12 +2,12 @@
 {% block title %}Accounts{% endblock %}
 {% block body %}
 <div class="row"><div><h1>Accounts</h1>
-<p class="sub">{{ total }} companies. Only <b>ready</b> ones are scanned and scored. A company is ready once its location (Chicagoland) and size are confirmed. Those marked <b>needs facts</b> are waiting: run <a href="/operate">Run research and scans</a> &rarr; Enrich, or fill them in by hand.</p></div>
+<p class="sub">{{ total }} companies. Every company is scanned for signals unless it is known to be out of scope (an exclusion, outside Chicagoland, or below the size floor). A company whose location or size is not confirmed is scanned anyway and shown as <b>unverified</b>; fill the facts in when you know them.</p></div>
 <a class="btn" href="/accounts/new">Add account</a></div>
 <div class="pill-row">
-<a class="badge good" href="/accounts?status=active">{{ counts.active }} ready to scan</a>
-<a class="badge warm" href="/accounts?status=hold_review">{{ counts.hold_review }} need facts</a>
-<a class="badge bad" href="/accounts?status=excluded">{{ counts.excluded }} excluded</a>
+<a class="badge good" href="/accounts?status=active">{{ counts.active }} scanned for signals</a>
+<a class="badge warm" href="/accounts?status=unverified">{{ counts.unverified }} unverified</a>
+<a class="badge bad" href="/accounts?status=excluded">{{ counts.excluded }} out of scope</a>
 <a class="badge" href="/accounts">all</a>
 {% if unreviewed %}<a class="badge warm" href="/accounts?origin=unreviewed">{{ unreviewed }} auto-added, not reviewed</a>{% endif %}
 </div>
@@ -17,13 +17,13 @@
 <form method="get" action="/accounts" class="filters">
 <input type="text" name="q" value="{{ q }}" placeholder="Search by name" aria-label="Search by name">
 <select name="status" aria-label="Status"><option value="">any status</option>
-{% for s in ['active','hold_review','excluded'] %}<option value="{{ s }}" {{ 'selected' if s == status else '' }}>{{ s|status_label }}</option>{% endfor %}</select>
+{% for s in ['active','unverified','excluded'] %}<option value="{{ s }}" {{ 'selected' if s == status else '' }}>{{ s|status_label }}</option>{% endfor %}</select>
 <button class="ghost" type="submit">Filter</button></form>
 <div class="wrap"><table>
-<tr><th>Account</th><th>Status</th><th>What is missing</th><th>Chicagoland</th><th class="num">Revenue</th><th class="num">Employees</th><th>Ownership</th><th>Tier</th><th>Last scanned</th></tr>
+<tr><th>Account</th><th>Status</th><th>Why</th><th>Chicagoland</th><th class="num">Revenue</th><th class="num">Employees</th><th>Ownership</th><th>Tier</th><th>Last scanned</th></tr>
 {% for r in rows %}{% set a = r.a %}
 <tr><td><a href="/accounts/{{ a.id }}">{{ a.name }}</a>{% if not a.reviewed %} <span class="badge warm">auto-added</span>{% elif a.origin == 'discovered' %} <span class="badge">discovered</span>{% endif %}</td>
-<td><span class="badge {{ 'good' if a.status == 'active' else ('warm' if a.status == 'hold_review' else 'bad') }}">{{ a.status|status_label }}</span></td>
+<td><span class="badge {{ 'bad' if a.status == 'excluded' else ('warm' if r.fit.unverified else 'good') }}">{{ 'unverified' if r.fit.unverified and a.status != 'excluded' else a.status|status_label }}</span></td>
 <td class="meta">{{ r.fit.reasons|join('; ') }}</td>
 <td>{{ a.chicagoland }}</td><td class="num">{{ a.revenue|money }}</td><td class="num">{{ a.employees|show }}</td><td>{{ a.ownership|show }}</td><td>{{ a.tier }}</td><td>{{ a.last_scanned or 'never' }}</td></tr>
 {% else %}<tr><td colspan="9" class="empty">No accounts match.</td></tr>

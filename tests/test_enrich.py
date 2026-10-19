@@ -153,7 +153,7 @@ def test_unknown_evidence_key_is_invalid(cfg):
 def test_proposals_csv_loads_with_seed_and_unblocks_the_fit_gate(cfg, tmp_path):
     conn = make_db(tmp_path)
     seed_csv(conn, _csv(tmp_path, "name\nAcme Corp\nOther Co\n", "names.csv"))
-    assert apply_fit_gate(conn, cfg).held                                   # both held: nothing known
+    assert len(apply_fit_gate(conn, cfg).unverified) == 2                   # both unverified (still scanned): nothing known
     accounts = list_accounts(conn, status=None)
     r, _ = enrich(cfg, facts(), acct=accounts[0])
     out = tmp_path / "proposals.csv"
@@ -167,7 +167,7 @@ def test_proposals_csv_loads_with_seed_and_unblocks_the_fit_gate(cfg, tmp_path):
     assert (a["domain"], a["chicagoland"], a["revenue"], a["employees"], a["ownership"], a["cik"]) == \
            ("acme.com", "yes", 5e8, 2500, "public", "0000001234")
     g = apply_fit_gate(conn, cfg)
-    assert [x.name for x in g.passed] == ["Acme Corp"] and [x.name for x, _ in g.held] == ["Other Co"]
+    assert [x.name for x in g.passed] == ["Acme Corp"] and [x.name for x, _ in g.unverified] == ["Other Co"]
 
 
 def _csv(tmp_path, body, name):
@@ -210,11 +210,10 @@ def test_old_database_without_cik_column_is_migrated_and_keeps_its_rows(tmp_path
 def test_select_accounts(cfg, tmp_path):
     conn = make_db(tmp_path)
     seed_csv(conn, _csv(tmp_path, "name\nAlpha\nBeta\nGamma\n", "n.csv"))
-    conn.execute("UPDATE accounts SET status='active' WHERE name='Alpha'")
+    conn.execute("UPDATE accounts SET status='active', chicagoland='yes', revenue=5e8, ownership='public' WHERE name='Alpha'")   # verified: nothing to research
     conn.execute("UPDATE accounts SET status='excluded' WHERE name='Gamma'")
-    conn.execute("UPDATE accounts SET status='hold_review' WHERE name='Beta'")
     conn.commit()
-    assert [a.name for a in select_accounts(conn, False, None, None)] == ["Beta"]
+    assert [a.name for a in select_accounts(conn, False, None, None)] == ["Beta"]      # only the unverified one
     assert [a.name for a in select_accounts(conn, True, None, None)] == ["Alpha", "Beta"]   # excluded never enriched
     assert [a.name for a in select_accounts(conn, True, "alp", None)] == ["Alpha"]
     assert len(select_accounts(conn, True, None, 1)) == 1
