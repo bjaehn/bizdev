@@ -11,10 +11,10 @@
 {% for h in hits %}
 <div class="card">
 <div class="row"><div><a class="name" href="/accounts/{{ h.account.id }}">{{ h.account.name }}</a>{% if h.exact and hits|length > 1 %} <span class="badge good">best match</span>{% endif %}
-<div class="meta">{{ [h.account.industry, h.account.hq_city, h.account.ownership, ('$' ~ ('%.0f'|format(h.account.revenue / 1000000)) ~ 'M revenue') if h.account.revenue else none]|select|join(' · ') or 'no company details recorded yet' }}</div></div>
-<div>{% if h.score is not none %}<span class="badge {{ 'hot' if h.band == 'Hot' else ('warm' if h.band == 'Warm' else '') }}">{{ h.band }} · {{ h.score }}</span>{% endif %}
-{% if h.state.client %}<span class="badge good">client</span>{% endif %}
-{% if h.state.stage != 'new' %}<span class="badge">{{ stage_labels[h.state.stage] }}</span>{% endif %}
+<div class="meta">{{ [h.account.industry, h.account.hq_city, h.account.ownership, (h.account.revenue|money ~ ' revenue') if h.account.revenue else none]|select|join(' · ') or 'no company details recorded yet' }}</div></div>
+<div>{% if h.score is not none %}<span class="badge {{ 'hot' if h.band == 'Hot' else ('warm' if h.band == 'Warm' else '') }}">{{ h.band }} · {{ h.score }}</span> {% endif %}
+{% if h.state.client %}<span class="badge good">client</span> {% endif %}
+{% if h.state.stage != 'new' %}<span class="badge">{{ stage_labels[h.state.stage] }}</span> {% endif %}
 {% if h.account.status == 'active' %}<span class="badge good">ready to scan</span>{% elif h.account.status == 'excluded' %}<span class="badge bad">excluded</span>{% else %}<span class="badge warm">waiting for facts</span>{% endif %}</div></div>
 {% if h.reasons %}<p class="meta" style="margin:8px 0 0">Why not ready: {{ h.reasons|join('; ') }}.</p>{% endif %}
 {% if h.latest_signal %}<p style="margin:8px 0 0"><b>{{ labels[h.latest_signal['type']] }}</b> · {{ h.latest_signal['event_date']|fdate }}{% if h.signals_90d > 1 %} · {{ h.signals_90d }} signals in 90 days{% endif %}<br><span class="meta">{{ h.latest_signal['summary'] }}</span>
@@ -32,7 +32,7 @@
 
 {% if not exact %}
 <div class="card">
-<h2 style="margin-top:0">{{ 'Not on your list' if not hits else 'Not the company you meant?' }}: {{ q }}</h2>
+<h2 style="margin-top:0">{% if hits %}Not the company you meant? Add &ldquo;{{ q }}&rdquo; as a new one{% else %}Not on your list: {{ q }}{% endif %}</h2>
 {% if can_run %}
 <p class="meta">Adding it puts it on your list as a new company. A public company's size, ownership and headquarters then come straight from the SEC. Anything else needs the research step, which also searches the web for facts and news.</p>
 {% if busy %}<p class="flash err">Another job is running. Wait for it to finish, then add the company.</p>{% endif %}

@@ -92,6 +92,7 @@ footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);fon
 {% macro menu(title, entries) %}<div class="menu {{ 'on' if page in entries|map(attribute=0)|list else '' }}"><span class="trigger" tabindex="0" role="button" aria-haspopup="true">{{ title }} <span aria-hidden="true">▾</span></span>
 <div class="menu-list">{% for e in entries %}{{ item(*e) }}{% endfor %}</div></div>{% endmacro %}
 {% if operate %}<a class="top {{ 'on' if page == 'home' else '' }}" href="/">Home</a>{% endif %}
+<a class="top {{ 'on' if page == 'leadership' else '' }}" href="/leadership">Leadership</a>
 <a class="top {{ 'on' if page == 'opportunities' else '' }}" href="{{ '/opportunities' if operate else '/' }}">Opportunities</a>
 {{ menu('Companies', companies) }}
 <a class="top {{ 'on' if page == 'hiring' else '' }}" href="/hiring">Hiring</a>

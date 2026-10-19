@@ -143,7 +143,12 @@ Origin and Sec-Fetch-Site checks on every POST including login; Content-Security
 `/healthz` returns only `ok`; the login page never shows flash messages or navigation. Jobs: a fixed whitelist run
 as `python -m bd.cli` subprocesses with validated argv (no shell), one at a time, 2-hour timeout, secrets
 redacted from displayed logs, paid-call confirmation, and **no job or button that posts to Teams** - only the
-scheduled Monday run can, and only when `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not 1. The Operate page
+scheduled Monday run can, and only when `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not 1. The **Look up a company**
+page can add a company and start two one-company jobs (`sec_fill`, free; `lookup`, paid and hard-capped at $3 whatever the
+company); the name is limited to letters, digits and basic punctuation (60 characters, never starting with a dash) before it
+becomes an argv element, a name that matches two companies is refused rather than guessed, and the paid job still needs the
+confirmation tick. The **Existing clients** flag is pipeline bookkeeping (audited as `client`); it never changes a score or
+removes a company from scanning. The Operate page
 shows whether each secret is set, never its value. The container drops root before serving.
 
 ## 5. Known gaps and limits

@@ -43,6 +43,7 @@ from bd.market import build_market
 from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
+from bd.leadership import MIN_RISE, NEW_SIGNAL_DAYS, STALE_SCORE_DAYS, build_leadership
 from bd.lookup import find as find_company
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
@@ -365,6 +366,7 @@ class App:
             ("POST", "/settings/update"): lambda: self.settings_update(req, conn),
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
+            ("GET", "/leadership"): lambda: self.leadership_page(conn),
             ("GET", "/lookup"): lambda: self.lookup_page(req, conn),
             ("GET", "/clients"): lambda: self.clients_page(conn),
             ("POST", "/clients/mark"): lambda: self.clients_mark(req, conn),
@@ -513,6 +515,12 @@ class App:
             self.say("ok" if ok else "err", ("Added to" if on else "Removed from") + " your watchlist." if ok else "No such account.")
         back = req.f("back")
         return self.redirect(back if back.startswith("/") and not back.startswith("//") else f"/accounts/{account_id}")
+
+    def leadership_page(self, conn: sqlite3.Connection) -> Response:
+        v = build_leadership(conn, self.cfg, date.today())
+        return self.render("leadership.html", page="leadership", c=v.coverage, act=v.act, changes=v.changes, pulse=v.pulse, clients=v.clients,
+                           problem=v.problem, labels=TYPE_LABELS, stage_labels=STAGE_LABELS, stale_days=STALE_SCORE_DAYS,
+                           min_rise=MIN_RISE, new_signal_days=NEW_SIGNAL_DAYS)
 
     def lookup_page(self, req: Request, conn: sqlite3.Connection) -> Response:
         q = " ".join(req.q("q").split())[:120]
