@@ -8,7 +8,7 @@ from bd.accounts import Account
 from bd.db import connect, init_db
 from bd.llm import Usage
 from bd.models import SignalExtract
-from bd.runner import is_due, run_scans
+from bd.runner import accounts_with_signals, is_due, run_scans
 from bd.scanners.base import AcceptedSignal, Rejection, ScanOutcome, Scanner
 from tests.conftest import AS_OF
 
@@ -214,3 +214,16 @@ def test_reserve_rules():
     assert r.per_call == 0.35
     r.note(0.25), r.note(0.35)
     assert abs(r.per_call - 0.30) < 1e-9
+
+
+def test_accounts_with_signals_picks_those_with_a_trustworthy_recent_signal(tmp_path, cfg):
+    from tests.conftest import add_account, add_signal, make_db
+    conn = make_db(tmp_path)
+    fresh, old, rumour, none = (add_account(conn, n) for n in ("Fresh", "Old", "Rumour", "None"))
+    add_signal(conn, cfg, fresh, "leadership_change", 20)
+    add_signal(conn, cfg, old, "leadership_change", 400)
+    add_signal(conn, cfg, rumour, "restructuring_layoffs", 5, conf="Low", url="https://gossip.example/r")
+    accts = [Account(id=i, name=n) for i, n in ((fresh, "Fresh"), (old, "Old"), (rumour, "Rumour"), (none, "None"))]
+    assert [a.name for a in accounts_with_signals(conn, accts, AS_OF, 180)] == ["Fresh"]
+    assert accounts_with_signals(conn, [], AS_OF, 180) == []
+    assert [a.name for a in accounts_with_signals(conn, accts, AS_OF, 500)] == ["Fresh", "Old"]

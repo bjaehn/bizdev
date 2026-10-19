@@ -73,6 +73,37 @@ def test_scan_dry_run_needs_no_key_and_lists_everyone_not_known_out_of_scope(tmp
         app, ["scan", "--dry-run", "--tier", "B"]).output
 
 
+def test_scan_dry_run_names_the_extra_scanners_that_only_run_for_companies_with_a_signal(tmp_path):
+    seeded(tmp_path)
+    r = runner.invoke(app, ["scan", "--dry-run", "--scanners", "leadership,press,hiring", "--extras", "events,tech_procurement,press"])
+    assert r.exit_code == 0 and "2 of 2 accounts due" in r.output and "x ['leadership', 'press', 'hiring']" in r.output
+    assert "then ['events', 'tech_procurement'] for the ones that show a signal" in r.output          # press is already core: not repeated
+    assert "then [" not in runner.invoke(app, ["scan", "--dry-run", "--scanners", "leadership"]).output
+
+
+def test_extra_scanners_run_only_for_scanned_companies_that_show_a_signal_and_never_touch_the_scan_date(tmp_path, monkeypatch):
+    import bd.cli as cli
+    from bd.config import load_config
+    from bd.db import connect
+    from tests.test_runner import FakeScanner
+    seeded(tmp_path)                                                            # Acme and Beta are both on the scan list
+    made = {}
+
+    def fake_build(names, cfg, settings):
+        made[tuple(names)] = [FakeScanner(cfg, name=n, signals_for=("Acme",) if n == "leadership" else ()) for n in names]
+        return made[tuple(names)]
+
+    monkeypatch.setattr(cli, "_build_scanners", fake_build)
+    r = runner.invoke(app, ["scan", "--scanners", "leadership", "--extras", "events"])
+    assert r.exit_code == 0, r.output
+    core, extra = made[("leadership",)][0], made[("events",)][0]
+    assert sorted(core.calls) == ["Acme", "Beta"] and extra.calls == ["Acme"]            # only Acme found a signal, so only Acme gets the extra look
+    assert "Extra scanners ['events'] for 1 of 2 scanned companies that already show a signal." in r.output and "Extras total:" in r.output
+    conn = connect(tmp_path / "t.sqlite")
+    last = {row["name"]: row["last_scanned"] for row in conn.execute("SELECT name, last_scanned FROM accounts")}
+    assert last["Acme"] and last["Beta"]                                                 # the core scan marked them; the extras did not change that
+
+
 def test_scan_requires_key_and_model_after_gate(tmp_path):
     seeded(tmp_path)
     r = runner.invoke(app, ["scan"])

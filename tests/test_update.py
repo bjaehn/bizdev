@@ -33,7 +33,9 @@ def test_update_job_is_validated_and_runs_the_steps_in_order():
     assert [s[0] for s in steps] == ["check", "sec-fill", "pe-sync", "scan", "scan", "discover", "enrich", "apply-proposals", "score"]
     assert steps[1] == ["sec-fill", "--as-of", "2026-10-16"]
     assert steps[6] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
-    assert "--scanners" in steps[3] and "--scanners" not in steps[4] and steps[4][:3] == ["scan", "--limit", "25"]
+    assert "--light" in steps[3] and "--light" not in steps[4] and steps[4][:3] == ["scan", "--limit", "25"]
+    assert steps[4][steps[4].index("--scanners") + 1] == "leadership,press,hiring" and steps[4][steps[4].index("--extras") + 1] == "events,tech_procurement"
+    assert "warn" not in " ".join(steps[4])                                  # WATCH notices are left to Advanced tools
     assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[4]
     skip = sequence_for("update", validate("update", {**UPD, "research": "0", "segments": "0"}), "2026-10-16")
     assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "scan", "scan", "score"]
@@ -63,7 +65,7 @@ step = sys.argv[1]
 with open({str(tmp_path / "calls.jsonl")!r}, "a") as f:
     f.write(json.dumps({{"step": step, "args": sys.argv[1:], "budget": os.environ.get("BD_MAX_COST_USD")}}) + "\\n")
 costs = json.loads(os.environ.get("FAKE_COSTS", "{{}}"))
-free_scan = step == "scan" and "--scanners" in sys.argv          # the free-sources scan costs nothing
+free_scan = step == "scan" and "--light" in sys.argv             # the free-sources scan costs nothing
 if step in costs and not free_scan:
     c = sqlite3.connect(os.environ["BD_DB_PATH"])
     c.execute("INSERT INTO runs(run_date,step,accounts_scanned,signals_found,tokens,est_cost) VALUES ('2026-10-16', ?, 0, 0, 10, ?)", (step, costs[step]))
@@ -86,10 +88,10 @@ def test_one_spending_limit_covers_the_whole_update(fake, monkeypatch):
     jid = runner_.submit("update", {**UPD, "budget": "5"}, confirmed=True)
     runner_.wait()
     job = runner_.get(jid)
-    by = {c["step"]: c for c in calls(tmp) if "--scanners" not in c["args"]}
+    by = {c["step"]: c for c in calls(tmp) if "--light" not in c["args"]}
     assert float(by["scan"]["budget"]) == 5.0 and float(by["discover"]["budget"]) == 2.0       # the signal scan gets the whole limit; discovery what was left
     assert "enrich" not in by                                                                    # 5.5 spent: limit used up, fact research skipped
-    free = [c for c in calls(tmp) if c["step"] == "scan" and "--scanners" in c["args"]]
+    free = [c for c in calls(tmp) if c["step"] == "scan" and "--light" in c["args"]]
     assert len(free) == 1 and free[0]["budget"] is None                                          # the free sources run first, with no limit applied
     assert "apply-proposals" in by and "pe-sync" in by and "score" in by                         # the free steps still run
     assert job.status == "ok" and "Spent about $5.50 of the $5 limit" in job.note and "skipped" in job.note

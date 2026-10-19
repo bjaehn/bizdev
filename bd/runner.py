@@ -50,6 +50,18 @@ class RunSummary:
     errors: int = 0
 
 
+def accounts_with_signals(conn: sqlite3.Connection, accounts: list[Account], as_of: date, days: int) -> list[Account]:
+    """The accounts among `accounts` that already have a stored signal (not a Low-confidence rumour) dated in the last `days` days."""
+    if not accounts:
+        return []
+    ids = [a.id for a in accounts]
+    since = (as_of - timedelta(days=days)).isoformat()
+    have = {r[0] for r in conn.execute(
+        f"SELECT DISTINCT account_id FROM signals WHERE confidence != 'Low' AND event_date >= ? AND account_id IN ({','.join('?' * len(ids))})",
+        (since, *ids))}
+    return [a for a in accounts if a.id in have]
+
+
 def is_due(acc: Account, as_of: date, cfg: Config, force: bool = False) -> bool:
     if force or not acc.last_scanned:
         return True

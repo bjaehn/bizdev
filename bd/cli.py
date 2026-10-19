@@ -140,6 +140,8 @@ def scan(
     limit: Optional[int] = typer.Option(None, help="Scan at most N accounts"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
     scanners: str = typer.Option("all", help="Comma list of scanner names, or all implemented"),
+    extras: str = typer.Option("", help="Comma list of extra scanners, run afterwards only for scanned companies that already show a signal "
+                                         "(a deeper look where it is most likely to pay)"),
     workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
     force: bool = typer.Option(False, help="Ignore tier cadence"),
     dry_run: bool = typer.Option(False, help="Apply the fit gate and show what would be scanned; no API calls"),
@@ -150,7 +152,7 @@ def scan(
     from bd.accounts import list_accounts
     from bd.db import connect, init_db
     from bd.fit_gate import apply_fit_gate
-    from bd.runner import is_due, run_scans
+    from bd.runner import accounts_with_signals, is_due, run_scans
     from bd.scanners import SCANNERS
 
     if tier not in ("A", "B", "all"):
@@ -158,6 +160,7 @@ def scan(
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
     names = _resolve_scanner_names(scanners, settings)
+    extra_names = [n for n in _resolve_scanner_names(extras, settings) if n not in names] if extras else []
     conn = connect(settings.db_path)
     init_db(conn)
     from bd.settings_store import apply_overrides
@@ -186,6 +189,8 @@ def scan(
     if dry_run:
         for a in due:
             typer.echo(f"  would scan: {a.name} (tier {a.tier})")
+        if extra_names:
+            typer.echo(f"  then {extra_names} for the ones that show a signal")
         return
     if not due:
         return
@@ -203,6 +208,20 @@ def scan(
     if summary.budget_hit:
         typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): {summary.skipped_budget} calls not started. "
                    "Raise llm.max_cost_per_run_usd in config.yaml and re-run to finish.", err=True)
+    elif extra_names and summary.accounts:
+        scanned = [r.account for r in summary.accounts.values()]
+        deep = accounts_with_signals(conn, scanned, run_date, cfg.scan.window_days)
+        cap = cfg.llm.max_cost_per_run_usd
+        left = None if cap is None else max(cap - summary.est_cost, 0.0)
+        typer.echo(f"\nExtra scanners {extra_names} for {len(deep)} of {len(scanned)} scanned compan{'y' if len(scanned) == 1 else 'ies'} "
+                   "that already show a signal.")
+        if deep and (left is None or left > 0):
+            more = run_scans(conn, cfg, _build_scanners(extra_names, cfg, settings), deep, run_date, model=settings.anthropic_model,
+                             workers=workers, force=True, max_cost=left, touch_last_scanned=False, log=typer.echo)
+            typer.echo(f"Extras total: {more.tokens:,} tokens, ${more.est_cost:.4f} estimated, {more.new_signals} new signals, {more.errors} call errors.")
+            summary.errors += more.errors
+            if more.budget_hit:
+                typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): {more.skipped_budget} extra calls not started.", err=True)
     if summary.calls and summary.errors == summary.calls:
         typer.echo("Every scan call failed (bad API key or model, no network?). Exiting with an error so a scheduled "
                    "run stops before scoring and posting.", err=True)

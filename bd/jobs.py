@@ -166,6 +166,11 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 
 LOOKUP_BUDGET = 3        # dollars: the most one "research and scan this company" may spend, whatever the company
 FIND_BUDGET = 1          # dollars: the most one signal scan of a single company, started from the viewer's Find page, may spend
+# What a scan looks for. Every company gets the core scanners; the extras run only for companies that already show a signal (that is where
+# they pay), and WARN notices are left to Advanced tools: on the first live run events, technology and WARN were about half the spend and
+# found one signal in four companies.
+CORE_SCANNERS = "leadership,press,hiring"
+EXTRA_SCANNERS = "events,tech_procurement"
 FIND_SCANNERS = "leadership,press,hiring"      # what a signal scan of one company looks for: about $0.2-0.5 a scanner on the first live run, so these three fit the $1 cap
 _NAME = re.compile(r"[A-Za-z0-9 .,&'()/-]+")
 
@@ -212,7 +217,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         # with whatever is left of the limit. Facts never delay or use up the money for signals.
         steps = [["check"], ["sec-fill", "--as-of", as_of],                  # free: gives public companies the SEC id that the filing scanners need
                  ["pe-sync"], ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
-                 ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of]]
+                 ["scan", "--limit", a["--scan"], "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--allow-empty", "--as-of", as_of]]
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
         if int(a["--research"]):
@@ -236,7 +241,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
-        return [["scan", "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
+        return [["scan", "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
     return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "rfps", "sec-fill") else [args]
 
