@@ -256,6 +256,8 @@ def discover(
     typer.echo(f"Total: {summary.tokens:,} tokens, ${summary.est_cost:.4f} estimated{note}, {summary.errors} call errors.")
     if summary.added:
         typer.echo("Auto-added (unreviewed, tier B): " + ", ".join(summary.added))
+    if summary.segments_skipped:
+        typer.echo(f"{summary.segments_skipped} of {summary.segments} segment search(es) not started: the spending limit would have been passed.")
     if summary.budget_hit:
         typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}); some candidates were not researched.", err=True)
     if summary.segments and summary.errors >= summary.segments and not summary.researched:
