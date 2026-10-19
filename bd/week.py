@@ -53,6 +53,8 @@ class Week:
     tracked: list[Tracked] = field(default_factory=list)
     changes: Changes = field(default_factory=Changes)
     changed_line: str = ""
+    new_hot_warm: int | None = None                  # companies that became Hot or Warm since the previous run (None on a first run)
+    risers: int = 0
     pulse: Pulse = field(default_factory=Pulse)
 
 
@@ -66,11 +68,17 @@ def signs_line(result: ScoreResult) -> str:
     return f"{len(kinds)} kinds of signs agree: {', '.join(kinds)}"
 
 
+def _counts(ol: OpportunityList) -> tuple[int, int]:
+    """(companies that became Hot or Warm, other companies that rose by MIN_RISE points or more) since the previous run."""
+    new_hw = sum(1 for o in ol.items if o.is_new and o.result.band in ("Hot", "Warm"))
+    risers = sum(1 for o in ol.items if o.delta is not None and o.delta >= MIN_RISE and not (o.is_new and o.result.band in ("Hot", "Warm")))
+    return new_hw, risers
+
+
 def _changed_line(ol: OpportunityList, ch: Changes) -> str:
     if ol.prev_date is None:
         return "This is the first scoring run, so there is nothing to compare it with yet."
-    new_hw = sum(1 for o in ol.items if o.is_new and o.result.band in ("Hot", "Warm"))
-    risers = sum(1 for o in ol.items if o.delta is not None and o.delta >= MIN_RISE and not (o.is_new and o.result.band in ("Hot", "Warm")))
+    new_hw, risers = _counts(ol)
     bits = [f"{new_hw} compan{'y' if new_hw == 1 else 'ies'} became Hot or Warm",
             f"{risers} moved up by {MIN_RISE} points or more",
             f"{ch.new_signal_total} new signal{'' if ch.new_signal_total == 1 else 's'} {'was' if ch.new_signal_total == 1 else 'were'} found in the last 7 days"]
@@ -123,5 +131,8 @@ def build_week(conn: sqlite3.Connection, cfg: Config, today: date) -> Week:
     out.clients = [o for o in ranked if o.client][:CLIENTS_MAX]
     out.tracked = _tracked(conn, ol.items, today)
     out.changes = build_changes(conn, OpportunityList(ol.run_date, ol.prev_date, ranked), today)
-    out.changed_line = _changed_line(OpportunityList(ol.run_date, ol.prev_date, ranked), out.changes)
+    shown = OpportunityList(ol.run_date, ol.prev_date, ranked)
+    out.changed_line = _changed_line(shown, out.changes)
+    if ol.prev_date is not None:
+        out.new_hot_warm, out.risers = _counts(shown)
     return out

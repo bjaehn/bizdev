@@ -132,6 +132,8 @@ the company lists and review queues (including Look up, Existing clients and the
 | **Runs & cost** | Tokens and estimated cost per step and per account; unpriced calls shown as unpriced, never as $0 |
 | **Changes** | The audit log of every edit made in the UI, by `bd seed`, or by applying proposals |
 
+**Look and feel.** One stylesheet (`bd/ui/templates/base.html`) styles every page: a coloured header band carrying each analysis page's title (and, on This week, the search box and four number tiles), white cards with a red or amber stripe by band, solid band badges, rounded tables, and a darker header for the Admin area. It follows the device's light or dark setting, adapts to a phone, and prints cleanly (the band becomes a plain title, the page header and forms are hidden). No scripts are used.
+
 Because the **database is the master copy**, the UI edits `bd.sqlite` directly and `bd seed` no longer
 overwrites it. Use `bd export` to write the accounts and exclusions back to CSV when you want them in git.
 

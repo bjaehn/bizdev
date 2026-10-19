@@ -74,7 +74,8 @@ def test_the_strip_and_the_what_changed_line(seeded):
     e, ids = seeded
     body = e.get("/opportunities").body
     assert "<b>3</b> companies" in body and "Hot or Warm" in body
-    assert "New this week:" in body and "Wideco" in body                                      # was below Watch last run, Hot or Warm now
+    assert "New this week:" not in body                                                       # that strip now lives on This week, not here
+    assert "Newly Hot or Warm:" in e.get("/week").body and "Wideco" in e.get("/week").body    # was below Watch last run, Hot or Warm now
 
 
 def test_sorting_filtering_and_the_list_view_keep_working(seeded):

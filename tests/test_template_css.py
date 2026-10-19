@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "bd" / "ui" / "templates"
-HEADER_CLASSES = ("bar", "brand", "right", "adminlink", "adminnav", "shell", "top", "area")
+HEADER_CLASSES = ("bar", "brand", "right", "adminlink", "adminnav", "shell", "top", "area", "hero", "tiles", "tile")
 
 
 def test_no_page_restyles_the_classes_the_page_header_is_built_from():

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Monday card{% endblock %}
+{% block hero %}<h1>Monday card</h1>
+<p class="sub">What the Monday card would post (the top of <a href="/week">This week's list</a> that also passes the posting gates): Hot or Warm accounts with a High-confidence signal in the last 90 days, not in cooldown.</p>{% endblock %}
 {% block body %}
-<div class="row"><div><h1>Monday card</h1>
-<p class="sub">What the Monday card would post (the top of <a href="/week">This week's list</a> that also passes the posting gates): Hot or Warm accounts with a High-confidence signal in the last 90 days, not in cooldown.</p></div>
 {% if dates %}<form method="get" action="/monday" class="filters"><label for="date" style="margin:0">Scored on</label>
 <select id="date" name="date">{% for d in dates %}<option value="{{ d }}" {{ 'selected' if d == run_date else '' }}>{{ d }}</option>{% endfor %}</select>
-<button class="ghost" type="submit">Show</button></form>{% endif %}</div>
+<button class="ghost" type="submit">Show</button></form>{% endif %}
 
 {% if not dates %}
 <div class="card empty">No scores yet.<br>Run <code>bd scan</code> and then <code>bd score</code>; this page reads what they stored.</div>

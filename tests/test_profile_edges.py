@@ -36,7 +36,7 @@ def test_a_profile_opens_for_a_company_in_any_state_without_an_error(world, who)
 def test_a_company_with_nothing_to_explain_says_so_rather_than_drawing_an_empty_chart(world):
     e, ids = world
     for who in ("quiet", "held"):
-        body = e.get(f"/companies/{ids[who]}").body.split("<main")[1]
+        body = e.get(f"/companies/{ids[who]}").body
         assert "How the score is built" not in body and "<svg" not in body, who
         assert "not scored" in body and "No signals in the last 180 days" in body, who
     assert "needs facts" in e.get(f"/companies/{ids['held']}").body

@@ -10,7 +10,8 @@ from html import escape
 from bd.priority import Dot
 
 W, BAR_Y, BAR_H = 760, 14, 30
-BAND_FILL = {"Hot": "var(--hot)", "Warm": "var(--warm)", "Watch": "var(--accent)"}
+BAND_FILL = {"Hot": "var(--hotbg)", "Warm": "var(--warmbg)", "Watch": "var(--accent)"}
+BAND_TEXT = {"Hot": "var(--hotfg)", "Warm": "var(--warmfg)", "Watch": "var(--on-accent)"}
 
 
 def breakdown_svg(parts: list[tuple[str, float, str]], total: float, score: int, score_cap: int) -> str:
@@ -107,7 +108,7 @@ def priority_svg(dots: Sequence[Dot], bands: Sequence[tuple[str, int]], score_ma
         for dx, dy, anchor in ((r + 4, 4, "start"), (-r - 4, 4, "end"), (0, -r - 5, "middle"), (0, r + 14, "middle")):
             x0 = cx + dx - (w if anchor == "end" else w / 2 if anchor == "middle" else 0)
             box = (x0, cy + dy - h + 2, x0 + w, cy + dy + 2)
-            if box[0] < PL or box[2] > PW - 4 or box[1] < 2 or box[3] > PT + iy:
+            if box[0] < PL or box[2] > PL + ix - 2 or box[1] < 2 or box[3] > PT + iy:
                 continue
             others = placed + [b for k, b in boxes.items() if k != dot.account_id]        # other labels and other dots
             if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3]) for b in others):
@@ -153,7 +154,7 @@ def trend_svg(points: Sequence[tuple[str, int, int, int]], max_bars: int = 12) -
                        f'fill-opacity:{1 if name != "Watch" else .55}"><title>{escape(label)}: {n} {name}</title></rect>')
             if y0 - y1 >= 15:
                 out.append(f'<text x="{x + bw / 2:.1f}" y="{(y0 + y1) / 2 + 4:.1f}" font-size="12" font-weight="600" text-anchor="middle" '
-                           f'style="fill:var(--on-accent)">{n}</text>')
+                           f'style="fill:{BAND_TEXT[name]}">{n}</text>')
             base += n
         out.append(f'<text x="{x + bw / 2:.1f}" y="{TH - 14}" font-size="11" text-anchor="middle" style="fill:var(--muted)">{escape(label)}</text>')
     out.append(f'<line x1="{TL}" x2="{TL + iw}" y1="{Y(0):.1f}" y2="{Y(0):.1f}" style="stroke:var(--muted)"/>')

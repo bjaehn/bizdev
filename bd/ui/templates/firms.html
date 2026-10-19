@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}PE firms{% endblock %}
+{% block hero %}<h1>Private equity firms</h1>
+<p class="sub">Firms that own companies on your list. They are added automatically from accounts that have a PE sponsor; add others by hand. A firm's own news adds a small, capped lift to the score of its portfolio companies that already have a signal of their own.</p>{% endblock %}
 {% block body %}
-<h1>Private equity firms</h1>
-<p class="sub">Firms that own companies on your list. They are added automatically from accounts that have a PE sponsor; add others by hand. A firm's own news adds a small, capped lift to the score of its portfolio companies that already have a signal of their own.</p>
 {% if errors %}<div class="errors">Not saved:<ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
 <div class="wrap"><table>
 <tr><th>Firm</th><th>Status</th><th class="num">Companies</th><th class="num">On your list</th><th class="num">Firm signals</th><th>Latest signal</th><th>Portfolio researched</th><th>Signals scanned</th></tr>

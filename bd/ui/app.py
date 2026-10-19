@@ -47,7 +47,7 @@ from bd.market import build_market
 from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
-from bd.leadership import build_changes, coverage
+from bd.leadership import coverage
 from bd.lookup import find as find_company
 from bd.matrix import SORTS, build_matrix, sort_rows
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date, money
@@ -510,7 +510,7 @@ class App:
     def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = score_dates(conn)
         empty = dict(page="opportunities", dates=dates, run_date=None, items=[], total=0, error=None, q={}, families=[], lines=[], stale=[],
-                     prev_date=None, view="matrix", matrix=None, cov=None, changes=None, priority=None, chart=None)
+                     prev_date=None, view="matrix", matrix=None, cov=None, priority=None, chart=None)
         if not dates:
             return self.render("opportunities.html", **empty)
         chosen = req.q("date") if req.q("date") in dates else dates[0]
@@ -548,7 +548,7 @@ class App:
                            error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale, view=view, matrix=matrix, priority=priority, chart=chart,
                            prev_date=ol.prev_date.isoformat() if ol.prev_date else None, bands=["Hot", "Warm", "Watch", "Stored"],
                            statuses=["card", "over_cap", "held", "tracking"], stages=STAGES, stage_labels=STAGE_LABELS, cov=cov,
-                           changes=build_changes(conn, ol, today), link=link,
+                           link=link,
                            industries=sorted({o.account.industry for o in ol.items if o.account.industry}),
                            sort_keys=[("score", "Score"), ("types", "Signal types"), ("newest", "Newest signal"), ("change", "Biggest change")])
 

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Ask your data{% endblock %}
 {% block head %}{% if items and items[0].status == 'pending' %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
+{% block hero %}<h1>Ask your data</h1>
+<p class="sub">Ask a question about the companies, signals, scores, postings, sponsors and RFPs in your own database. A model writes a read-only query, the app runs it, and the answer is phrased from the rows it returned. It does not search the web. The rows and the query are shown under every answer: the answer is only as good as the rows beneath it.</p>{% endblock %}
 {% block body %}
-<h1>Ask your data</h1>
-<p class="sub">Ask a question about the companies, signals, scores, postings, sponsors and RFPs in your own database. A model writes a read-only query, the app runs it, and the answer is phrased from the rows it returned. It does not search the web. The rows and the query are shown under every answer: the answer is only as good as the rows beneath it.</p>
 {% if available %}
 <div class="card">
 <form method="post" action="/ask"><input type="hidden" name="csrf" value="{{ csrf }}">

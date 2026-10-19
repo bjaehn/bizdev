@@ -1,47 +1,61 @@
 {% extends "base.html" %}
 {% block title %}This week{% endblock %}
 {% block head %}<style>
-.find{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 0}
-.find input[type=text]{flex:1;min-width:200px;max-width:420px}
-.chg{font-family:var(--sans);font-size:15px;margin:0 0 6px}
-.chg b{font-weight:650}
-.fresh{font-family:var(--sans);font-size:13px;color:var(--muted);margin:6px 0 0}
-.wk{display:flex;gap:14px;padding:16px 0;border-top:1px solid var(--line)}
-.wk:first-of-type{border-top:2px solid var(--ink)}
-.wk .n{font-family:var(--sans);font-size:13px;color:var(--muted);width:20px;flex:none;padding-top:5px}
-.wk .name{font-size:21px;font-weight:600;color:var(--ink);text-decoration:none}
+.find{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.find label.ask{flex-basis:100%;color:#d6defe;font-size:14px;margin:0 0 -2px}
+.find input[type=text]{flex:1;min-width:200px;max-width:460px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.32);color:#fff;border-radius:12px;padding:11px 14px}
+.find input[type=text]::placeholder{color:#d6defe}
+.find button{background:#fff;color:#2a3aa8;border-radius:12px;padding:11px 20px}
+.chg{font-size:15px;margin:0 0 6px}
+.chg b{font-weight:700}
+.fresh{font-size:13px;color:var(--muted);margin:8px 0 0}
+.wk{display:flex;gap:14px;background:var(--panel);border-radius:16px;box-shadow:var(--shadow);padding:18px 22px;margin:12px 0;border-left:5px solid var(--line)}
+.wk.is-hot{border-left-color:var(--hotbg)}.wk.is-warm{border-left-color:var(--warmbg)}
+.wk .n{font-size:13px;color:var(--muted);width:18px;flex:none;padding-top:6px;font-weight:700}
+.wk .name{font-size:19px;font-weight:700;color:var(--ink);text-decoration:none}
 .wk .name:hover{text-decoration:underline}
-.wk .hd{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-.wk .why{margin:6px 0 4px;font-size:17px}
-.wk .signs{font-family:var(--sans);font-size:13px;color:var(--muted);margin:0 0 8px}
-.wk a.open{font-family:var(--sans);font-size:14px;font-weight:600}
-.trk{padding:12px 0;border-top:1px solid var(--line);font-family:var(--sans);font-size:15px}
-.trk:first-of-type{border-top:2px solid var(--ink)}
-.trk .new{margin:4px 0 0;font-family:var(--serif);font-size:16px}
-.deeper{font-family:var(--sans);font-size:14px;display:flex;gap:18px;flex-wrap:wrap;margin:8px 0 0}
+.wk .hd{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.wk .why{margin:6px 0 4px;font-size:16px}
+.wk .signs{font-size:13px;color:var(--muted);margin:0 0 10px}
+.wk a.open{display:inline-block;background:var(--accent);color:var(--on-accent);font-size:14px;font-weight:700;padding:7px 14px;border-radius:10px;text-decoration:none}
+.wk a.open:hover{filter:brightness(1.1)}
+.trk{background:var(--panel);border-radius:14px;box-shadow:var(--shadow);padding:13px 18px;margin:10px 0;font-size:15px}
+.trk .new{margin:4px 0 0;font-size:15px}
+.deeper{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 0}
+.deeper a{background:var(--panel);box-shadow:var(--shadow);border-radius:11px;padding:9px 15px;text-decoration:none;font-size:14px;font-weight:600}
 </style>{% endblock %}
-{% block body %}
-<h1>This week</h1>
-<p class="sub">Each week this tool reads public sources (SEC filings, company news, job postings) for signs that a Chicago-area company is about to need consulting help: a new executive, a restructuring, a hiring push. It ranks companies by how many <b>different kinds</b> of signs point the same way. <a href="/help">How this works</a></p>
-
+{% block herocls %}tall{% endblock %}
+{% block hero %}<h1>This week</h1>
+<p class="sub">Chicago-area companies showing signs they may need consulting help, ranked by how many <b>different kinds</b> of signs agree. <a href="/help">How this works</a></p>
 <form method="get" action="/opportunities" class="find noprint">
 <input type="hidden" name="tracked" value="1">
-<input type="text" name="q" placeholder="Preparing for a call? Find a company by name" aria-label="Find a company by name">
+<label for="q" class="ask">Preparing for a call?</label>
+<input id="q" type="text" name="q" placeholder="Find a company by name">
 <button type="submit">Find</button>
-</form>
-
+</form>{% endblock %}
+{% block body %}
+{% if not w.problem %}{% set cov = w.coverage %}
+<div class="tiles">
+<a class="tile hot" href="/opportunities?band=Hot"><b>{{ cov.hot + cov.warm }}</b><span>Hot or Warm now</span></a>
+<div class="tile ac"><b>{{ w.new_hot_warm if w.new_hot_warm is not none else '–' }}</b><span>{{ 'newly Hot or Warm' if w.new_hot_warm is not none else 'no earlier run to compare' }}</span></div>
+<div class="tile gd"><b>{{ w.changes.new_signal_total }}</b><span>new signals, last 7 days</span></div>
+<div class="tile"><b>{{ w.tracked|length }}</b><span>compan{{ 'y' if w.tracked|length == 1 else 'ies' }} you track</span></div>
+</div>
+{% endif %}
 {% if w.problem %}
-<div class="card empty" style="margin-top:20px">{{ w.problem }}</div>
+<div class="card empty">{{ w.problem }}</div>
 {% else %}
 {% set cov = w.coverage %}
 {% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err" style="margin-top:16px">These scores are {{ cov.score_age_days }} days old. An admin needs to run an update from the Admin area.</div>{% endif %}
 
 <h2>What changed</h2>
+<div class="card">
 <p class="chg">{{ w.changed_line }}</p>
 {% set ch = w.changes %}
 {% if ch.new_leads %}<p class="chg"><b>Newly Hot or Warm:</b> {% for o in ch.new_leads %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> ({{ o.result.band }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
 {% if ch.risers %}<p class="chg"><b>Moving up:</b> {% for o in ch.risers %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> +{{ o.delta }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
 <p class="fresh">Scored {{ w.run_date|fdate }} · {{ cov.ready }} compan{{ 'y' if cov.ready == 1 else 'ies' }} checked · {{ cov.with_signal_90d }} with news in the last 90 days{% if cov.waiting %} · {{ cov.waiting }} waiting for facts, not yet scored{% endif %}</p>
+</div>
 
 <h2>Companies to look at</h2>
 {% if w.targets %}

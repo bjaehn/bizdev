@@ -8,7 +8,7 @@
 .legend .sw{display:inline-block;width:22px;height:14px;border-radius:3px;border:1px solid var(--line)}
 .views{font-family:var(--sans);font-size:14px;margin:0 0 10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .views a.on{color:var(--ink);font-weight:650;text-decoration:none;border-bottom:2px solid var(--accent)}
-table.matrix{border-top:2px solid var(--ink);table-layout:auto}
+table.matrix{table-layout:auto;box-shadow:none}
 .matrix th{white-space:normal;line-height:1.25;font-size:10.5px;letter-spacing:.05em;padding:6px 3px}
 .matrix th:nth-child(-n+2){text-align:left}
 .matrix th a{color:inherit;text-decoration:none}
@@ -20,17 +20,17 @@ table.matrix{border-top:2px solid var(--ink);table-layout:auto}
 .matrix .rank{font-family:var(--sans);font-size:12px;color:var(--muted);margin-right:4px}
 .sbar{height:6px;background:var(--line);border-radius:3px;margin:0 0 4px}
 .sbar i{display:block;height:100%;border-radius:3px;background:var(--muted)}
-.sbar.hot i{background:var(--hot)}.sbar.warm i{background:var(--warm)}
-.cell{display:block;min-width:46px;text-align:center;padding:11px 0;border-radius:4px;font-family:var(--sans);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink);text-decoration:none;
+.sbar.hot i{background:var(--hotbg)}.sbar.warm i{background:var(--warmbg)}
+.cell{display:block;min-width:46px;text-align:center;padding:11px 0;border-radius:9px;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink);text-decoration:none;
  background:color-mix(in srgb,var(--accent) calc(var(--v,0) * 88%),transparent)}
 .cell.hi{color:var(--on-accent)}
 .cell.none{border:1px dashed var(--line);color:transparent}
 .cell:hover{outline:2px solid var(--accent)}
-.matrix td.co{position:sticky;left:0;background:var(--bg)}
+.matrix td.co{position:sticky;left:0;background:var(--panel)}
 </style>{% endblock %}
+{% block hero %}<h1>Companies</h1>
+<p class="sub">Every company the tool scores, side by side: find one by name, or compare which kinds of signs each has. The short list is on <a href="/week">This week</a>.</p>{% endblock %}
 {% block body %}
-<h1>Companies</h1>
-<p class="sub">Every company the tool scores, side by side. Find one by name, or compare which kinds of signs each company has; the one to open first is at the top. The short list for the week is on <a href="/week">This week</a>.</p>
 
 {% if not dates %}
 <div class="card empty">Nothing has been scored yet.<br>An admin needs to run an update from the Admin area to fill in company facts, scan for news and rank what it finds.</div>
@@ -39,7 +39,6 @@ table.matrix{border-top:2px solid var(--ink);table-layout:auto}
 {% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} compan{{ 'y' if stale|length == 1 else 'ies' }} ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). An admin needs to run Score again.</div>{% endif %}
 <p class="strip"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> ready · <b>{{ cov.with_signal_90d }}</b> with news in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.waiting %} · {{ cov.waiting }} still waiting for facts{% endif %}</p>
 {% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err">These scores are {{ cov.score_age_days }} days old.</div>{% endif %}
-{% if changes.new_leads or changes.risers %}<p class="strip">{% if changes.new_leads %}<b>New this week:</b> {% for o in changes.new_leads %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> ({{ o.result.band }}){{ ', ' if not loop.last }}{% endfor %}{% endif %}{% if changes.new_leads and changes.risers %} · {% endif %}{% if changes.risers %}<b>Moving up:</b> {% for o in changes.risers %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> +{{ o.delta }}{{ ', ' if not loop.last }}{% endfor %}{% endif %}</p>{% endif %}
 
 <form method="get" action="/opportunities" class="filters" style="margin-top:14px">
 <input type="hidden" name="view" value="{{ '' if view == 'matrix' else view }}">
