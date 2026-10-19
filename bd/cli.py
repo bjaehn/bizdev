@@ -577,6 +577,8 @@ def enrich(
                    err=True)
     enricher = Enricher(cfg, AnthropicWebSearchClient(cfg, model=model, api_key=key),
                         UrlVerifier(cfg, settings.user_agent), edgar)
+    from bd.sec_fill import cik_cleared
+    enricher.no_lookup = cik_cleared(conn)
     typer.echo(f"Enriching {len(accounts)} account(s) (proposals only; nothing is written to the database)")
     results, spent, hit = run_enrich(conn, cfg, enricher, accounts, run_date, settings.anthropic_model,
                                      workers=workers, log=typer.echo)
@@ -587,6 +589,41 @@ def enrich(
     if hit:
         typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): some accounts were not enriched. "
                    "Raise llm.max_cost_per_run_usd and re-run.", err=True)
+
+
+@app.command(name="sec-fill")
+def sec_fill(
+    only: Optional[str] = typer.Option(None, help="Only accounts whose name contains this text"),
+    limit: Optional[int] = typer.Option(None, help="Read at most N SEC records (default sec_fill.max_accounts_per_run)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+) -> None:
+    """Fill size, public ownership, headquarters and a missing CIK from the SEC's own data. No model, no cost.
+
+    A company with a CIK gets its revenue, ownership and city from the SEC's company files; a listed company with no CIK is matched
+    to the SEC's list by exact name. Never overwrites a stored value; every fact is logged with the SEC page it came from."""
+    from bd.db import connect, init_db
+    from bd.edgar import EdgarClient
+    from bd.sec_fill import run_sec_fill
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    if not settings.user_agent_configured:
+        typer.echo("Skipped: BD_USER_AGENT is not set (the SEC requires a declared contact, e.g. YourCo BD Research (you@yourco.com)).")
+        return
+    conn = connect(settings.db_path)
+    init_db(conn)
+    s = run_sec_fill(conn, cfg, EdgarClient(cfg, settings.user_agent), run_date, limit=limit, only=only, log=typer.echo)
+    if not s.candidates:
+        typer.echo("Nothing for the SEC to fill: every company already has its size, ownership and headquarters, or is not a filer.")
+        return
+    facts = sum(len(f.facts) for f in s.filled)
+    typer.echo(f"\nSEC fill: read {s.read} SEC record(s); filled {facts} fact(s) for {len(s.filled)} company(ies), "
+               f"{s.passed_gate} now ready for scanning; {len(s.unmatched)} with no unique SEC match"
+               + (f"; {s.not_reached} left for the next run" if s.not_reached else "")
+               + (f"; {s.errors} read problem(s)" if s.errors else "") + ". No cost.")
+    if s.unmatched:
+        shown = ", ".join(f"{n} [{why}]" for n, why in s.unmatched[:12])
+        typer.echo(f"No unique SEC match (left to the web search or to you): {shown}" + (f" and {len(s.unmatched) - 12} more" if len(s.unmatched) > 12 else ""))
 
 
 @app.command(name="apply-proposals")

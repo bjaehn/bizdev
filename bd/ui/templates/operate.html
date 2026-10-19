@@ -57,6 +57,12 @@
 </div>
 
 <div class="card">
+<h2 style="margin-top:0">Fill facts from SEC filings</h2>
+<p class="meta">For companies that file with the SEC: reads revenue, public ownership and headquarters from the SEC's own data, and finds a missing CIK by an exact name match in the SEC's list of listed companies. Free (no model calls); never overwrites a stored value; every fact is logged with its source. First step of Update my list. Needs BD_USER_AGENT.</p>
+<form method="post" action="/operate/run" style="display:inline"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="sec_fill"><button class="ghost" type="submit">Fill from SEC (free)</button></form>
+</div>
+
+<div class="card">
 <h2 style="margin-top:0">Enrich accounts</h2>
 <p class="meta">Looks up missing facts for accounts on hold and writes proposals. Review them on the Enrich review page; nothing is applied automatically. Uses paid model calls.</p>
 <form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="enrich">

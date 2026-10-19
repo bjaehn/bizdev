@@ -18,6 +18,7 @@ from __future__ import annotations
 import csv
 import re
 import sqlite3
+import threading
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
@@ -35,6 +36,7 @@ from bd.config import Config
 from bd.cost import estimate_cost
 from bd.edgar import EdgarClient, EdgarError, facts_url, submissions_url
 from bd.sec_facts import read as read_sec_facts
+from bd.sec_ids import TICKERS_URL, Index, Listing, build_index
 from bd.llm import LLM, LLMError, Usage, generate_validated
 from bd.models import SourceType
 from bd.scanners.base import reconcile_source_type
@@ -132,12 +134,35 @@ def _county(raw: str, configured: list[str]) -> str:
 class Enricher:
     def __init__(self, cfg: Config, llm: LLM, verifier: UrlVerifier, edgar: EdgarClient | None) -> None:
         self.cfg, self.llm, self.verifier, self.edgar = cfg, llm, verifier, edgar
+        self.no_lookup: set[int] = set()            # accounts whose CIK a person removed: never matched from the SEC list again
+        self._ids: Index | None = None
+        self._ids_loaded = False
+        self._ids_lock = threading.Lock()          # enrichment runs on worker threads; the SEC list is fetched once
+
+    def _listing_for(self, account: Account) -> Listing | None:
+        """The SEC filer whose registered name is this company's name (a unique exact match, see bd.sec_ids), for a company with no
+        CIK that may be public. Costs nothing and asks the model nothing; None when there is no client, no list or no match."""
+        e = self.edgar
+        if account.cik or account.id in self.no_lookup or account.ownership not in (None, "public") or e is None \
+                or not hasattr(e, "company_tickers"):
+            return None
+        with self._ids_lock:
+            if not self._ids_loaded:
+                self._ids_loaded = True
+                try:
+                    self._ids = build_index(e.company_tickers())
+                except EdgarError:
+                    self._ids = None
+        return self._ids.lookup(account.name).listing if self._ids else None
 
     def system_prompt(self) -> str:
         return resources.files("bd.prompts").joinpath("enrich.md").read_text(encoding="utf-8")
 
     def enrich(self, account: Account, as_of: date) -> EnrichResult:
         res = EnrichResult(account=account, row={"name": account.name})
+        found = self._listing_for(account)
+        if found:                                       # the SEC identified it: revenue, ownership and the CIK need no web search
+            account = account.model_copy(update={"cik": found.cik})
         sec_ready = self.edgar is not None and hasattr(self.edgar, "company_facts") and bool(account.cik)
         need = needed_facts(account, from_sec=sec_ready)
         user = (f"Company: {account.name}\nKnown website domain: {account.domain or 'unknown'}\n"
@@ -152,6 +177,8 @@ class Enricher:
             return res
         res.usage = llm_res.usage
         self._accept(account, resp.facts, llm_res.retrieved_urls, res)
+        if found:
+            self._propose_listed_cik(found, res)
         self._fill_from_sec(account, as_of, res)
         got = set(res.row)
         want = {"domain": "domain", "hq_city and hq_state": "hq_city", "industry": "industry", "il_county": "chicagoland",
@@ -165,6 +192,15 @@ class Enricher:
         elif res.missing:
             res.row["notes"] += " | not found: " + ", ".join(m.split(" ")[0] for m in res.missing)
         return res
+
+    @staticmethod
+    def _propose_listed_cik(found: Listing, res: EnrichResult) -> None:
+        evid = _parse_evidence(res.row.get("evidence_urls", ""))
+        evid["cik"] = TICKERS_URL
+        res.row["cik"] = found.cik
+        res.row["sec_name"] = found.label
+        res.row["evidence_urls"] = "; ".join(f"{k}={v}" for k, v in evid.items())
+        res.sec_notes.append(f"CIK matched by exact name to the SEC filer {found.label}")
 
     def _fill_from_sec(self, acct: Account, as_of: date, res: EnrichResult) -> None:
         """For a company with a CIK (already on file, or just proposed and confirmed with EDGAR): revenue, public ownership and the HQ

@@ -197,6 +197,11 @@ financials:
   margin_drop_points: 3.0       # operating margin fell by at least this many percentage points
   flag_operating_loss: true     # operating income was negative
 
+# `bd sec-fill` (the first free step of Update my list): for companies that file with the SEC, read size, public ownership and
+# headquarters from the SEC's own data, and find a missing CIK by an exact name match in the SEC's list of listed companies. No model.
+sec_fill:
+  max_accounts_per_run: 60      # SEC records read per run (about two requests each, spaced by edgar.min_interval_seconds)
+
 # Open public RFPs / RFQs / RFIs from Chicago-area agencies. One search per group, restricted to that group's own domains, so
 # every result is an official page. Not tied to a company and never scored; shown on the Open RFPs page.
 rfps:

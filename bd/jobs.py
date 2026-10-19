@@ -53,6 +53,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "pe_signals": ("Scan PE firms for signals", True, False),
     "rfps": ("Find open public RFPs", True, False),
     "ask": ("Ask a question about your data", True, False),
+    "sec_fill": ("Fill facts from SEC filings (free)", False, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -112,6 +113,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
     if kind == "check":
         return ["check"]
+    if kind == "sec_fill":
+        return ["sec-fill"]
     if kind == "ask":
         return ["ask", "--id", str(num("id", 1, 10**9, required=True))]
     if kind == "rfps":
@@ -121,7 +124,7 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         scan, budget = num("scan", 1, 100, required=True), num("budget", 1, 100, required=True)
         rfps = num("rfps", 0, 1)
         return ["update", "--research", str(research), "--segments", str(segs), "--scan", str(scan), "--budget", str(budget),
-                "--rfps", str(1 if rfps is None else rfps)]
+                "--rfps", str(0 if rfps is None else rfps)]       # off unless asked for (see settings_store.UPDATE_DEFAULTS)
     if kind in ("refresh", "refresh_now"):
         return []   # steps are fixed in sequence_for()
     if kind == "discover":
@@ -163,13 +166,13 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
     """The `bd` invocations (after the executable) a job runs, in order."""
     if kind == "update":
         a = dict(zip(args[1::2], args[2::2]))
-        steps = [["check"]]
+        steps = [["check"], ["sec-fill", "--as-of", as_of]]        # free: public companies are filled from the SEC before the model is asked
         if int(a["--research"]):
             steps += [["enrich", "--limit", a["--research"], "--allow-empty", "--as-of", as_of], ["apply-proposals", "enrich_proposals.csv"]]
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
         steps += [["pe-sync"], ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of]]
-        if a.get("--rfps", "1") != "0":
+        if a.get("--rfps", "0") != "0":
             steps.append(["rfps", "--allow-empty", "--as-of", as_of])
         return steps + [["score", "--allow-empty", "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
@@ -178,7 +181,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
         return [["scan", "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
-    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "rfps") else [args]
+    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "rfps", "sec-fill") else [args]
 
 
 def redact(text: str, env: dict[str, str] | None = None) -> str:
