@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block body %}
+<h1>Reports</h1>
+<p class="sub">More ways to look at the same signals, beyond the ranking.</p>
+<div class="card" style="border-top:2px solid var(--ink)"><ul class="plain">
+{% for key, href, label, hint in items %}<li><a class="name" style="font-size:20px" href="{{ href }}">{{ label }}</a><br><span class="meta">{{ hint }}</span></li>{% endfor %}
+</ul></div>
+{% endblock %}

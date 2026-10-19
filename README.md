@@ -113,14 +113,14 @@ bd ui                      # prints a one-time link; open it (a browser is opene
 A review-and-curate screen for the database. It **cannot** scan, score, call a model or post to Teams; those stay
 on the command line.
 
-The top bar has five links: **Leadership** (where the app opens after login), **Opportunities**, **Look up**, **Clients** and **Admin**.
-**Admin** is one page that groups everything else: updating the list, the company lists and review queues, reports, and the system pages (data health, run history, change log, settings).
+The app has two areas on one login. **Analysis** is what you read: **Opportunities** (the ranking, where the app opens after login) and **Reports** (Market view, Hiring,
+Private equity firms, Open RFPs, Ask your data, Monday card). **Admin**, a link at the far right, is a separate area with its own header and a left-hand list: updating the list,
+the company lists and review queues (including Look up, Existing clients and the watchlist), and the system pages (data health, run history, change log, settings).
 
 | Page | What you can do |
 |---|---|
-| **Leadership** | One screen for a meeting: how much of the list is covered, the top ranked companies with a dated "why now", best-fit service line, source link and a new-business / existing-client tag, what changed since the last ranking (new Hot/Warm companies, risers, signals found in the last 7 days), a market pulse built from counts (industries, kinds of news, PE activity), and existing clients with news. Read-only, no model |
 | **Look up a company** | Type any name: where it stands, its score and newest signal. If it is not on the list, add it and check the SEC for free (a public company gets size, ownership, headquarters and CIK in seconds), or run the capped (`$3`) research-and-scan job for that one company. A name that fits two companies is never guessed |
-| **Existing clients** | Mark SEI clients (on a company's page, or paste a list: names are matched apart from Inc/Corp/punctuation/case, nothing is created). A client is still scanned and scored; this page and the Leadership view show news at clients apart from new business |
+| **Existing clients** | Mark SEI clients (on a company's page, or paste a list: names are matched apart from Inc/Corp/punctuation/case, nothing is created). A client is still scanned and scored; this page shows news at clients apart from new business |
 | **Opportunities** (home) | Every active account scored Watch or better, ranked, each with the points by source (leadership, hiring, company events, private equity, technology, procurement, filings, and the PE owner's own activity shown separately), the one-line why-now, open job postings, change since the last run, and whether it is on the Monday card or why it is held back. Filters: band, signal group, service line, PE-backed, new since last run, status |
 | **Monday card** | The part of Opportunities the weekly run would post (Hot or Warm, a High-confidence signal in the last 90 days, not in cooldown, capped): score, why-now, every source link, and a "how the score was calculated" table |
 | **Accounts** | List and search; see why an account is held; edit its facts (blank = unknown) and see the fit-gate verdict at once; add an account |

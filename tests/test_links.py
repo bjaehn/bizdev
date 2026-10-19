@@ -35,8 +35,8 @@ def seeded(app_env):  # noqa: F811
 
 def test_every_link_on_the_main_pages_resolves(seeded):
     e, ids = seeded
-    start = ["/", "/leadership", "/opportunities", "/opportunities?view=list", "/admin", "/lookup?q=acme", "/clients", "/watchlist", "/market",
-             "/accounts", f"/accounts/{ids[0]}", f"/accounts/{ids[0]}/onepager", "/health", "/settings"]
+    start = ["/", "/opportunities", "/opportunities?view=list", "/reports", "/admin", "/lookup?q=acme", "/clients", "/watchlist", "/market", "/hiring",
+             "/firms", "/monday", "/accounts", f"/accounts/{ids[0]}", f"/accounts/{ids[0]}/onepager", "/health", "/settings"]
     seen, bad = set(), []
     for path in start:
         page = e.get(path)
