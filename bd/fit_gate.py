@@ -1,13 +1,14 @@
-"""Fit gate: decide whether an account may be scanned and scored.
+"""Fit gate: decide whether an account is out of scope. Signals are what matter, so only a *known* reason stops a scan.
 
-Verdicts: pass | fail | unknown. Anything that cannot be verified is `unknown` and held for
-review - it is never scanned or scored on a guess. Location and size are facts entered by a human
-(accounts.chicagoland / revenue / employees / ownership); this module never infers them.
+Verdicts: pass | fail | unknown. A company is scanned and scored unless it is known to be out of scope; an `unknown` verdict
+(location or size not confirmed) does not block anything - the company is scanned, and its brief carries an "unverified" tag.
+Location and size are facts entered by a person or read from a source (accounts.chicagoland / revenue / employees / ownership);
+this module never infers them.
 
   excluded        -> fail   (name/domain in exclusions, or an excluded industry such as cannabis)
   location no     -> fail
   size below floor-> fail   (all applicable measures known and all below)
-  anything unverifiable (and nothing failed) -> unknown
+  anything unverifiable (and nothing failed) -> unknown (still scanned)
   else            -> pass
 """
 
@@ -22,7 +23,8 @@ from bd.accounts import Account, is_valid_domain, normalize_domain
 from bd.config import Config, SizeFloor
 from bd.urls import host_in
 
-STATUS_FOR = {"pass": "active", "fail": "excluded", "unknown": "hold_review"}
+# "hold_review" stays a legal status in the schema for older databases, but the gate no longer produces it.
+STATUS_FOR = {"pass": "active", "fail": "excluded", "unknown": "active"}
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,11 @@ class FitResult:
     @property
     def status(self) -> str:
         return STATUS_FOR[self.verdict]
+
+    @property
+    def unverified(self) -> bool:
+        """Scanned all the same, but location or size has not been confirmed."""
+        return self.verdict == "unknown"
 
 
 def _size_verdict(revenue: float | None, employees: int | None, floor: SizeFloor) -> str:
@@ -103,7 +110,7 @@ def load_exclusions(conn: sqlite3.Connection) -> list[Exclusion]:
 @dataclass
 class GateSummary:
     passed: list[Account] = field(default_factory=list)
-    held: list[tuple[Account, FitResult]] = field(default_factory=list)
+    unverified: list[tuple[Account, FitResult]] = field(default_factory=list)       # scanned, with a fact still unconfirmed
     excluded: list[tuple[Account, FitResult]] = field(default_factory=list)
     changed: int = 0
 
@@ -124,7 +131,7 @@ def apply_fit_gate(conn: sqlite3.Connection, cfg: Config) -> GateSummary:
         if res.verdict == "pass":
             summary.passed.append(acc)
         elif res.verdict == "unknown":
-            summary.held.append((acc, res))
+            summary.unverified.append((acc, res))
         else:
             summary.excluded.append((acc, res))
     return summary

@@ -10,19 +10,28 @@
 </div>
 
 <div class="pill-row">
-<a class="badge good" href="/accounts?status=active">{{ ready }} companies ready</a>
-<a class="badge warm" href="/accounts?status=hold_review">{{ need }} need facts</a>
+<a class="badge good" href="/accounts?status=active">{{ ready }} companies on the scan list</a>
 <a class="badge" href="/week">{{ opps }} companies ranked</a>
 </div>
 
 <div class="card">
+<h2>Signal coverage</h2>
+{% if coverage.on_list %}
+<p><b>{{ coverage.scanned }}</b> of <b>{{ coverage.on_list }}</b> companies on the scan list {{ 'has' if coverage.scanned == 1 else 'have' }} been scanned for signals{% if coverage.last_scanned %} (latest {{ coverage.last_scanned|fdate }}){% endif %}, and <b>{{ coverage.with_signals }}</b> {{ 'has' if coverage.with_signals == 1 else 'have' }} at least one signal in the last 90 days.</p>
+{% if coverage.unscanned %}<p><b>{{ coverage.unscanned }}</b> {{ 'has' if coverage.unscanned == 1 else 'have' }} not been scanned yet. {% if coverage.updates_needed %}At {{ coverage.per_update }} companies per update that is about <b>{{ coverage.updates_needed }}</b> update{{ '' if coverage.updates_needed == 1 else 's' }}; never-scanned companies go first.{% endif %}</p>{% endif %}
+<p class="meta">Found in the last 90 days: {% for label, n in coverage.by_group %}{{ label }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}.{% if coverage.unverified %} {{ coverage.unverified }} compan{{ 'y has' if coverage.unverified == 1 else 'ies have' }} an unconfirmed location or size; {{ 'it is' if coverage.unverified == 1 else 'they are' }} scanned anyway.{% endif %}{% if coverage.out_of_scope %} {{ coverage.out_of_scope }} known out of scope (not scanned).{% endif %}</p>
+{% else %}<p class="meta">No companies are on the scan list yet.</p>{% endif %}
+</div>
+
+<div class="card">
 <h2>Update my list</h2>
-<p>One press does all of this, in order, and stops at the spending limit:</p>
+<p>One press does all of this, in order, and stops at the spending limit. Signals come first; facts and new companies get what is left:</p>
 <ol>
-<li>Fills size, public ownership and headquarters for companies that file with the SEC, straight from the SEC's own data (free).</li>
-<li>Researches up to <b>{{ u.research }}</b> companies that need facts, and fills in the ones with a source that checked out.</li>
-<li>Searches <b>{{ u.segments }}</b> industry segments for new Chicagoland companies.</li>
-<li>Scans up to <b>{{ u.scan }}</b> ready companies for news, leadership changes and job postings.</li>
+<li>Reads the SEC's own data for public companies (free), so the filing scanners know which company is which.</li>
+<li>Reads every company's public job board and SEC event filings (free).</li>
+<li>Scans up to <b>{{ u.scan }}</b> companies for leadership changes, hiring, press and company events. This is where most of the money goes.</li>
+<li>Searches <b>{{ u.segments }}</b> industry segments for new Chicagoland companies, with what is left of the limit.</li>
+<li>Researches up to <b>{{ u.research }}</b> companies whose location or size is unconfirmed, and fills in the ones with a source that checked out.</li>
 {% if u.rfps %}<li>Searches Chicago-area agency sites for open public RFPs (Open RFPs page).</li>{% endif %}
 <li>Scores everything and ranks it on This week.</li>
 </ol>
@@ -53,6 +62,6 @@
 {% if top %}<h2>Top companies</h2>
 {% for o in top %}<div class="card"><div class="row"><div><span class="meta">#{{ o.rank }}</span> <a class="name" href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a>
 <div class="meta">{{ o.why_now }}</div></div>
-<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} · {{ o.result.score }}</span></div></div>{% endfor %}
+<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }} · {{ o.result.score }}</span></div></div>{% endfor %}
 <p><a href="/week">See This week</a> · <a href="/opportunities">All {{ opps }} companies</a></p>{% endif %}
 {% endblock %}

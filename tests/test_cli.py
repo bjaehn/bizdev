@@ -18,7 +18,7 @@ def env(tmp_path, monkeypatch):
 def test_seed_loads_repo_accounts():
     r = runner.invoke(app, ["seed", str(ROOT / "accounts.csv")])
     assert r.exit_code == 0 and "58 inserted" in r.output
-    assert "58 held for review" in r.output  # names only: location and size unverified, so nothing is scanned
+    assert "58 to scan (58 with location or size still unverified)" in r.output  # names only: scanned anyway, tagged unverified
     assert "0 inserted, 58 existing matched" in runner.invoke(app, ["seed", str(ROOT / "accounts.csv")]).output
 
 
@@ -47,8 +47,8 @@ def seeded(tmp_path):
 
 def test_seed_runs_fit_gate_and_reports_why(tmp_path):
     r = seeded(tmp_path)
-    assert "1 pass, 1 held for review, 2 excluded" in r.output
-    assert "held: Beta" in r.output and "excluded: Gamma: not in Chicagoland" in r.output
+    assert "2 to scan (1 with location or size still unverified), 2 known out of scope" in r.output
+    assert "unverified: Beta" in r.output and "excluded: Gamma: not in Chicagoland" in r.output
     assert "excluded industry: cannabis" in r.output
 
 
@@ -58,18 +58,19 @@ def test_seed_with_exclusions_file(tmp_path):
     p = tmp_path / "fit.csv"
     p.write_text(FIT_CSV)
     r = runner.invoke(app, ["seed", str(p), "--exclusions", str(ex)])
-    assert r.exit_code == 0 and "Exclusions: 1 added" in r.output and "0 pass" in r.output
+    assert r.exit_code == 0 and "Exclusions: 1 added" in r.output and "1 to scan" in r.output
     ex.write_text("name,domain,reason\nAcme,acme.com,because\n")
     assert runner.invoke(app, ["seed", str(p), "--exclusions", str(ex)]).exit_code == 1
 
 
-def test_scan_dry_run_needs_no_key_and_lists_only_gated_in_accounts(tmp_path):
+def test_scan_dry_run_needs_no_key_and_lists_everyone_not_known_out_of_scope(tmp_path):
     seeded(tmp_path)
     r = runner.invoke(app, ["scan", "--dry-run"])
-    assert r.exit_code == 0 and "would scan: Acme" in r.output
-    assert "Beta" not in r.output.split("due")[1] and "Gamma" not in r.output.split("due")[1]
-    assert "1 of 1 accounts due" in r.output and "= 6 calls" in r.output   # leadership, events, press, hiring, tech_procurement, warn (pe: not PE-backed)
-    assert runner.invoke(app, ["scan", "--dry-run", "--tier", "B"]).exit_code == 1  # Beta is held, so none
+    assert r.exit_code == 0 and "would scan: Acme" in r.output and "would scan: Beta" in r.output   # Beta's size is unverified: scanned anyway
+    assert "Gamma" not in r.output.split("due")[1] and "Weedco" not in r.output.split("due")[1]       # known out of scope
+    assert "2 of 2 accounts due" in r.output and "= 12 calls" in r.output   # leadership, events, press, hiring, tech_procurement, warn (pe: not PE-backed) x 2
+    assert runner.invoke(app, ["scan", "--dry-run", "--tier", "B"]).exit_code == 0 and "1 of 1 accounts due (tier B)" in runner.invoke(
+        app, ["scan", "--dry-run", "--tier", "B"]).output
 
 
 def test_scan_requires_key_and_model_after_gate(tmp_path):
@@ -80,7 +81,7 @@ def test_scan_requires_key_and_model_after_gate(tmp_path):
 
 def test_scan_with_nothing_through_the_gate_and_bad_args(tmp_path):
     r = runner.invoke(app, ["scan", "--dry-run"])
-    assert r.exit_code == 1 and "fit gate" in r.output
+    assert r.exit_code == 1 and "No accounts to scan" in r.output
     assert runner.invoke(app, ["scan", "--tier", "Z"]).exit_code == 1
     assert runner.invoke(app, ["scan", "--scanners", "nope"]).exit_code == 1
 

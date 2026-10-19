@@ -66,7 +66,7 @@ def world(cfg, tmp_path, monkeypatch):
     for t, age in (("leadership_change", 21), ("hiring_cluster", 10), ("pe_addon", 45)):
         add_signal(conn, cfg, hot, t, age, url=f"https://hotco.com/{t}", summary=f"Hotco {t.replace('_', ' ')} summary.")
     add_signal(conn, cfg, hot, "restructuring_layoffs", 5, conf="Low", url="https://gossip.example/hotco")
-    held = add_account(conn, "Heldco", status="hold_review", chicagoland="unknown", revenue=None, ownership=None)
+    held = add_account(conn, "Heldco", chicagoland="unknown", revenue=None, ownership=None)       # unverified: still scanned
     score_accounts(conn, cfg, AS_OF)
     conn.commit()
     app = App(cfg, str(db), TOKEN, root=tmp_path)
@@ -275,9 +275,9 @@ def test_posted_leads_are_marked(world):
 
 def test_accounts_list_filters_and_explains_holds(world):
     b = world.c.get("/accounts").body
-    assert "Hotco" in b and "Heldco" in b and "1 need facts" in b
+    assert "Hotco" in b and "Heldco" in b and "1 unverified" in b
     assert "Chicagoland status unverified" in b
-    only_held = world.c.get("/accounts?status=hold_review").body
+    only_held = world.c.get("/accounts?status=unverified").body
     assert "Heldco" in only_held and ">Hotco<" not in only_held
     assert ">Hotco<" in world.c.get("/accounts?q=hot").body and "Heldco" not in world.c.get("/accounts?q=hot").body
     assert "No accounts match" in world.c.get("/accounts?q=zzz").body
@@ -286,7 +286,7 @@ def test_accounts_list_filters_and_explains_holds(world):
 def test_account_page_shows_facts_signals_scores_and_history(world):
     update_account(world.conn, world.cfg, world.hot, {"hq_city": "Chicago", "chicagoland": "yes", "revenue": "600000000", "ownership": "pe-backed", "tier": "A"})
     b = world.c.get(f"/accounts/{world.hot}").body
-    assert "Ready to scan" in b and 'value="600000000"' in b and "Edit facts" in b
+    assert "Scanned for signals" in b and 'value="600000000"' in b and "Edit facts" in b
     assert "stored, never scored" in b and "gossip.example" in b          # the Low-confidence signal is visible but marked
     assert "Hot" in b and "stacking bonus 20" in b                        # score history with the calculation
     assert "revenue" in b and "600000000.0" in b                          # audit trail
@@ -318,12 +318,12 @@ def test_duplicate_domain_is_reported_not_crashed(world):
     assert r.code == 400 and "another account already uses that domain" in r.body
 
 
-def test_clearing_a_field_makes_it_unknown_and_holds_the_account(world):
+def test_clearing_a_field_makes_it_unknown_and_unverified_but_still_scanned(world):
     world.c.post(f"/accounts/{world.hot}", {"chicagoland": "yes", "revenue": "500000000", "ownership": "pe-backed", "tier": "A"})
     assert world.conn.execute("SELECT status FROM accounts WHERE id=?", (world.hot,)).fetchone()[0] == "active"
     world.c.post(f"/accounts/{world.hot}", {"chicagoland": "unknown", "revenue": "", "ownership": "", "tier": "A"})
     a = world.conn.execute("SELECT * FROM accounts WHERE id=?", (world.hot,)).fetchone()
-    assert (a["status"], a["revenue"], a["chicagoland"]) == ("hold_review", None, "unknown")
+    assert (a["status"], a["revenue"], a["chicagoland"]) == ("active", None, "unknown")
 
 
 def test_a_forged_form_cannot_change_name_status_or_id(world):
@@ -400,7 +400,7 @@ def test_applying_takes_values_from_the_file_not_the_form_and_only_ticked_column
     a = world.conn.execute("SELECT * FROM accounts WHERE id=?", (world.held,)).fetchone()
     assert (a["chicagoland"], a["revenue"], a["industry"], a["ownership"]) == ("yes", 8e8, None, None)  # file values; unticked untouched
     assert world.conn.execute("SELECT COUNT(*) FROM audit_log WHERE actor='enrich' AND action='update'").fetchone()[0] == 2
-    assert world.conn.execute("SELECT new FROM audit_log WHERE actor='enrich' AND action='status'").fetchone()[0] == "active"
+    assert world.conn.execute("SELECT new FROM audit_log WHERE actor='enrich' AND action='status'").fetchone() is None   # scanned before and after: no status change
     assert "Applied 2 fact" in world.c.get(r.location).body
 
 
@@ -414,7 +414,7 @@ def test_a_conflict_is_applied_only_when_explicitly_ticked(world, prop):
 def test_enrich_apply_ignores_columns_that_are_not_in_the_proposal(world, prop):
     world.c.post("/enrich/apply", {"file": "enrich_proposals.csv", "account_id": str(world.held), "apply": ["status", "name", "tier", "ownership"]})
     a = world.conn.execute("SELECT * FROM accounts WHERE id=?", (world.held,)).fetchone()
-    assert (a["name"], a["status"], a["tier"]) == ("Heldco", "hold_review", "A")
+    assert (a["name"], a["status"], a["tier"]) == ("Heldco", "active", "A")
     assert a["ownership"] == "private"                                     # the one real, proposed column among them
 
 

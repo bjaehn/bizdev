@@ -40,11 +40,13 @@ from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
 from bd.charts import priority_svg, trend_svg
 from bd.priority import build_priority
+from bd.signal_coverage import signal_coverage
+from bd.feed import FEED_DAYS, GROUP_LABELS, GROUPS as FEED_GROUPS, load_items as load_feed_items
 from bd.week import build_week, signs_line
 from bd.profile import brief_text, build_profile
 from bd.health import build_health
 from bd.market import build_market
-from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
+from bd.jobs import FIND_BUDGET, KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.leadership import coverage
@@ -144,6 +146,7 @@ ADMIN_GROUPS = (
                 ("audit", "/audit", "Change log", "Who changed what, with sources", False),
                 ("settings", "/settings", "Settings", "Numbers behind the Update button", False))),
 )
+SIGNALS_MAX = 200               # rows on the Signals page
 ADMIN_PAGES = frozenset(key for _, items in ADMIN_GROUPS for key, *_ in items) | {"admin", "jobs"}
 
 class App:
@@ -159,10 +162,10 @@ class App:
         self._flash: list[tuple[str, str]] = []
         self.env = Environment(loader=PackageLoader("bd.ui", "templates"), autoescape=select_autoescape(["html"]),
                                trim_blocks=True, lstrip_blocks=True)
-        self.env.filters.update(status_label=lambda v: {'active': 'Ready to scan', 'hold_review': 'Needs facts', 'excluded': 'Excluded'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
+        self.env.filters.update(band_name=lambda b: {'Stored': 'Below Watch'}.get(b, b), status_label=lambda v: {'active': 'Scanned for signals', 'hold_review': 'Unverified', 'unverified': 'Unverified', 'excluded': 'Out of scope'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
                                 hosted=hosted is not None, operate=jobs is not None, signs_line=signs_line, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
-                                report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"})
+                                report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"}, find_budget=FIND_BUDGET)
         init_conn = connect(db_path)
         init_db(init_conn)
         init_conn.close()
@@ -377,13 +380,19 @@ class App:
                 return self.job_start(req)
             if (m, p) == ("POST", "/lookup/run"):
                 return self.lookup_run(req, conn)
+            if (m, p) == ("POST", "/find/run"):
+                return self.find_run(req, conn)
+            if m == "GET" and p.startswith("/find/wait/") and p[11:].isdigit():
+                return self.find_wait(int(p[11:]), conn)
             if m == "GET" and p.startswith("/jobs/") and p[6:].isdigit():
                 return self.job_page(int(p[6:]), conn)
         parts = p.strip("/").split("/")
         table = {
             ("GET", "/"): lambda: self.home(conn) if self.jobs is not None else self.week_page(conn),
             ("GET", "/week"): lambda: self.week_page(conn),
+            ("GET", "/signals"): lambda: self.signals_page(req, conn),
             ("GET", "/help"): lambda: self.help_page(),
+            ("GET", "/find"): lambda: self.find_page(req, conn),
             ("GET", "/opportunities"): lambda: self.opportunities(req, conn),
             ("POST", "/update"): lambda: self.update_start(req, conn),
             ("POST", "/check"): lambda: self.check_start(),
@@ -456,7 +465,7 @@ class App:
         problems = static_problems(self.cfg, os.environ)
         rows = conn.execute("SELECT status, COUNT(*) n FROM accounts GROUP BY status").fetchall()
         by = {r["status"]: r["n"] for r in rows}
-        total, ready, need = sum(by.values()), by.get("active", 0), by.get("hold_review", 0)
+        total, ready = sum(by.values()), by.get("active", 0)
         top, opps = [], 0
         dates = score_dates(conn)
         if dates:
@@ -471,14 +480,14 @@ class App:
         elif total == 0:
             step = ("Press Update my list", "There are no companies yet. The update searches for Chicagoland companies to add.", "update")
         elif ready == 0:
-            step = ("Press Update my list", f"{need} companies are waiting for facts (location and size). The update researches them.", "update")
+            step = ("Add companies", "Every company is known to be out of scope. Add companies on the Companies page.", "accounts")
         elif opps == 0:
-            step = ("Press Update my list", f"{ready} companies are ready. The update scans them for news, hiring and leadership changes.", "update")
+            step = ("Press Update my list", f"{ready} companies are on the scan list. The update scans them for leadership changes, hiring and press.", "update")
         else:
             step = ("Open This week", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
         last = self.jobs.last_job(("update",))
-        return self.render("home.html", page="home", problems=problems, total=total, ready=ready, need=need, opps=opps, top=top, u=u,
-                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS,
+        return self.render("home.html", page="home", problems=problems, total=total, ready=ready, opps=opps, top=top, u=u,
+                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, coverage=signal_coverage(conn, self.cfg, date.today(), u),
                            last_log=self.jobs.log_tail(last.id)[-1500:] if last and last.status == "failed" else "")
 
     def update_start(self, req: Request, conn: sqlite3.Connection) -> Response:
@@ -583,6 +592,16 @@ class App:
     def week_page(self, conn: sqlite3.Connection) -> Response:
         return self.render("week.html", page="week", w=build_week(conn, self.cfg, date.today()), stage_labels=STAGE_LABELS)
 
+    def signals_page(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """The whole signal feed: every stored signal in the window, newest first, filtered by kind and by how far back to look."""
+        days = int(req.q("days")) if req.q("days") in ("7", "30", "90") else FEED_DAYS
+        group = req.q("group") if req.q("group") in GROUP_LABELS else ""
+        items = load_feed_items(conn, date.today(), days)
+        counts = {key: sum(i.group == key for i in items) for key, _ in FEED_GROUPS}
+        mine = [i for i in items if not group or i.group == group]
+        return self.render("signals.html", page="signals", groups=FEED_GROUPS, group=group, days=days, counts=counts, total=len(items),
+                           items=mine[:SIGNALS_MAX], shown_total=len(mine))
+
     def help_page(self) -> Response:
         return self.render("help.html", page="help", sc=self.cfg.scoring, bands=self.cfg.scoring.bands, schedule_note="Mondays 05:00 America/Chicago")
 
@@ -596,29 +615,68 @@ class App:
                            stage_labels=STAGE_LABELS, can_run=bool(self.jobs is not None and self.hosted),
                            busy=bool(self.jobs and self.jobs.busy()), budget=LOOKUP_BUDGET)
 
+    def _company_for_job(self, conn: sqlite3.Connection, typed: str) -> tuple[str, bool]:
+        """The one company a one-company job acts on: the exact match on the list, or the company added now (as a manual entry).
+        Raises JobError (with a plain message) when the name is unusable, ambiguous, or cannot be added."""
+        exact = [h for h in find_company(conn, self.cfg, typed, date.today().isoformat()) if h.exact]
+        if len(exact) > 1:
+            raise JobError("More than one company on your list has that name; open the one you mean and use its page.")
+        name = company_name({"only": exact[0].account.name if exact else typed}, required=True)
+        if exact:
+            return name, False
+        res = create_account(conn, self.cfg, name, {"tier": "B"}, "ui", extra={"origin": "manual"})
+        if not res.ok:
+            raise JobError("; ".join(res.errors))
+        return name, True
+
     def lookup_run(self, req: Request, conn: sqlite3.Connection) -> Response:
         """Check one company: add it if it is not on the list, then run the free SEC check or the paid research-and-scan job."""
         assert self.jobs is not None
         typed = " ".join(req.f("name").split())
         back = "/lookup?q=" + quote(typed[:120])
-        exact = [h for h in find_company(conn, self.cfg, typed, date.today().isoformat()) if h.exact]
-        if len(exact) > 1:
-            self.say("err", "More than one company on your list has that name; open the one you mean and use its page.")
-            return self.redirect(back)
         added = False
         try:
-            name = company_name({"only": exact[0].account.name if exact else typed}, required=True)
-            if not exact:
-                res = create_account(conn, self.cfg, name, {"tier": "B"}, "ui", extra={"origin": "manual"})
-                if not res.ok:
-                    self.say("err", "; ".join(res.errors))
-                    return self.redirect(back)
-                added = True
+            name, added = self._company_for_job(conn, typed)
             job_id = self.jobs.submit("lookup" if req.f("deep") == "1" else "sec_fill", {"only": name}, confirmed=bool(req.f("confirm")))
         except JobError as e:
             self.say("err", ("Added the company. " if added else "") + str(e))
             return self.redirect(back)
         return self.redirect(f"/jobs/{job_id}")
+
+    def find_page(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """The analysis-side search: where does a company stand, and, if it is not on the list or not ready, a free check."""
+        q = " ".join(req.q("q").split())[:120]
+        hits = find_company(conn, self.cfg, q, date.today().isoformat()) if q else []
+        return self.render("find.html", page="find", q=q, hits=hits, exact=any(h.exact for h in hits), labels=TYPE_LABELS, job=None, name="", company=None, running=False,
+                           can_run=bool(self.jobs is not None and self.hosted), busy=bool(self.jobs and self.jobs.busy()))
+
+    def find_run(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """Anyone signed in can run a signal scan of one company: add it if needed, read its job board for free, search for leadership
+        changes, hiring, press and company events (up to FIND_BUDGET dollars of model spend, with the tick-box confirmation), and score it."""
+        assert self.jobs is not None
+        typed = " ".join(req.f("name").split())
+        back = "/find?q=" + quote(typed[:120])
+        added = False
+        try:
+            name, added = self._company_for_job(conn, typed)
+            job_id = self.jobs.submit("find", {"only": name}, confirmed=bool(req.f("confirm")))
+        except JobError as e:
+            self.say("err", ("Added the company. " if added else "") + str(e))
+            return self.redirect(back)
+        return self.redirect(f"/find/wait/{job_id}")
+
+    def find_wait(self, job_id: int, conn: sqlite3.Connection) -> Response:
+        """Progress page for a signal scan; when it finishes it opens the company's brief."""
+        assert self.jobs is not None
+        job = self.jobs.get(job_id)
+        if job is None or job.kind != "find" or "--only" not in job.args:
+            return self.error("404 Not Found", "No such scan.")
+        name = job.args[job.args.index("--only") + 1]
+        acct = conn.execute("SELECT id FROM accounts WHERE lower(name) = lower(?)", (name,)).fetchone()
+        if job.status == "ok" and acct:
+            return self.redirect(f"/companies/{acct['id']}")
+        return self.render("find.html", page="find", q=name, hits=[], exact=False, labels=TYPE_LABELS, job=job, name=name, company=acct,
+                           running=job.status in ("queued", "running"), can_run=True, busy=False)
 
     def clients_page(self, conn: sqlite3.Connection, result=None) -> Response:
         return self.render("clients.html", page="clients", rows=client_rows(conn, date.today()), result=result, labels=TYPE_LABELS,
@@ -732,15 +790,22 @@ class App:
         status = req.q("status")
         q = req.q("q").strip().lower()
         accts = list_accounts(conn, status=None)
-        counts = {s: sum(a.status == s for a in accts) for s in ("active", "hold_review", "excluded")}
         unreviewed = sum(not a.reviewed for a in accts)
         only_new = req.q("origin") == "unreviewed"
         excl = load_exclusions(conn)
+        fits = {a.id: check_fit(a, excl, self.cfg) for a in accts}
+        counts = {"active": sum(a.status == "active" for a in accts), "excluded": sum(a.status == "excluded" for a in accts),
+                  "unverified": sum(a.status == "active" and fits[a.id].unverified for a in accts)}
         rows = []
         for a in accts:
-            if (status in counts and a.status != status) or (q and q not in a.name.lower()) or (only_new and a.reviewed):
+            if status == "unverified":
+                if a.status != "active" or not fits[a.id].unverified:
+                    continue
+            elif status in counts and a.status != status:
                 continue
-            rows.append({"a": a, "fit": check_fit(a, excl, self.cfg)})
+            if (q and q not in a.name.lower()) or (only_new and a.reviewed):
+                continue
+            rows.append({"a": a, "fit": fits[a.id]})
         return self.render("accounts.html", page="accounts", rows=rows, counts=counts, status=status, q=req.q("q"), total=len(accts),
                            unreviewed=unreviewed, only_new=only_new)
 

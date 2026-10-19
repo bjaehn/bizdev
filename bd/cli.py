@@ -122,11 +122,12 @@ def seed(
 
 
 def _print_gate(g) -> None:
-    typer.echo(f"Fit gate: {len(g.passed)} pass, {len(g.held)} held for review, {len(g.excluded)} excluded.")
-    for acc, res in g.held[:10]:
-        typer.echo(f"  held: {acc.name}: {'; '.join(res.reasons)}")
-    if len(g.held) > 10:
-        typer.echo(f"  ... and {len(g.held) - 10} more held (fill in chicagoland / revenue / employees / ownership)")
+    typer.echo(f"Fit gate: {len(g.passed) + len(g.unverified)} to scan ({len(g.unverified)} with location or size still unverified), "
+               f"{len(g.excluded)} known out of scope.")
+    for acc, res in g.unverified[:10]:
+        typer.echo(f"  unverified: {acc.name}: {'; '.join(res.reasons)}")
+    if len(g.unverified) > 10:
+        typer.echo(f"  ... and {len(g.unverified) - 10} more unverified (scanned anyway; fill in chicagoland / revenue / employees / ownership when known)")
     for acc, res in g.excluded:
         typer.echo(f"  excluded: {acc.name}: {'; '.join(res.reasons)}")
 
@@ -172,10 +173,10 @@ def scan(
         accounts = [a for a in accounts if (a.name.lower() == only.lower() if exact else only.lower() in a.name.lower())]
     if not accounts:
         if allow_empty:
-            typer.echo(f"{only!r} is not ready to scan (it needs a confirmed Chicagoland location and size, or it is not on your list)."
-                       if only else "No companies are ready to scan yet (each needs a confirmed Chicagoland location and size).")
+            typer.echo(f"{only!r} is not on the scan list (it is not on your list, or it is known to be out of scope)."
+                       if only else "No companies to scan: the list is empty or every company is known to be out of scope.")
             return
-        _fail("No accounts passed the fit gate. Fill in the held accounts' facts or run `bd seed accounts.csv`.")
+        _fail("No accounts to scan. Add companies with `bd seed accounts.csv`.")
     due = sorted((a for a in accounts if is_due(a, run_date, cfg, force)), key=lambda a: (a.last_scanned or "", a.id))
     if limit:
         due = due[:limit]                           # --limit counts accounts that are due; never-scanned ones go first
@@ -569,12 +570,12 @@ def enrich(
     cfg, settings = load_config(), Settings.from_env()
     conn = connect(settings.db_path)
     init_db(conn)
-    accounts = select_accounts(conn, all_accounts, only, limit, exact)
+    accounts = select_accounts(conn, all_accounts, only, limit, exact, cfg)
     if not accounts:
         if allow_empty:
-            typer.echo("No companies need facts right now.")
+            typer.echo("No companies have unverified facts right now.")
             return
-        _fail("No accounts to enrich (held accounts by default; use --all, or run `bd seed accounts.csv` first).")
+        _fail("No accounts to enrich (companies with unverified facts by default; use --all, or run `bd seed accounts.csv` first).")
     try:
         key, model = settings.require_llm()
     except RuntimeError as e:

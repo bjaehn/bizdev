@@ -7,20 +7,22 @@
 
 <h2>What to do here</h2>
 <ol>
-<li><b>See what to look at this week.</b> Open <a href="/week">This week</a>. Companies are listed with the most reasons to talk first. Each one says <i>why now</i> in a sentence.</li>
-<li><b>Prepare for one company.</b> Search by name on This week (or open <a href="/opportunities">Companies</a>), then open its brief. The brief is a two-minute read: the short version, what happened and when, with a link to every source. Use <b>Print / Save as PDF</b> or <b>Copy as text</b> to send it to someone.</li>
+<li><b>See what changed this week.</b> Open <a href="/week">This week</a>. It lists the opportunities, each named by what its signals add up to (for example <i>new leadership and a hiring push</i>), with the signals behind it, and below that the newest signals by kind: leadership changes, hiring, press and media, and company events.</li>
+<li><b>Browse every signal.</b> <a href="/signals">Signals</a> lists everything found, newest first, filtered by kind and by how far back to look. Each row links to the page it came from.</li>
+<li><b>Prepare for one company.</b> Search by name on This week (or open <a href="/opportunities">Companies</a>), then open its brief. The brief is a two-minute read: what its signals add up to, what happened and when, with a link to every source. Use <b>Print / Save as PDF</b> or <b>Copy as text</b> to send it to someone. A company that has not been scanned can be scanned from its brief or from Find.</li>
 <li><b>Show the market to leadership.</b> This week has a short market summary; <a href="/reports">Reports</a> has the Market view (which industries are heating up, signs by industry and by month).</li>
 <li><b>Track a company over time.</b> On a company's brief choose <b>Track this company</b>. This week then shows what is new about it, and you can mark its stage and keep notes.</li>
 </ol>
 
 <h2>Words used here</h2>
 <dl>
-<dt>Sign (signal)</dt><dd>One dated event found in a public source: a new executive named, a restructuring filing, a cluster of related job postings. Each one links to the page it came from.</dd>
-<dt>Kinds of signs</dt><dd>Leadership, hiring, company events, private equity, technology, procurement, filings and financials. A company with three <i>different</i> kinds of signs is a stronger lead than one with three signs of the same kind.</dd>
+<dt>Sign (signal)</dt><dd>One dated event found in a public source: a new executive named, a cluster of related job postings, a press release, a restructuring notice. Each one links to the page it came from.</dd>
+<dt>Kinds of signs</dt><dd>Leadership, hiring, company events, private equity, technology, procurement, filings and financials. A company with three <i>different</i> kinds of signs is a stronger lead than one with three signs of the same kind. Filings and financial facts are background; leadership changes, hiring, press and company events lead.</dd>
+<dt>Theme</dt><dd>What a company's signals add up to, named by a fixed rule, never written by a model: for example <i>Turnaround</i> is shown when a pressure signal (restructuring, cost or financial pressure) and a leadership change are both found. The rule is printed beside every theme, with the signals that satisfied it.</dd>
 <dt>Score</dt><dd>A number from 0 to {{ sc.score_max }}, worked out by plain code (no model) from the signals: how strong each kind of sign is, how recent, how trustworthy its source, and a bonus of +{{ sc.stacking_bonus_per_family|round|int }} for each extra kind that agrees (up to +{{ sc.stacking_bonus_max|round|int }}). The company page shows the sum.</dd>
 <dt>Bands</dt><dd><b>Hot</b> is {{ bands.hot }} or more, <b>Warm</b> {{ bands.warm }} or more, <b>Watch</b> {{ bands.watch }} or more. Below that a company is tracked but not listed.</dd>
 <dt>Client</dt><dd>An existing SEI client. Clients are scored like any company but listed apart, as expansion rather than new business.</dd>
-<dt>Needs facts / not scored</dt><dd>A company is only scanned once its basic facts (location, size, ownership) are known. Until then it waits, and an admin can fill them in.</dd>
+<dt>Unverified</dt><dd>A company is scanned for signals unless it is known to be out of scope (excluded, outside Chicagoland, or below the size floor). If its location or size is not confirmed it is scanned anyway and tagged <i>unverified</i>.</dd>
 </dl>
 
 <h2>How fresh is it</h2>

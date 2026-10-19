@@ -1,8 +1,9 @@
-"""The "This week" home: who to look at, what changed, existing clients with news, companies you track, and what the market is doing.
+"""The "This week" home: the opportunities (each named by what its signals add up to), the newest signals by kind, what changed, existing
+clients with news, companies you track, and what the market is doing.
 
-Read-only and deterministic, in plain words. It composes the ranked opportunities, the changes since the previous run, the pipeline state
-and the market view from what past runs stored; every sentence is built from counts and stored, sourced signals. Nothing is paraphrased or
-invented, and the page says how much of the list it actually covers, so a thin week looks thin."""
+Read-only and deterministic, in plain words. It composes the ranked opportunities, the signal feed, the changes since the previous run, the
+pipeline state and the market view from what past runs stored; every sentence is built from counts and stored, sourced signals. Nothing is
+paraphrased or invented, and the page says how much of the list it actually covers, so a thin week looks thin."""
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from bd.config import Config
+from bd.feed import Feed, build_feed
 from bd.labels import FAMILY_LABELS
 from bd.leadership import MIN_RISE, Changes, Coverage, Pulse, build_changes, coverage, pulse
 from bd.market import build_market
@@ -43,6 +45,7 @@ class Tracked:
 class Week:
     today: date
     coverage: Coverage
+    feed: Feed = field(default_factory=lambda: Feed(0))
     run_date: str | None = None
     problem: str | None = None                       # why there is no list, in plain words
     targets: list[Opportunity] = field(default_factory=list)
@@ -103,9 +106,10 @@ def build_week(conn: sqlite3.Connection, cfg: Config, today: date) -> Week:
     out = Week(today, coverage(conn, today))
     cov = out.coverage
     out.pulse = pulse(build_market(conn, today))
+    out.feed = build_feed(conn, today)                  # the signals themselves, whether or not they have been scored yet
     dates = score_dates(conn)
     if not dates:
-        out.problem = "Nothing has been scored yet. An admin needs to run an update from the Admin area to fill in company facts, scan for news and rank what it finds."
+        out.problem = "Nothing has been scored yet. An admin needs to run an update from the Admin area to scan for leadership changes, hiring and press, and rank what it finds."
         return out
     out.run_date = dates[0]
     cov.score_date, cov.score_age_days = dates[0], (today - date.fromisoformat(dates[0])).days

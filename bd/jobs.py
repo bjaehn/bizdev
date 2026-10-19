@@ -56,6 +56,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "ask": ("Ask a question about your data", True, False),
     "sec_fill": ("Fill facts from SEC filings (free)", False, False),
     "lookup": ("Research and scan one company", True, False),
+    "find": ("Scan one company for signals (leadership, hiring, press)", True, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -120,6 +121,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return ["sec-fill", "--only", only, "--exact"] if only else ["sec-fill"]
     if kind == "lookup":
         return ["lookup", "--only", company_name(form, required=True), "--budget", str(LOOKUP_BUDGET)]
+    if kind == "find":
+        return ["find", "--only", company_name(form, required=True), "--budget", str(FIND_BUDGET)]
     if kind == "ask":
         return ["ask", "--id", str(num("id", 1, 10**9, required=True))]
     if kind == "rfps":
@@ -162,6 +165,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 
 
 LOOKUP_BUDGET = 3        # dollars: the most one "research and scan this company" may spend, whatever the company
+FIND_BUDGET = 1          # dollars: the most one signal scan of a single company, started from the viewer's Find page, may spend
+FIND_SCANNERS = "leadership,press,events,hiring,tech_procurement"      # what a signal scan of one company looks for
 _NAME = re.compile(r"[A-Za-z0-9 .,&'()/-]+")
 
 
@@ -202,14 +207,16 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
     """The `bd` invocations (after the executable) a job runs, in order."""
     if kind == "update":
         a = dict(zip(args[1::2], args[2::2]))
-        steps = [["check"], ["sec-fill", "--as-of", as_of]]        # free: public companies are filled from the SEC before the model is asked
-        if int(a["--research"]):
-            steps += [["enrich", "--limit", a["--research"], "--allow-empty", "--as-of", as_of], ["apply-proposals", "enrich_proposals.csv"]]
+        # Signals come first. Free sources for every company on the list (nothing is spent on them), then the paid scan for leadership changes,
+        # hiring, press and company events within the spending limit; only then the work that fills in company facts and finds new companies,
+        # with whatever is left of the limit. Facts never delay or use up the money for signals.
+        steps = [["check"], ["sec-fill", "--as-of", as_of],                  # free: gives public companies the SEC id that the filing scanners need
+                 ["pe-sync"], ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
+                 ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of]]
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
-        # free sources first, for every ready company: they cost nothing, so a first look is never empty and the limit is not spent on them
-        steps += [["pe-sync"], ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
-                  ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of]]
+        if int(a["--research"]):
+            steps += [["enrich", "--limit", a["--research"], "--allow-empty", "--as-of", as_of], ["apply-proposals", "enrich_proposals.csv"]]
         if a.get("--rfps", "0") != "0":
             steps.append(["rfps", "--allow-empty", "--as-of", as_of])
         return steps + [["score", "--allow-empty", "--as-of", as_of]]
@@ -218,6 +225,12 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         one = ["--only", name, "--exact"]
         return [["sec-fill", *one, "--as-of", as_of], ["enrich", *one, "--limit", "1", "--allow-empty", "--as-of", as_of],
                 ["apply-proposals", "enrich_proposals.csv"], ["scan", *one, "--force", "--allow-empty", "--as-of", as_of],
+                ["score", "--allow-empty", "--as-of", as_of]]
+    if kind == "find":      # job boards first (free), then leadership, press, company events and hiring searches within the spending limit, then the score
+        name = args[args.index("--only") + 1]
+        one = ["--only", name, "--exact"]
+        return [["scan", *one, "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
+                ["scan", *one, "--scanners", FIND_SCANNERS, "--force", "--allow-empty", "--as-of", as_of],
                 ["score", "--allow-empty", "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
@@ -351,7 +364,7 @@ class JobRunner:
         try:
             self._set(job_id, status="running", started=_now())
             as_of = chicago_today()
-            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind in ("update", "lookup") else None
+            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind in ("update", "lookup", "find") else None
             start_id = self._max_run_id() if budget else 0
             skipped_for_budget = False
             with (self.log_dir / f"{job_id}.log").open("ab") as log:

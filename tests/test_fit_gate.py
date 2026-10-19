@@ -57,7 +57,7 @@ def test_exclusions_by_name_and_domain(cfg):
 
 def test_unknown_reasons_say_what_is_missing(cfg):
     res = check_fit(Account(id=1, name="Bare"), [], cfg)
-    assert res.verdict == "unknown" and res.status == "hold_review"
+    assert res.verdict == "unknown" and res.unverified and res.status == "active"      # unverified is still scanned
     assert any("Chicagoland" in r for r in res.reasons) and any("size" in r for r in res.reasons)
 
 
@@ -78,15 +78,19 @@ def write(tmp_path, body, name="a.csv"):
 def test_apply_gate_sets_status_and_is_recomputed_when_facts_arrive(cfg, conn, tmp_path):
     seed_csv(conn, write(tmp_path, "A,a.com,,yes,500000000,,public,,,A\nB,b.com,,,,,,,,A\nC,c.com,,no,5e8,,public,,,A\n"))
     g = apply_fit_gate(conn, cfg)
-    assert [a.name for a in g.passed] == ["A"] and [a.name for a, _ in g.held] == ["B"]
-    assert [a.name for a, _ in g.excluded] == ["C"] and g.changed == 2
+    assert [a.name for a in g.passed] == ["A"] and [a.name for a, _ in g.unverified] == ["B"]
+    assert [a.name for a, _ in g.excluded] == ["C"] and g.changed == 1      # only C changes: B is unverified but still scanned
     st = {r["name"]: r["status"] for r in conn.execute("SELECT name, status FROM accounts")}
-    assert st == {"A": "active", "B": "hold_review", "C": "excluded"}
-    # a human fills in B's facts -> next gate run promotes it
+    assert st == {"A": "active", "B": "active", "C": "excluded"}
+    # a human fills in B's facts -> next gate run marks it verified
     seed_csv(conn, write(tmp_path, "B,,,yes,900000000,,private,,,\n", "b.csv"))
     g = apply_fit_gate(conn, cfg)
-    assert sorted(a.name for a in g.passed) == ["A", "B"] and g.changed == 1
+    assert sorted(a.name for a in g.passed) == ["A", "B"] and g.changed == 0
     assert apply_fit_gate(conn, cfg).changed == 0   # idempotent
+    # a legacy database that still holds a company on hold: the gate releases it
+    conn.execute("UPDATE accounts SET status='hold_review' WHERE name='B'")
+    conn.commit()
+    assert apply_fit_gate(conn, cfg).changed == 1 and conn.execute("SELECT status FROM accounts WHERE name='B'").fetchone()[0] == "active"
 
 
 def test_adding_an_exclusion_demotes_an_active_account(cfg, conn, tmp_path):

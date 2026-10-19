@@ -9,7 +9,7 @@
 <p class="meta">Pipeline: {% for k, n in counts.items() %}{{ stage_labels[k] }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</p>
 {% for w in changes %}
 <div class="card"><div class="row"><div><a class="name" href="/accounts/{{ w.account_id }}">{{ w.name }}</a>
-<div class="meta">{{ stage_labels[w.stage] }}{% if w.score is not none %} · score {{ w.score }} ({{ w.band }}){% endif %}</div></div>
+<div class="meta">{{ stage_labels[w.stage] }}{% if w.score is not none %} · score {{ w.score }} ({{ w.band|band_name }}){% endif %}</div></div>
 <div>{% if w.new_signals or w.new_postings %}<span class="badge good">{{ w.new_signals|length }} new signal{{ '' if w.new_signals|length == 1 else 's' }}{% if w.new_postings %} · {{ w.new_postings }} new posting{{ '' if w.new_postings == 1 else 's' }}{% endif %}</span>{% else %}<span class="badge">nothing new</span>{% endif %}</div></div>
 {% if w.new_signals %}<ul class="signals">{% for s in w.new_signals %}<li><b>{{ labels[s['type']] }}</b> · {{ s['event_date']|fdate }} · {{ s['confidence'] }}<br><span class="meta">{{ s['summary'] }}</span>
 {% if s['source_url']|safe_url %}<br><a href="{{ s['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s['source_url']|host }}</a>{% endif %}</li>{% endfor %}</ul>{% endif %}

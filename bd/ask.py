@@ -35,7 +35,7 @@ ALLOWED: dict[str, tuple[tuple[str, ...], str]] = {
     "accounts": (("id", "name", "domain", "hq_city", "chicagoland", "revenue", "employees", "ownership", "sponsor", "industry", "cik",
                   "tier", "status", "last_scanned", "origin", "discovered_at"),
                  "one row per company. chicagoland is yes/no/unknown; revenue is USD; ownership is public/private/pe-backed; "
-                 "status is active (ready to scan), hold_review (facts missing) or excluded; tier A is scanned weekly, B every other week"),
+                 "status is active (scanned for signals) or excluded (known out of scope); hold_review is a legacy value; tier A is scanned weekly, B every other week"),
     "signals": (("id", "account_id", "family", "type", "event_date", "detected_date", "summary", "source_url", "source_type", "confidence",
                  "service_lines", "role_or_person"),
                 "one row per event found about a company. event_date is when it happened (from the source), detected_date when we found it; "

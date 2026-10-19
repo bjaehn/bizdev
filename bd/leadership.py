@@ -29,7 +29,7 @@ STALE_SCORE_DAYS = 8
 class Coverage:
     total: int = 0
     ready: int = 0
-    waiting: int = 0
+    unscanned: int = 0                 # on the scan list but not scanned yet
     with_signal_90d: int = 0
     scored: int = 0                    # companies at or above the Watch band on the latest scores
     hot: int = 0
@@ -83,7 +83,8 @@ class Leadership:
 def coverage(conn: sqlite3.Connection, today: date) -> Coverage:
     c = Coverage()
     by = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) n FROM accounts GROUP BY status")}
-    c.total, c.ready, c.waiting = sum(by.values()), by.get("active", 0), by.get("hold_review", 0)
+    c.total, c.ready = sum(by.values()), by.get("active", 0)
+    c.unscanned = conn.execute("SELECT COUNT(*) FROM accounts WHERE status = 'active' AND last_scanned IS NULL").fetchone()[0]
     c.with_signal_90d = conn.execute(
         "SELECT COUNT(DISTINCT s.account_id) FROM signals s JOIN accounts a ON a.id = s.account_id "
         "WHERE a.status = 'active' AND s.event_date >= ?", ((today - timedelta(days=90)).isoformat(),)).fetchone()[0]

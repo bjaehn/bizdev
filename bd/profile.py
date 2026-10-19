@@ -1,4 +1,5 @@
-"""A company's brief: the short version, what happened (with sources), and how the score is built, from what the scoring engine stored.
+"""A company's brief: what its signals add up to (a named theme with the evidence), what happened (with sources), and how the score is built,
+from what the scoring engine stored.
 
 Read-only and deterministic (no model, no network). Reuses the dossier (signals, timeline, postings, owners) and adds the explanation of
 the score: points per signal type, the stacking bonus for different signal types agreeing, any pattern bonus and sponsor lift."""
@@ -9,7 +10,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date
 
-from bd.accounts import Account
+from bd.accounts import Account, can_check_free
 from bd.charts import breakdown_svg
 from bd.config import Config
 from bd.dossier import build_dossier
@@ -70,20 +71,6 @@ def explain(opp, cfg: Config) -> Explanation:
                        raw, r.score, raw > cfg.scoring.score_max)
 
 
-def missing_facts(a: Account) -> list[str]:
-    """Basic facts not on file, so a reader knows what the brief cannot say about this company."""
-    out = []
-    if not a.industry:
-        out.append("industry")
-    if not a.hq_city:
-        out.append("headquarters city")
-    if not a.ownership:
-        out.append("ownership")
-    if a.revenue is None and not a.employees:
-        out.append("size (revenue or employees)")
-    return out
-
-
 def facts_line(a: Account) -> str:
     bits = [a.industry, a.hq_city, a.ownership, f"{money(a.revenue)} revenue" if a.revenue else None,
             f"{a.employees:,} employees" if a.employees else None]
@@ -94,8 +81,9 @@ def build_profile(conn: sqlite3.Connection, cfg: Config, a: Account, today: date
     d = build_dossier(conn, cfg, a, today)
     d["explain"] = explain(d["opp"], cfg) if d["opp"] else None
     d["signs"] = signs_line(d["opp"].result) if d["opp"] else ""
-    d["missing"] = missing_facts(a)
+    d["unverified"] = d["fit"].unverified and a.status != "excluded"
     d["facts"] = facts_line(a)
+    d["can_check"] = can_check_free(a)
     return d
 
 
@@ -106,10 +94,14 @@ def brief_text(d: dict, hiring_days: int, safe_url=lambda u: u) -> str:
     out = [a.name, d["facts"] or "No company details on file"]
     if opp:
         out.append(f"{opp.result.band} {opp.result.score}" + (f" · {d['signs']}" if d["signs"] else "") + (" · existing SEI client" if d["state"].client else ""))
-        if opp.why_now:
-            out += ["", "WHY NOW", opp.why_now + (f" Best fit: {opp.service_line}." if opp.service_line else "")]
+        if opp.theme:
+            t = opp.theme
+            out += ["", "WHAT IT ADDS UP TO", t.name + (f" (points to {t.service_line})" if t.service_line else "") + ". " + t.rule + ".",
+                    *(f"- {fmt_date(e.event_date)} · {e.label}: {e.summary}" + (f" Source: {safe_url(e.url)}" if safe_url(e.url) else "") for e in t.evidence)]
+            if len(opp.themes) > 1:
+                out.append("Also: " + ", ".join(x.name for x in opp.themes[1:]) + ".")
     else:
-        out.append("Not scored yet.")
+        out.append("Not scored yet." if d["signals"] else ("No signals found." if a.last_scanned else "Not scanned yet."))
     if d["signals"]:
         out += ["", "WHAT HAPPENED"]
         for s in d["signals"][:EVIDENCE_MAX]:
@@ -120,6 +112,8 @@ def brief_text(d: dict, hiring_days: int, safe_url=lambda u: u) -> str:
     else:
         out += ["", "WHAT HAPPENED", "No signals found."]
     ctx = []
+    if d["unverified"]:
+        ctx.append("Not confirmed: " + "; ".join(d["fit"].reasons) + ". That does not stop it being scanned for signals.")
     if d["firms"]:
         ctx.append("Owned by " + ", ".join(d["firms"]) + ".")
     if d["postings"]:
@@ -127,7 +121,5 @@ def brief_text(d: dict, hiring_days: int, safe_url=lambda u: u) -> str:
                    + (f", {d['leadership_postings']} at leadership level." if d["leadership_postings"] else "."))
     if ctx:
         out += ["", "CONTEXT", *ctx]
-    if d["missing"]:
-        out += ["", "NOT ON FILE: " + ", ".join(d["missing"]) + "."]
     out += ["", f"Built {fmt_date(d['today'])} from public sources by BD Signals. Research only; every link is a page that was retrieved when found."]
     return "\n".join(out) + "\n"

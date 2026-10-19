@@ -12,13 +12,13 @@
 {% elif error %}<div class="errors"><b>{{ error }}</b></div>
 {% else %}
 {% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} compan{{ 'y' if stale|length == 1 else 'ies' }} ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). An admin needs to run Score again.</div>{% endif %}
-<p class="meta"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> ready · <b>{{ cov.with_signal_90d }}</b> with news in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.waiting %} · {{ cov.waiting }} still waiting for facts{% endif %}</p>
+<p class="meta"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> scanned · <b>{{ cov.with_signal_90d }}</b> with signals in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
 {% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err">These scores are {{ cov.score_age_days }} days old.</div>{% endif %}
 
 <form method="get" action="/opportunities" class="filters">
 <input type="hidden" name="view" value="{{ '' if view == 'matrix' else view }}">
 <input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name">
-<select name="band" aria-label="Band"><option value="">any band</option>{% for b in bands %}<option {{ 'selected' if q.band == b else '' }}>{{ b }}</option>{% endfor %}</select>
+<select name="band" aria-label="Band"><option value="">any band</option>{% for b in bands %}<option value="{{ b }}" {{ 'selected' if q.band == b else '' }}>{{ b|band_name }}</option>{% endfor %}</select>
 <select name="industry" aria-label="Industry"><option value="">any industry</option>{% for i in industries %}<option {{ 'selected' if q.industry == i else '' }}>{{ i }}</option>{% endfor %}</select>
 <button type="submit">Filter</button>
 <details class="more"><summary>More filters</summary>
@@ -51,9 +51,10 @@
 <tbody>
 {% for r in matrix.rows %}{% set o = r.opp %}<tr>
 <td class="co"><span class="rank">{{ o.rank }}</span><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>{% if o.client %} <span class="badge good">client</span>{% endif %}
+{% if o.theme %}<div><b>{{ o.theme.name }}</b></div>{% endif %}
 <div class="meta">{{ [o.account.industry, o.account.hq_city]|select|join(' · ') or 'no company details' }}</div></td>
 <td class="sc"><div class="meter {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}"><i style="--w:{{ r.score_pct }}%"></i></div>
-<b>{{ o.result.score }}</b> <span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }}</span>{% if o.delta is not none and o.delta > 0 %} <span class="badge good">+{{ o.delta }}</span>{% endif %}</td>
+<b>{{ o.result.score }}</b> <span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }}</span>{% if o.delta is not none and o.delta > 0 %} <span class="badge good">+{{ o.delta }}</span>{% endif %}</td>
 {% for c in r.cells %}<td>{% if c.points %}<a class="cell {{ 'hi' if c.shade > 0.55 else '' }}" style="--v:{{ '%.2f'|format(c.shade) }}" href="/companies/{{ o.account.id }}" title="{{ c.title }}" aria-label="{{ c.title }}">{{ c.points|round|int }}{{ ' ●' if c.recent }}</a>{% else %}<span class="cell none" aria-hidden="true">·</span>{% endif %}</td>{% endfor %}
 <td class="ctr"><b>{{ r.types }}</b>/{{ matrix.columns|length }}{% if o.result.stacking_bonus %}<br><span class="meta">+{{ o.result.stacking_bonus|round|int }}</span>{% endif %}</td></tr>
 {% endfor %}

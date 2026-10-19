@@ -195,7 +195,7 @@ def test_a_matched_company_keeps_its_cik_even_when_its_sec_files_cannot_be_read(
     logs = []
     s = run_sec_fill(conn, cfg, edgar, AS_OF, log=logs.append)
     a = list_accounts(conn, status=None)[0]
-    assert (a.cik, a.revenue, a.ownership, a.status) == ("0000005678", None, None, "hold_review") and s.errors == 2
+    assert (a.cik, a.revenue, a.ownership, a.status) == ("0000005678", None, None, "active") and s.errors == 2
     assert "filled cik" in logs[0] and "SEC record not read (HTTP 503)" in logs[0]
     s = run_sec_fill(conn, cfg, SecEdgar(), AS_OF)                         # the next run reads the files it could not before
     assert list_accounts(conn, status=None)[0].revenue == 1_200_000_000 and s.read == 1
@@ -282,7 +282,7 @@ def test_sec_fill_is_a_free_job_and_the_first_step_after_the_check():
 
 def test_home_and_operate_describe_the_free_step(app_env):
     e = app_env
-    assert "straight from the SEC's own data (free)" in e.get("/").body
+    assert "Reads the SEC's own data for public companies (free)" in e.get("/").body
     body = e.get("/operate").body
     assert 'value="sec_fill"' in body and "Fill from SEC (free)" in body
     r = e.post("/operate/run", {"kind": "sec_fill"})                  # free: no confirmation tick

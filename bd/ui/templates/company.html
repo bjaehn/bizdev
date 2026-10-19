@@ -1,25 +1,33 @@
 {% extends "base.html" %}
+{% from "_ui.html" import evidence_list %}
 {% block title %}{{ d.a.name }}{% endblock %}
 {% block hero %}<p class="meta noprint"><a href="/week">← This week</a> · <a href="/opportunities">All companies</a> · <a href="/companies/{{ d.a.id }}/text">Plain-text version</a> · Print (Save as PDF) · <a href="/accounts/{{ d.a.id }}">Manage (Admin)</a></p>
 <h1>{{ d.a.name }}</h1>
-<p class="sub">{{ d.facts or 'No company details on file' }}</p>
-<div class="tags">{% if d.opp %}<span class="badge {{ 'hot' if d.opp.result.band == 'Hot' else ('warm' if d.opp.result.band == 'Warm' else '') }}">{{ d.opp.result.band }} · {{ d.opp.result.score }}</span>
+<p class="sub">{{ d.signs or ('Signals found, not scored yet' if d.signals else ('No signals found yet' if d.a.last_scanned else 'Not scanned yet')) }}</p>
+<div class="tags">{% if d.opp %}<span class="badge {{ 'hot' if d.opp.result.band == 'Hot' else ('warm' if d.opp.result.band == 'Warm' else '') }}">{{ d.opp.result.band|band_name }} · {{ d.opp.result.score }}</span>
 {% if d.opp.delta is not none and d.opp.delta != 0 %}<span class="badge {{ 'good' if d.opp.delta > 0 else 'bad' }}">{{ '+' if d.opp.delta > 0 }}{{ d.opp.delta }} since last run</span>{% endif %}{% else %}<span class="badge">not scored</span>{% endif %}
 {% if d.state.client %}<span class="badge good">client</span>{% endif %}
 {% if d.state.watching %}<span class="badge">tracking</span>{% endif %}
 {% if d.state.stage in ('reviewing', 'pursuing', 'passed', 'won', 'lost') %}<span class="badge">{{ stage_labels[d.state.stage] }}</span>{% endif %}
-{% if d.a.status != 'active' %}<span class="badge warm">needs facts</span>{% endif %}</div>{% endblock %}
+{% if d.a.status == 'excluded' %}<span class="badge bad">out of scope</span>{% elif d.unverified %}<span class="badge warm">unverified</span>{% endif %}</div>{% endblock %}
 {% block body %}
 {% set back = '/companies/' ~ d.a.id %}
 <div class="onepager stack">
-<h2>The short version</h2>
+<h2>What this adds up to</h2>
 <div class="card">
-{% if d.opp and d.opp.why_now %}<p class="why"><b>Why now:</b> {{ d.opp.why_now }}</p>
-{% if d.signs %}<p>{{ d.signs }}.</p>{% endif %}
-{% if d.opp.service_line %}<p>Best fit: <b>{{ d.opp.service_line }}</b>.</p>{% endif %}
-{% elif d.opp %}<p>{% if d.signs %}{{ d.signs }}. {% endif %}The signals are listed below.</p>
-{% else %}<p>This company has not been scored yet{% if d.a.status != 'active' %}: it is waiting for basic facts before it is scanned{% endif %}.</p>{% endif %}
-{% if d.missing %}<p class="meta">Not on file: {{ d.missing|join(', ') }}.</p>{% endif %}
+{% if d.opp and d.opp.theme %}{% set t = d.opp.theme %}
+<p class="why"><b>{{ t.name }}</b>{% if t.service_line %} · points to <b>{{ t.service_line }}</b>{% endif %}</p>
+<p class="meta">{{ t.rule }}. {{ d.signs }}.</p>
+{{ evidence_list(t.evidence, 6) }}
+{% if t.more %}<p class="meta">{{ t.more }} more signal{{ '' if t.more == 1 else 's' }} of the same kind below.</p>{% endif %}
+{% if d.opp.themes|length > 1 %}<h3>Also showing</h3>
+<ul class="plain">{% for x in d.opp.themes[1:] %}<li><b>{{ x.name }}</b> <span class="meta">· {{ x.rule }}: {{ x.evidence|map(attribute='label')|join(', ') }}</span></li>{% endfor %}</ul>{% endif %}
+{% elif d.signals %}<p>Signals were found, but none has scored yet: only High and Medium confidence signals from recent months count. They are listed below.</p>
+{% elif d.a.last_scanned %}<p>Scanned {{ d.a.last_scanned|fdate }}: no leadership, hiring, press or company-event signals found. Quiet can mean nothing is happening, or that the sources do not cover this company.</p>
+{% else %}<p>Not scanned yet. The next update looks for leadership changes, hiring and press at this company.</p>{% endif %}
+{% if not d.opp and d.a.status != 'excluded' and operate and hosted and d.can_check %}<form method="post" action="/find/run" class="noprint"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ d.a.name }}">
+<label class="check"><input type="checkbox" name="confirm" value="1"> uses paid model calls, up to ${{ find_budget }}</label>
+<button class="ghost" type="submit">Scan for signals now</button></form>{% endif %}
 <p class="meta">Built only from the sourced signals below. Research only: no outreach advice.</p></div>
 
 <h2>What happened</h2>
@@ -31,18 +39,20 @@
 </ul>{% if d.signals|length > 12 %}<p class="meta">Showing the 12 most recent of {{ d.signals|length }}.</p>{% endif %}</div>
 {% else %}<div class="card empty">Nothing found yet. Quiet can mean nothing is happening, or that the sources do not cover this company.</div>{% endif %}
 
-{% if d.firms or d.postings %}<h2>Context</h2>
-<div class="card"><ul class="plain">
-{% if d.firms %}<li>Owned by {{ d.firms|join(', ') }}.</li>{% endif %}
-{% if d.postings %}<li><b>{{ d.postings }}</b> open job posting{{ '' if d.postings == 1 else 's' }} in the last {{ cfg_hiring_days }} days{% if d.leadership_postings %}, {{ d.leadership_postings }} at leadership level{% endif %}.</li>{% endif %}
-</ul></div>{% endif %}
-
 <h2>The last 180 days</h2>
 {% if d.timeline %}<div class="card">{{ d.timeline|safe }}
 <p class="meta">{% for label, color in d.legend %}<span class="dot" style="--c:{{ color }}">●</span> {{ label }}{{ '  ' if not loop.last }} {% endfor %}· paler dots are Medium confidence{% if d.outside_window %} · {{ d.outside_window }} older signal{{ '' if d.outside_window == 1 else 's' }} not shown{% endif %}</p></div>
 {% else %}<div class="card empty">No signals in the last 180 days.</div>{% endif %}
 
-{% if d.explain and d.explain.parts %}<details class="card"><summary><b>How the score is built</b> <span class="meta">({{ d.opp.result.band }}, {{ d.explain.score }})</span></summary>
+{% if d.facts or d.firms or d.postings or d.unverified %}<h2>Background</h2>
+<div class="card"><ul class="plain">
+{% if d.facts %}<li>{{ d.facts }}</li>{% endif %}
+{% if d.unverified %}<li>Not confirmed: {{ d.fit.reasons|join('; ') }}. That does not stop it being scanned for signals.</li>{% endif %}
+{% if d.firms %}<li>Owned by {{ d.firms|join(', ') }}.</li>{% endif %}
+{% if d.postings %}<li><b>{{ d.postings }}</b> open job posting{{ '' if d.postings == 1 else 's' }} in the last {{ cfg_hiring_days }} days{% if d.leadership_postings %}, {{ d.leadership_postings }} at leadership level{% endif %}.</li>{% endif %}
+</ul></div>{% endif %}
+
+{% if d.explain and d.explain.parts %}<details class="card"><summary><b>How the score is built</b> <span class="meta">({{ d.opp.result.band|band_name }}, {{ d.explain.score }})</span></summary>
 <div>{{ d.explain.svg|safe }}
 <table><tbody>
 {% for p in d.explain.parts %}<tr><td class="shrink"><span class="swatch sq" style="--c:{{ p.color }}"></span></td>

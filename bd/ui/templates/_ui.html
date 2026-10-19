@@ -1,18 +1,43 @@
 {# Shared markup for design-system components used on more than one page. Styling lives only in design.css. #}
-{% macro band_badge(o) %}<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} {{ o.result.score }}</span>{% endmacro %}
+{% macro band_badge(o) %}<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }} {{ o.result.score }}</span>{% endmacro %}
 
-{# A ranked company entry: rank, name, badges, why now, how many kinds of signs agree, and the link to its brief. #}
+{# The stored signals behind a theme or a company: date, kind, the extracted sentence and the link to the page it came from. #}
+{% macro evidence_list(items, limit=3) %}
+<ul class="signals">{% for e in items[:limit] %}
+<li><span class="meta">{{ e.event_date|fdate }}</span> · <b>{{ e.label }}</b>: {{ e.summary }}{% if e.role_or_person %} <span class="meta">({{ e.role_or_person }})</span>{% endif %}
+{% if e.url|safe_url %} <a href="{{ e.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ e.url|host }}</a>{% endif %}</li>{% endfor %}
+</ul>{% endmacro %}
+
+{# A ranked opportunity: rank, name, badges, the theme the signals add up to with its evidence, and the link to the brief. #}
 {% macro company_entry(o, rank, extra_badges=true) %}
 <div class="entry {{ 'is-hot' if o.result.band == 'Hot' else ('is-warm' if o.result.band == 'Warm' else '') }}"><div class="entry-rank">{{ rank }}</div><div class="entry-main">
 <div class="entry-head"><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>{{ band_badge(o) }}
 {% if o.client %}<span class="badge good">client</span>{% endif %}
 {% if extra_badges %}{% if o.is_new %}<span class="badge good">new this week</span>{% elif o.delta is not none and o.delta >= 5 %}<span class="badge good">+{{ o.delta }}</span>{% endif %}
 {% if o.watching %}<span class="badge">tracking</span>{% endif %}{% endif %}</div>
-<div class="meta">{{ [o.account.industry, o.account.hq_city, (o.account.revenue|money ~ ' revenue') if o.account.revenue else none]|select|join(' · ') }}</div>
-{% if o.why_now %}<p class="why"><b>Why now:</b> {{ o.why_now }}</p>{% endif %}
-<p class="meta">{{ signs_line(o.result) }}</p>
+<div class="meta">{{ [o.account.industry, o.account.hq_city]|select|join(' · ') }}</div>
+{% if o.theme %}{% set t = o.theme %}<p class="why"><b>{{ t.name }}</b>{% if t.service_line %} <span class="meta">· points to {{ t.service_line }}</span>{% endif %}</p>
+{{ evidence_list(t.evidence) }}
+<p class="meta">{{ signs_line(o.result) }}{% if o.themes|length > 1 %} · also: {{ o.themes[1:]|map(attribute='name')|join(', ') }}{% endif %}</p>{% endif %}
 <div><a class="btn" href="/companies/{{ o.account.id }}">Open brief →</a></div>
 </div></div>
+{% endmacro %}
+
+{# One row of the signal feed. #}
+{% macro feed_row(i) %}
+<li><span class="meta">{{ i.event_date|fdate }}</span> · <a href="/companies/{{ i.account_id }}">{{ i.account }}</a>{% if i.client %} <span class="badge good">client</span>{% endif %}{% if i.band in ('Hot', 'Warm') %} <span class="badge {{ 'hot' if i.band == 'Hot' else 'warm' }}">{{ i.band }}</span>{% endif %}<br>
+<b>{{ i.label }}</b>: {{ i.summary }}{% if i.role_or_person %} <span class="meta">({{ i.role_or_person }})</span>{% endif %}
+{% if i.url|safe_url %} <a href="{{ i.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ i.url|host }}</a>{% endif %} <span class="meta">{{ i.source_type|replace('_', ' ') }}</span></li>
+{% endmacro %}
+
+{# The feed as cards, one per group. `link` adds a "see all" link to each group that has more than is shown. #}
+{% macro feed_groups(feed, link=true, skip=()) %}
+{% for g in feed.groups if g.key not in skip %}
+<div class="card"><h3>{{ g.label }} <span class="meta">· {{ g.total }} in the last {{ feed.days }} days</span></h3>
+{% if g.items %}<ul class="plain">{% for i in g.items %}{{ feed_row(i) }}{% endfor %}</ul>
+{% if link and g.total > g.items|length %}<p class="meta"><a href="/signals?group={{ g.key }}">See all {{ g.total }}</a></p>{% endif %}
+{% else %}<p class="meta">None found in the last {{ feed.days }} days.</p>{% endif %}</div>
+{% endfor %}
 {% endmacro %}
 
 {# The four-step shade ramp used to explain heat/matrix cells. #}

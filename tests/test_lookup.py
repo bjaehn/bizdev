@@ -22,7 +22,7 @@ def test_find_matches_by_text_or_by_name_apart_from_suffixes_and_orders_exact_fi
     add_account(conn, "Abbott Laboratories")
     add_account(conn, "CME Group")
     add_account(conn, "Abbott")
-    held = add_account(conn, "Heldco", status="hold_review", revenue=None, ownership=None, chicagoland="unknown")
+    held = add_account(conn, "Heldco", revenue=None, ownership=None, chicagoland="unknown")
     set_client(conn, held, True)
     hits = find(conn, cfg, "abbott", AS_OF.isoformat())
     assert [h.account.name for h in hits] == ["Abbott", "Abbott Laboratories"] and hits[0].exact and not hits[1].exact
@@ -30,7 +30,7 @@ def test_find_matches_by_text_or_by_name_apart_from_suffixes_and_orders_exact_fi
     assert find(conn, cfg, "CME Group Inc.", AS_OF.isoformat())[0].exact
     assert find(conn, cfg, "", AS_OF.isoformat()) == [] and find(conn, cfg, "zzz", AS_OF.isoformat()) == []
     h = find(conn, cfg, "Heldco", AS_OF.isoformat())[0]
-    assert h.state.client and h.account.status == "hold_review" and any("unverified" in r for r in h.reasons)
+    assert h.state.client and h.account.status == "active" and any("unverified" in r for r in h.reasons)      # scanned, facts unconfirmed
 
 
 def test_find_reports_score_and_the_newest_signal(cfg, tmp_path):
@@ -85,11 +85,11 @@ def test_a_lookup_cannot_spend_more_than_its_limit(fake, monkeypatch):  # noqa: 
 def test_scan_and_enrich_and_sec_fill_can_target_one_company(cli_env, monkeypatch):  # noqa: F811
     runner.invoke(app, ["seed", str(ROOT / "accounts.csv")])
     r = runner.invoke(app, ["scan", "--only", "Nobody At All", "--allow-empty"])
-    assert r.exit_code == 0 and "'Nobody At All' is not ready to scan" in r.output
+    assert r.exit_code == 0 and "'Nobody At All' is not on the scan list" in r.output
     r = runner.invoke(app, ["scan", "--only", "Nobody At All", "--dry-run"])
     assert r.exit_code == 1                                                                         # without --allow-empty it still fails loudly
     r = runner.invoke(app, ["enrich", "--only", "Nobody At All", "--exact", "--allow-empty"])
-    assert r.exit_code == 0 and "No companies need facts" in r.output
+    assert r.exit_code == 0 and "No companies have unverified facts" in r.output
     monkeypatch.setenv("BD_USER_AGENT", "SEI BD Research ops@example.com")
     r = runner.invoke(app, ["sec-fill", "--only", "Nobody At All", "--exact"])
     assert r.exit_code == 0 and "Nothing for the SEC to fill" in r.output
@@ -100,7 +100,7 @@ def test_exact_matches_the_whole_name_only(cfg, tmp_path):
     from bd.sec_fill import select
     conn = make_db(tmp_path)
     for n in ("Abbott", "Abbott Laboratories"):
-        add_account(conn, n, status="hold_review", revenue=None, ownership=None, chicagoland="unknown")
+        add_account(conn, n, revenue=None, ownership=None, chicagoland="unknown")
     assert len(select_accounts(conn, False, "abbott", None)) == 2 and [a.name for a in select_accounts(conn, False, "ABBOTT", None, exact=True)] == ["Abbott"]
     assert len(select(conn, "abbott")) == 2 and [a.name for a in select(conn, "abbott", exact=True)] == ["Abbott"]
 
@@ -113,7 +113,7 @@ def test_lookup_page_finds_adds_and_starts_the_job(app_env):  # noqa: F811
     score_accounts(e.conn, e.cfg, date.today())
     assert "Type any company name" in e.get("/lookup").body
     body = e.get("/lookup?q=acme").body
-    assert "Acme Corp" in body and "Restructuring / layoffs" in body and "ready to scan" in body and "Analysis profile" in body
+    assert "Acme Corp" in body and "Restructuring / layoffs" in body and "scanned for signals" in body and "Analysis profile" in body
     assert "Not on your list" not in body and "Research and scan now" in body
     miss = e.get("/lookup?q=Zeta <b>Holdings").body
     assert "Not on your list: Zeta &lt;b&gt;Holdings" in miss and "Add and check the SEC (free)" in miss and "<b>Holdings" not in miss
@@ -124,7 +124,7 @@ def test_lookup_page_finds_adds_and_starts_the_job(app_env):  # noqa: F811
     job = e.app.jobs.recent()[0]
     assert job.kind == "sec_fill" and job.args == ["sec-fill", "--only", "Zeta Holdings", "--exact"]
     zeta = [x for x in list_accounts(e.conn, status=None) if x.name == "Zeta Holdings"][0]
-    assert zeta.tier == "B" and zeta.status == "hold_review" and zeta.origin == "manual"
+    assert zeta.tier == "B" and zeta.status == "active" and zeta.origin == "manual"
     assert f"open Zeta Holdings" in e.get(r.h["Location"]).body
     # a second request for the same company, typed differently, finds it instead of adding another
     assert e.post("/lookup/run", {"name": "zeta holdings, inc."}).code == 303
