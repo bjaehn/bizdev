@@ -237,4 +237,4 @@ def test_a_score_below_the_watch_band_reads_below_watch_not_stored(world):
     body = e.get("/find?q=Lowco").body
     assert "Below Watch 21" in body and "Stored" not in body
     assert "Below Watch" in e.get(f"/companies/{low}").body and "Stored" not in e.get(f"/companies/{low}").body
-    assert "Below Watch" in e.get("/opportunities?tracked=1").body and ">Stored<" not in e.get("/opportunities?tracked=1").body
+    assert "Below Watch" in e.get("/opportunities?view=matrix&tracked=1").body and ">Stored<" not in e.get("/opportunities?view=matrix&tracked=1").body

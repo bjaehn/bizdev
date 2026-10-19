@@ -67,16 +67,16 @@ def test_a_company_with_no_signals_says_it_was_not_scanned_or_found_nothing_and_
 
 def test_tracking_a_company_from_its_brief_returns_to_the_brief_and_shows_it_on_this_week(seeded):
     e, a, bare = seeded
-    assert "not tracking any company yet" in e.get("/week").body
+    assert "Companies you track" not in e.get("/week").body
     r = e.post(f"/accounts/{a}/watch", {"on": "1", "back": f"/companies/{a}"})
     assert r.code == 303 and r.h["Location"] == f"/companies/{a}"
     body = e.get(f"/companies/{a}").body
     assert "You are tracking this company" in body
     assert "Stop tracking" in body and '<span class="badge">tracking</span>' in body
     week = e.get("/week").body
-    assert "Companies you are tracking" in week and "Briefco &lt;i&gt;" in week.split("Companies you are tracking")[1].split("The market this week")[0]
+    assert "Companies you track" in week and "Briefco &lt;i&gt;" in week.split("Companies you track")[1]
     r = e.post(f"/accounts/{a}/watch", {"on": "0", "back": f"/companies/{a}"})
-    assert "Track this company" in e.get(f"/companies/{a}").body and "not tracking any company yet" in e.get("/week").body
+    assert "Track this company" in e.get(f"/companies/{a}").body and "Companies you track" not in e.get("/week").body
 
 
 def test_a_stage_and_a_note_set_from_the_brief_come_back_to_the_brief(seeded):
@@ -87,7 +87,7 @@ def test_a_stage_and_a_note_set_from_the_brief_come_back_to_the_brief(seeded):
     assert r.h["Location"] == f"/companies/{a}"
     body = e.get(f"/companies/{a}").body
     assert "Reviewing" in body and "Spoke with the partner &lt;b&gt;today&lt;/b&gt;" in body and "Your notes" in body
-    assert "Reviewing" in e.get("/week").body.split("Companies you are tracking")[1].split("The market this week")[0]      # a stage of Reviewing counts as tracked
+    assert "Reviewing" in e.get("/week").body.split("Companies you track")[1]      # a stage of Reviewing counts as tracked
 
 
 def test_a_back_address_cannot_send_you_off_the_site(seeded):

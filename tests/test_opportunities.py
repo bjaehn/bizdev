@@ -155,7 +155,8 @@ def test_page_renders_filters_and_escapes(tmp_path, cfg):
     ck = call(app, "POST", "/login", {"password": PW}).h["Set-Cookie"].split(";")[0].split("=", 1)[1]
     r = call(app, "GET", "/opportunities", cookie=ck)
     assert r.code == 200 and "<h1>Companies</h1>" in r.body and "Sponsor" not in r.body.split("<main>")[0]
-    assert "<script>alert(1)" not in r.body and "&lt;script&gt;" in r.body and '<table class="matrix">' in r.body       # the matrix is the default view
+    assert "<script>alert(1)" not in r.body and "&lt;script&gt;" in r.body and '<table class="matrix">' not in r.body       # the simple ranked list is the default view
+    assert '<table class="matrix">' in call(app, "GET", "/opportunities?view=matrix", cookie=ck).body
     lst = call(app, "GET", "/opportunities?view=list", cookie=ck).body
     assert "Leadership +" in lst and "Why this score" in lst and "on the Monday card" in lst and "&lt;script&gt;" in lst
     assert "No companies match" in call(app, "GET", "/opportunities?q=zzzz", cookie=ck).body

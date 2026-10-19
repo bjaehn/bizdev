@@ -8,20 +8,13 @@
 {% if e.url|safe_url %} <a href="{{ e.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ e.url|host }}</a>{% endif %}</li>{% endfor %}
 </ul>{% endmacro %}
 
-{# A ranked opportunity: rank, name, badges, the theme the signals add up to with its evidence, and the link to the brief. #}
-{% macro company_entry(o, rank, extra_badges=true) %}
-<div class="entry {{ 'is-hot' if o.result.band == 'Hot' else ('is-warm' if o.result.band == 'Warm' else '') }}"><div class="entry-rank">{{ rank }}</div><div class="entry-main">
-<div class="entry-head"><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>{{ band_badge(o) }}
-{% if o.client %}<span class="badge good">client</span>{% endif %}
-{% if extra_badges %}{% if o.is_new %}<span class="badge good">new this week</span>{% elif o.delta is not none and o.delta >= 5 %}<span class="badge good">+{{ o.delta }}</span>{% endif %}
-{% if o.watching %}<span class="badge">tracking</span>{% endif %}{% endif %}</div>
-<div class="meta">{{ [o.account.industry, o.account.hq_city]|select|join(' · ') }}</div>
-{% if o.theme %}{% set t = o.theme %}<p class="why"><b>{{ t.name }}</b>{% if t.service_line %} <span class="meta">· points to {{ t.service_line }}</span>{% endif %}</p>
-{{ evidence_list(t.evidence) }}
-<p class="meta">{{ signs_line(o.result) }}{% if o.themes|length > 1 %} · also: {{ o.themes[1:]|map(attribute='name')|join(', ') }}{% endif %}</p>{% endif %}
-<div><a class="btn" href="/companies/{{ o.account.id }}">Open brief →</a></div>
-</div></div>
-{% endmacro %}
+{# Ranked bars: a company, its score as a bar coloured by band, and its theme. #}
+{% macro bar_rows(items) %}
+<div class="bars">{% for o in items %}
+<div class="bar-row"><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a><b>{{ o.result.score }}</b>
+<span class="bar-track"><i class="{{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}" style="--w:{{ o.result.score }}%"></i></span>
+<span class="meta">{{ o.theme.name if o.theme else signs_line(o.result) }}{% if o.client %} · client{% endif %}</span></div>{% endfor %}
+</div>{% endmacro %}
 
 {# One row of the signal feed. #}
 {% macro feed_row(i) %}

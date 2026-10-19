@@ -1,9 +1,12 @@
-"""The "This week" home: the opportunities (each named by what its signals add up to), the newest signals by kind, what changed, existing
-clients with news, companies you track, and what the market is doing.
+"""The "This week" home: who is worth a call, why, and whether things are heating up.
 
-Read-only and deterministic, in plain words. It composes the ranked opportunities, the signal feed, the changes since the previous run, the
-pipeline state and the market view from what past runs stored; every sentence is built from counts and stored, sourced signals. Nothing is
-paraphrased or invented, and the page says how much of the list it actually covers, so a thin week looks thin."""
+Read-only and deterministic, in plain words. It composes the ranked opportunities (each named by its theme), the signals behind them, the
+weekly trend and the pipeline state from what past runs stored; every sentence is built from counts and stored, sourced signals. Nothing is
+paraphrased or invented, and the page says how much of the list it actually covers, so a thin week looks thin.
+
+What is "worth a call" is one plain rule: a new-business company that is Hot or Warm and has a signal dated in the last 14 days, strongest
+score first, at most three. When fewer than three qualify, the strongest Watch companies with a signal that recent fill the list and the
+page says so. Existing clients are kept apart (they are expansion, not new business)."""
 
 from __future__ import annotations
 
@@ -12,19 +15,23 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from bd.config import Config
-from bd.feed import Feed, build_feed
-from bd.labels import FAMILY_LABELS
-from bd.leadership import MIN_RISE, Changes, Coverage, Pulse, build_changes, coverage, pulse
-from bd.market import build_market
-from bd.opportunities import Opportunity, OpportunityList, build_opportunities, score_dates
+from bd.feed import FeedItem, group_of, load_items
+from bd.labels import FAMILY_LABELS, TYPE_LABELS
+from bd.leadership import Coverage, coverage
+from bd.opportunities import Opportunity, build_opportunities, score_dates
 from bd.scoring import ScoreResult
 from bd.shortlist import ShortlistError
+from bd.trend import Trend, build_trend, score_history
 
-TARGETS_MAX = 8              # companies in "Who to look at"
-TARGETS_MIN = 5              # when fewer are Hot or Warm, the strongest Watch companies fill the list up to this
+CALLS_MAX = 3                # companies in "Worth a call"
+RECENT_DAYS = 14             # a company is worth a call only with a signal this recent
+NEXT_MAX = 5                 # companies in "Next in line"
+EVIDENCE_MAX = 3             # signals shown on a call card
 CLIENTS_MAX = 3
 TRACK_DAYS = 14              # "what's new" at a tracked company looks back this far
 TRACK_STAGES = ("reviewing", "pursuing")
+FEED_DAYS = 7                # the collapsed list of everything found this week
+KIND_OF_GROUP = {"leadership": "leadership", "hiring": "hiring", "press": "press", "events": "events", "background": "events"}
 
 
 @dataclass
@@ -41,24 +48,39 @@ class Tracked:
     new: list[NewAt] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class CallEvidence:
+    event_date: date
+    label: str
+    summary: str
+    url: str
+    source_type: str
+    kind: str                 # leadership | hiring | press | events: picks the dot colour
+    role_or_person: str | None = None
+
+
+@dataclass
+class Call:
+    opp: Opportunity
+    evidence: list[CallEvidence] = field(default_factory=list)
+    history: list[int] = field(default_factory=list)       # stored scores, oldest first, ending with the current one
+
+
 @dataclass
 class Week:
     today: date
     coverage: Coverage
-    feed: Feed = field(default_factory=lambda: Feed(0))
+    trend: Trend = field(default_factory=Trend)
     run_date: str | None = None
-    problem: str | None = None                       # why there is no list, in plain words
-    targets: list[Opportunity] = field(default_factory=list)
-    hot_warm: int = 0                                # new-business companies at Hot or Warm (the list may be longer or shorter)
-    padded: bool = False                             # the list had to include Watch companies to reach TARGETS_MIN
-    more: int = 0                                    # new-business companies at Watch or better that are not shown
+    problem: str | None = None                       # why there is no ranked list, in plain words
+    calls: list[Call] = field(default_factory=list)
+    padded: bool = False                             # fewer than CALLS_MAX were Hot or Warm, so Watch companies fill the list
+    next_up: list[Opportunity] = field(default_factory=list)
+    closest: list[Opportunity] = field(default_factory=list)   # when nobody is at Watch yet: the strongest below it
     clients: list[Opportunity] = field(default_factory=list)
     tracked: list[Tracked] = field(default_factory=list)
-    changes: Changes = field(default_factory=Changes)
-    changed_line: str = ""
-    new_hot_warm: int | None = None                  # companies that became Hot or Warm since the previous run (None on a first run)
-    risers: int = 0
-    pulse: Pulse = field(default_factory=Pulse)
+    recent: list[FeedItem] = field(default_factory=list)       # everything found in the last FEED_DAYS days
+    qualifying: int = 0                              # Hot or Warm new-business companies that met the rule (the list shows at most CALLS_MAX)
 
 
 def signs_line(result: ScoreResult) -> str:
@@ -71,21 +93,20 @@ def signs_line(result: ScoreResult) -> str:
     return f"{len(kinds)} kinds of signs agree: {', '.join(kinds)}"
 
 
-def _counts(ol: OpportunityList) -> tuple[int, int]:
-    """(companies that became Hot or Warm, other companies that rose by MIN_RISE points or more) since the previous run."""
-    new_hw = sum(1 for o in ol.items if o.is_new and o.result.band in ("Hot", "Warm"))
-    risers = sum(1 for o in ol.items if o.delta is not None and o.delta >= MIN_RISE and not (o.is_new and o.result.band in ("Hot", "Warm")))
-    return new_hw, risers
+def newest_signal(o: Opportunity) -> date | None:
+    dates = [date.fromisoformat(p.event_date) for p in o.result.signals]
+    return max(dates) if dates else None
 
 
-def _changed_line(ol: OpportunityList, ch: Changes) -> str:
-    if ol.prev_date is None:
-        return "This is the first scoring run, so there is nothing to compare it with yet."
-    new_hw, risers = _counts(ol)
-    bits = [f"{new_hw} compan{'y' if new_hw == 1 else 'ies'} became Hot or Warm",
-            f"{risers} moved up by {MIN_RISE} points or more",
-            f"{ch.new_signal_total} new signal{'' if ch.new_signal_total == 1 else 's'} {'was' if ch.new_signal_total == 1 else 'were'} found in the last 7 days"]
-    return f"Since the run on {ol.prev_date.isoformat()}: " + ", ".join(bits[:2]) + ", and " + bits[2] + "."
+def call_evidence(o: Opportunity, limit: int = EVIDENCE_MAX) -> list[CallEvidence]:
+    """The signals behind a company, newest first: those its main theme rests on and its strongest scored signals, each once."""
+    seen: dict[int, CallEvidence] = {}
+    pool = [(e.id, e.type, e.event_date, e.summary, e.url, e.source_type, e.role_or_person) for t in o.themes[:1] for e in t.evidence]
+    pool += [(s.id, s.type, s.event_date, s.summary, s.url, s.source_type, s.role_or_person) for s in o.signals]
+    for sid, type_, when, summary, url, source, who in pool:
+        if sid not in seen:
+            seen[sid] = CallEvidence(when, TYPE_LABELS.get(type_, type_), summary, url, source, KIND_OF_GROUP[group_of(type_, source)], who)
+    return sorted(seen.values(), key=lambda e: e.event_date, reverse=True)[:limit]
 
 
 def _tracked(conn: sqlite3.Connection, items: list[Opportunity], today: date) -> list[Tracked]:
@@ -102,11 +123,25 @@ def _tracked(conn: sqlite3.Connection, items: list[Opportunity], today: date) ->
     return sorted((Tracked(o, new.get(o.account.id, [])) for o in mine), key=lambda t: (not t.new, t.opp.rank))
 
 
+def choose_calls(new_business: list[Opportunity], today: date, watch: int) -> tuple[list[Opportunity], bool, int]:
+    """(companies worth a call, whether Watch companies had to fill the list, how many Hot or Warm ones qualified)."""
+    cutoff = today - timedelta(days=RECENT_DAYS)
+    recent = [o for o in new_business if (n := newest_signal(o)) is not None and n >= cutoff]
+    hot_warm = [o for o in recent if o.result.band in ("Hot", "Warm")]
+    chosen = hot_warm[:CALLS_MAX]
+    padded = False
+    if len(chosen) < CALLS_MAX:
+        fill = [o for o in recent if o.result.band not in ("Hot", "Warm") and o.result.score >= watch]
+        chosen += fill[:CALLS_MAX - len(chosen)]
+        padded = len(chosen) > len(hot_warm[:CALLS_MAX])
+    return chosen, padded, len(hot_warm)
+
+
 def build_week(conn: sqlite3.Connection, cfg: Config, today: date) -> Week:
     out = Week(today, coverage(conn, today))
     cov = out.coverage
-    out.pulse = pulse(build_market(conn, today))
-    out.feed = build_feed(conn, today)                  # the signals themselves, whether or not they have been scored yet
+    out.trend = build_trend(conn, today)
+    out.recent = load_items(conn, today, days=FEED_DAYS)
     dates = score_dates(conn)
     if not dates:
         out.problem = "Nothing has been scored yet. An admin needs to run an update from the Admin area to scan for leadership changes, hiring and press, and rank what it finds."
@@ -124,19 +159,13 @@ def build_week(conn: sqlite3.Connection, cfg: Config, today: date) -> Week:
     cov.hot, cov.warm = sum(o.result.band == "Hot" for o in ranked), sum(o.result.band == "Warm" for o in ranked)
 
     new_business = [o for o in ranked if not o.client]
-    hot_warm = [o for o in new_business if o.result.band in ("Hot", "Warm")]
-    out.hot_warm = len(hot_warm)
-    shown = hot_warm[:TARGETS_MAX]
-    if len(shown) < TARGETS_MIN:
-        shown = new_business[:TARGETS_MIN]
-        out.padded = len(shown) > len(hot_warm)
-    out.targets = shown
-    out.more = len(new_business) - len(shown)
+    chosen, out.padded, out.qualifying = choose_calls(new_business, today, watch)
+    history = score_history(conn, [o.account.id for o in chosen])
+    out.calls = [Call(o, call_evidence(o), history.get(o.account.id, [])) for o in chosen]
+    shown = {o.account.id for o in chosen}
+    out.next_up = [o for o in new_business if o.account.id not in shown][:NEXT_MAX]
+    if not ranked:
+        out.closest = [o for o in ol.items if not o.client][:NEXT_MAX]
     out.clients = [o for o in ranked if o.client][:CLIENTS_MAX]
     out.tracked = _tracked(conn, ol.items, today)
-    out.changes = build_changes(conn, OpportunityList(ol.run_date, ol.prev_date, ranked), today)
-    shown = OpportunityList(ol.run_date, ol.prev_date, ranked)
-    out.changed_line = _changed_line(shown, out.changes)
-    if ol.prev_date is not None:
-        out.new_hot_warm, out.risers = _counts(shown)
     return out
