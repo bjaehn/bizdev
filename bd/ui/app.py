@@ -38,6 +38,7 @@ from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply
                        mark_reviewed, reject_candidate, remove_exclusion, update_account)
 from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
+from bd.dossier import build_dossier
 from bd.health import build_health
 from bd.market import build_market
 from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
@@ -429,6 +430,8 @@ class App:
             ok = set_firm_status(conn, int(parts[1]), req.f("status"))
             self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
             return self.redirect(f"/firms/{int(parts[1])}")
+        if m == "GET" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "onepager":
+            return self.onepager(conn, int(parts[1]))
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch", "client"):
             return self.pipeline_update(req, conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
@@ -602,6 +605,13 @@ class App:
         return self.render("watchlist.html", page="watchlist", changes=changes, days=days, since=since.isoformat(),
                            stage_labels=STAGE_LABELS, labels=TYPE_LABELS, counts=stage_counts(conn))
 
+    def onepager(self, conn: sqlite3.Connection, account_id: int) -> Response:
+        a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
+        if a is None:
+            return self.error("404 Not Found", "No such account.")
+        return self.render("onepager.html", page="accounts", d=build_dossier(conn, self.cfg, a, date.today()), stage_labels=STAGE_LABELS,
+                           cfg_hiring_days=self.cfg.hiring.window_days)
+
     def health_page(self, req: Request, conn: sqlite3.Connection) -> Response:
         try:
             days = max(1, min(365, int(req.q("days") or 30)))
@@ -668,6 +678,7 @@ class App:
                 "families": lead.result.components.get("families", {}),
                 "bonus": lead.result.components.get("stacking_bonus", 0),
                 "sponsor": lead.result.components.get("sponsor", {}),
+                "sequences": lead.result.components.get("sequences", {}),
                 "posted": posted[lead.account.id]["posted"] if lead.account.id in posted else 0,
             })
         tracked = sorted((s for s in sl.skipped if s.score >= self.cfg.scoring.bands.watch), key=lambda s: -s.score)

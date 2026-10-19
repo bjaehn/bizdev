@@ -51,6 +51,23 @@ scoring:
   confidence_multiplier: {High: 1.0, Medium: 0.7, Low: 0.0}
   service_match_multiplier: {match: 1.0, none: 0.5}
 
+  # Order matters: a signal of one kind followed, within `within_days`, by a signal of another is a stronger sign than the two
+  # alone (for example a new executive and then a hiring push). A pattern adds its bonus once, however many pairs match; both
+  # signals must themselves score (High/Medium confidence, inside the recency bands). Patterns are added to the score after the
+  # stacking bonus, capped together at sequence_bonus_max, and shown on the opportunity.
+  # OFF by default (empty list) because turning it on changes scores, including the three reference accounts in the spec (the
+  # first would go from 91 to 99). To try it, replace `sequences: []` with the patterns below (starting values; tune them).
+  sequence_bonus_max: 15
+  sequences: []
+  #  - {name: new_leader_then_hiring, label: "New leader, then hiring", first: [leadership_change, leadership_transformation_ai_data],
+  #     then: [hiring_cluster, hiring_leadership, hiring_interim], within_days: 120, bonus: 8}
+  #  - {name: pressure_then_leadership, label: "Pressure, then leadership change", first: [restructuring_layoffs, cost_program, ma_divestiture, financial_pressure, activist],
+  #     then: [leadership_change, open_exec_search, leadership_transformation_ai_data], within_days: 120, bonus: 8}
+  #  - {name: technology_then_hiring, label: "Technology commitment, then hiring", first: [platform_migration, vendor_deal, ai_commitment, rfp_match],
+  #     then: [hiring_cluster, hiring_leadership], within_days: 120, bonus: 6}
+  #  - {name: strategy_then_leader, label: "Strategy shift, then new leader", first: [strategy_rebrand],
+  #     then: [leadership_change, leadership_transformation_ai_data], within_days: 120, bonus: 6}
+
   # Within a family: strongest counts in full, each further signal at this fraction.
   within_family_decay: 0.5
   # Stacking bonus per family beyond the first, capped.

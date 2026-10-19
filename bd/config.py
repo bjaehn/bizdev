@@ -45,6 +45,16 @@ class SponsorScoring(_Strict):
         return self
 
 
+class Sequence(_Strict):
+    """A pattern worth extra points: a signal of one kind followed (same day or later, within `within_days`) by a signal of another."""
+    name: str
+    label: str
+    first: list[str]
+    then: list[str]
+    within_days: int
+    bonus: float
+
+
 class Scoring(_Strict):
     base_points: dict[str, float]
     families: dict[str, list[str]]
@@ -60,6 +70,8 @@ class Scoring(_Strict):
     bands: Bands
     posted_bands: list[str]
     sponsor: SponsorScoring
+    sequences: list[Sequence] = []
+    sequence_bonus_max: float = 0
 
     @model_validator(mode="after")
     def _consistent(self) -> "Scoring":
@@ -75,6 +87,17 @@ class Scoring(_Strict):
         missing = set(self.status_types) - known
         if missing:
             raise ValueError(f"unknown status_types: {sorted(missing)}")
+        names = [q.name for q in self.sequences]
+        if len(names) != len(set(names)):
+            raise ValueError("sequence names must be unique")
+        for q in self.sequences:
+            if not q.first or not q.then or q.within_days < 1 or q.bonus <= 0:
+                raise ValueError(f"sequence {q.name}: needs first and then types, within_days >= 1 and a positive bonus")
+            bad = (set(q.first) | set(q.then)) - known
+            if bad or (set(q.first) | set(q.then)) & set(self.status_types):
+                raise ValueError(f"sequence {q.name}: unknown or status signal types {sorted(bad or set(q.first) | set(q.then))}")
+            if set(q.first) & set(q.then):
+                raise ValueError(f"sequence {q.name}: a type cannot be in both first and then")
         days = [b.max_days for b in self.recency_bands]
         if days != sorted(days) or len(set(days)) != len(days):
             raise ValueError("recency_bands must be strictly ascending by max_days")

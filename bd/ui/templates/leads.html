@@ -39,7 +39,7 @@
 <tr><td>{{ fam }}</td><td>{{ labels[s.type] }}</td><td>{{ s.event_date|fdate }}</td><td class="num">{{ s.base|round(1) }}</td><td class="num">{{ s.recency }}</td><td class="num">{{ s.confidence_mult }}</td><td class="num">{{ s.service_mult }}</td><td class="num">{{ s.points|round(1) }}</td><td class="num">{{ '100%' if s.weight_in_family == 1 else '50%' }}</td></tr>
 {% endfor %}{% endfor %}
 </table></div>
-<p class="meta">Stacking bonus: +{{ c.bonus|round|int }} (10 per extra family, max 30). Computed by plain code from the stored signals; no model is involved.</p>
+<p class="meta">Stacking bonus: +{{ c.bonus|round|int }} (10 per extra family, max 30).{% if c.sequences and c.sequences.matches %} Pattern bonus: +{{ c.sequences.bonus|round|int }} ({% for m in c.sequences.matches %}{{ m.label }}{{ ', ' if not loop.last }}{% endfor %}).{% endif %} Computed by plain code from the stored signals; no model is involved.</p>
 {% if c.sponsor and c.sponsor.lift %}<p class="meta"><b>Sponsor activity: +{{ c.sponsor.lift|round(1) }}</b> (capped at {{ c.sponsor.cap|round|int }}), from the owner's own news, not this company's:
 {% for x in c.sponsor.signals %}{{ x.firm }} {{ x.type|replace('firm_', '')|replace('_', ' ') }} ({{ x.event_date|fdate }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
 </details>
