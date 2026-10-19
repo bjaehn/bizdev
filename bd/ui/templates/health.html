@@ -3,12 +3,12 @@
 {% block body %}
 <div class="row"><div><h1>Data health</h1>
 <p class="sub">Is the app finding things, what does it cost, and where are the gaps? Everything here is read from what past runs stored; nothing on this page runs a scan.</p></div>
-<form method="get" action="/health" class="filters"><label for="days" style="margin:0">Look back</label>
+<form method="get" action="/health" class="filters"><label for="days">Look back</label>
 <select id="days" name="days">{% for d in (7, 14, 30, 60, 90) %}<option value="{{ d }}" {{ 'selected' if d == h.days else '' }}>{{ d }} days</option>{% endfor %}</select>
 <button class="ghost" type="submit">Show</button></form></div>
 
 <h2>Freshness</h2>
-<div class="card"><p class="meta" style="margin:0">Last scan <b>{{ h.last_scan or 'never' }}</b> · last score <b>{{ h.last_score or 'never' }}</b> · last enrich <b>{{ h.last_enrich or 'never' }}</b> · last RFP search <b>{{ h.last_rfps or 'never' }}</b></p></div>
+<div class="card"><p class="meta">Last scan <b>{{ h.last_scan or 'never' }}</b> · last score <b>{{ h.last_score or 'never' }}</b> · last enrich <b>{{ h.last_enrich or 'never' }}</b> · last RFP search <b>{{ h.last_rfps or 'never' }}</b></p></div>
 
 <h2>Which scanners are producing (last {{ h.days }} days)</h2>
 <div class="wrap"><table>
@@ -23,7 +23,7 @@
 <p class="meta">"failing" means at least half the calls ended in an error; a note that starts with "rejected" is a result the checks refused (for example a link that did not load), not a failure. "ran, found nothing" is normal for rare signals such as layoff notices.</p>
 
 <h2>Cost</h2>
-<div class="card"><p style="margin:0"><b>${{ '%.2f'|format(h.cost_total) }}</b> in the last {{ h.days }} days{% if h.cost_per_scanned_account is not none %} · about <b>${{ '%.2f'|format(h.cost_per_scanned_account) }}</b> to scan one company ({{ h.accounts_scanned }} scanned){% endif %}.</p></div>
+<div class="card"><p><b>${{ '%.2f'|format(h.cost_total) }}</b> in the last {{ h.days }} days{% if h.cost_per_scanned_account is not none %} · about <b>${{ '%.2f'|format(h.cost_per_scanned_account) }}</b> to scan one company ({{ h.accounts_scanned }} scanned){% endif %}.</p></div>
 <div class="wrap"><table>
 <tr><th>Step</th><th class="num">Calls</th><th class="num">Cost</th></tr>
 {% for s, n, c, u in h.steps %}<tr><td>{{ s }}</td><td class="num">{{ n }}</td><td class="num">${{ '%.2f'|format(c) }}{% if u %} <span class="badge warm">{{ u }} unpriced</span>{% endif %}</td></tr>
@@ -33,9 +33,9 @@
 
 <h2>Coverage</h2>
 <div class="card">
-<p style="margin:0 0 6px"><b>{{ h.accounts_total }}</b> companies: {% for k, n in h.by_status.items() %}{{ k|status_label }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}.
+<p><b>{{ h.accounts_total }}</b> companies: {% for k, n in h.by_status.items() %}{{ k|status_label }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}.
 {% if h.by_origin %}By origin: {% for k, n in h.by_origin.items() %}{{ k }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}.{% endif %}{% if h.unreviewed %} {{ h.unreviewed }} auto-added and not yet reviewed.{% endif %}</p>
-<p class="meta" style="margin:0">Ready-to-scan companies by last scan: never {{ h.scan_age.get('never', 0) }} · within a week {{ h.scan_age.get('week', 0) }} · within a month {{ h.scan_age.get('month', 0) }} · older {{ h.scan_age.get('older', 0) }}. With an SEC id (CIK): {{ h.with_cik }} · with a website: {{ h.with_domain }}.</p>
+<p class="meta">Ready-to-scan companies by last scan: never {{ h.scan_age.get('never', 0) }} · within a week {{ h.scan_age.get('week', 0) }} · within a month {{ h.scan_age.get('month', 0) }} · older {{ h.scan_age.get('older', 0) }}. With an SEC id (CIK): {{ h.with_cik }} · with a website: {{ h.with_domain }}.</p>
 </div>
 {% if h.hold_reasons %}<h3>Why companies are held</h3>
 <div class="wrap"><table><tr><th>Reason</th><th class="num">Companies</th></tr>

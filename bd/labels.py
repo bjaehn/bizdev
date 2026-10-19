@@ -39,3 +39,14 @@ FIRM_TYPE_LABELS = {"firm_new_fund": "new fund", "firm_exit": "exit", "firm_oper
 
 def fmt_date(d: date) -> str:
     return f"{d:%b} {d.day}, {d.year}"
+
+
+def money(v: object) -> str:
+    if v is None or v == "":
+        return "unknown"
+    v = float(v)  # type: ignore[arg-type]
+    if v >= 1e9:
+        return f"${v / 1e9:.1f}B"
+    if v >= 1e6:
+        return f"${v / 1e6:.0f}M"
+    return f"${v:,.0f}"

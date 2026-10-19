@@ -127,10 +127,10 @@ def seeded(app_env):  # noqa: F811
 def test_the_market_page_has_a_heatmap_whose_cells_open_the_matching_companies(seeded):
     e, today = seeded
     body = e.get("/market").body
-    assert 'class="heat"' in body and "Health &lt;care&gt;" in body and "Health <care>" not in body
+    assert 'class="matrix"' in body and "Health &lt;care&gt;" in body and "Health <care>" not in body
     assert "Leadership" in body and "Company events" in body and "Financials" in body
     assert 'href="/opportunities?industry=Manufacturing&amp;family=leadership&amp;tracked=1"' in body
-    assert 'class="hc none"' in body and 'title="1 signal at 1 company"' in body
+    assert 'class="cell none"' in body and 'title="1 signal at 1 company"' in body
     assert "industry=Health+%3Ccare%3E&amp;family=hiring&amp;tracked=1" in body
 
 

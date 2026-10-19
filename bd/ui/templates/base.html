@@ -5,111 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}BD Signals{% endblock %} · SEI Chicago BD Signals</title>
 <style>
-:root{--bg:#fbfaf7;--panel:#fbfaf7;--ink:#1c1b19;--muted:#6b675f;--line:#e4e0d6;--accent:#1d3a5f;--hot:#a93226;--warm:#94620a;--good:#1e6b45;--bad:#a32016;--chip:#f0ede4;--on-accent:#fff;
---serif:Georgia,"Iowan Old Style","Palatino Linotype","Times New Roman",serif;--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-@media (prefers-color-scheme:dark){:root{--bg:#151410;--panel:#151410;--ink:#ece9e1;--muted:#a39e91;--line:#2f2d26;--accent:#9db8e8;--hot:#ff8a7a;--warm:#e3b350;--good:#5cc79a;--bad:#ff8a80;--chip:#24221c;--on-accent:#151410}
-button,.btn{color:#151410}button.ghost,.btn.ghost{color:var(--accent)}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.6 var(--serif)}
-nav,.brand,button,.btn,.badge,.meta,label,summary,table,input,select,textarea,.flash,.errors,.filters,.quiet,footer,.tags,.pill-row{font-family:var(--sans)}
-header{background:var(--bg);border-bottom:1px solid var(--line)}
-.bar{max-width:1100px;margin:0 auto;padding:0 16px;display:flex;gap:4px;align-items:center;flex-wrap:wrap}
-.brand{font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;margin-right:20px;padding:14px 0;color:var(--ink);text-decoration:none}
-nav{display:flex;flex-wrap:wrap;align-items:center}
-nav a.top{display:inline-block;padding:15px 10px;font-size:14px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent}
-nav a.top:hover{color:var(--ink)}
-nav a.top.on{color:var(--ink);border-bottom-color:var(--accent)}
-nav a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-main{max-width:1100px;margin:0 auto;padding:36px 16px 72px}
-body.narrow .bar,body.narrow main,body.narrow footer{max-width:880px}
-.right{margin-left:auto;display:flex;gap:16px;align-items:center}
-.adminlink{font-family:var(--sans);font-size:13px;color:var(--muted);text-decoration:none}
-.adminlink:hover{color:var(--ink)}
-header.admin{background:#0f1f3d;border-bottom:0}
-header.admin .brand,header.admin nav a.top{color:#fff}
-header.admin nav a.top{color:#b8c4dc}
-header.admin .brand .area{margin-left:6px;padding:2px 7px;border-radius:3px;background:#2dd4bf;color:#0f1f3d;letter-spacing:.1em}
-header.admin button.ghost{color:#fff;border-color:#4b5f86}
-body.admin .bar,body.admin footer{max-width:1280px}
-body.admin .shell{max-width:1280px;margin:0 auto;padding:0 16px;display:flex;gap:40px;align-items:flex-start}
-body.admin main{margin:0;max-width:none;flex:1;min-width:0;padding:36px 0 72px}
-.adminnav{width:210px;flex:none;padding-top:36px;font-family:var(--sans)}
-.adminnav .gname{margin:18px 0 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
-.adminnav .gname:first-child{margin-top:0}
-.adminnav ul{list-style:none;margin:0;padding:0}
-.adminnav a{display:block;padding:5px 8px;margin-left:-8px;border-radius:3px;font-size:14px;color:var(--ink);text-decoration:none}
-.adminnav a:hover{background:var(--chip)}
-.adminnav a.on{background:var(--chip);font-weight:600;color:var(--accent)}
-h1{font-size:38px;font-weight:600;letter-spacing:-.015em;line-height:1.15;margin:0 0 8px}
-h2{font-size:21px;font-weight:600;margin:28px 0 10px}
-main>h2{font-family:var(--sans);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);border-top:2px solid var(--ink);padding-top:10px;margin:48px 0 6px}
-.sub{font-size:18px;color:var(--muted);margin:0 0 20px}
-a{color:var(--accent);overflow-wrap:anywhere;text-underline-offset:2px}
-.card{background:transparent;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:20px 0;margin:0}
-.cols .card,.admin-grid .card{border:1px solid var(--line);border-radius:6px;padding:16px 18px}
-.row{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
-.name{font-size:22px;font-weight:600;color:var(--ink);text-decoration:none}
-.badge{display:inline-block;padding:1px 8px;border-radius:3px;font-size:12px;font-weight:600;background:transparent;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
-.hot{color:var(--hot)}.warm{color:var(--warm)}.good{color:var(--good)}.bad{color:var(--bad)}
-.badge.hot,.badge.warm,.badge.good,.badge.bad{background:transparent;border-color:currentColor}
-.meta{color:var(--muted);font-size:14px}
-table{width:100%;border-collapse:collapse;background:transparent;border:0;border-top:2px solid var(--ink);font-size:14px}
-th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);background:transparent}
-tr:last-child td{border-bottom:0}
-td.num,th.num{text-align:right;white-space:nowrap}
-.wrap{overflow-x:auto}
-label{display:block;font-size:13px;color:var(--muted);margin:10px 0 3px}
-input[type=text],input[type=number],input[type=password],select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:transparent;color:var(--ink);font:inherit;font-family:var(--sans);font-size:15px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 16px}
-button,.btn{display:inline-block;padding:8px 16px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;font-family:var(--sans);font-size:15px;font-weight:600;cursor:pointer;text-decoration:none}
-button.ghost,.btn.ghost{background:transparent;color:var(--accent)}
-button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
-.flash{padding:10px 14px;border-radius:4px;margin:0 0 12px;border:1px solid var(--line);background:transparent}
-.flash.ok{border-color:var(--good)}.flash.err{border-color:var(--bad)}
-.errors{border:1px solid var(--bad);background:transparent;border-radius:4px;padding:10px 14px;margin:0 0 12px}
-.errors ul{margin:4px 0 0 18px;padding:0}
-ul.signals{list-style:none;padding:0;margin:10px 0 0}
-ul.signals li{padding:6px 0;border-top:1px solid var(--line)}
-details summary{cursor:pointer;color:var(--muted);font-size:14px;margin-top:8px}
-details.card{padding:14px 0}
-details.card>summary{margin:0;color:var(--ink);font-size:16px;font-weight:600}
-.tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.why{font-size:18px;margin:8px 0 6px}
-.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
-.filters input,.filters select{width:auto}
-.filters details.more{flex-basis:100%}
-.filters details.more summary{margin:0}
-footer{max-width:1100px;margin:0 auto;padding:0 16px 32px;color:var(--muted);font-size:12px}
-ul.plain{list-style:none;margin:6px 0 0;padding:0}
-ul.plain li{padding:8px 0;border-top:1px solid var(--line)}
-ul.plain li:first-child{border-top:0}
-.admin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start}
-.pill-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
-.empty{text-align:center;color:var(--muted);padding:32px 16px}
-@media (max-width:640px){h1{font-size:30px}body{font-size:16px}.brand{flex:1;padding:12px 0 0;margin:0}header .right{order:2;margin:8px 0 0}header .right button{padding:4px 10px;font-size:13px}nav{order:3;width:100%}body.admin .shell{display:block}.adminnav{width:auto;padding-top:16px}nav a.top{padding:8px 6px;font-size:13px}}
-@media print{header,footer,.noprint,.filters{display:none!important}body{background:#fff;color:#000;font-size:12px}main{max-width:none;padding:0}
-.card,table{border-color:#bbb;background:#fff;break-inside:avoid}.meta,.sub{color:#444}a{color:#000}
-.card{padding:8px 12px;margin:0 0 8px}h1{font-size:19px}h2{font-size:14px;margin:12px 0 4px}table{font-size:11px}th,td{padding:3px 6px}ul.signals li{padding:3px 0}.onepager{font-size:11.5px}
-.onepager a[href^=http]::after{content:" (" attr(href) ")";font-size:10px;color:#444;overflow-wrap:anywhere}.badge{border:1px solid #bbb;background:#fff;color:#000}}
+{% include "design.css" %}
 </style>
 {% block head %}{% endblock %}
 </head>
 {% set is_admin = page is defined and page in admin_pages %}
-{% set narrow_pages = ['company', 'reports'] %}
-<body class="{{ 'admin' if is_admin else '' }} {{ 'narrow' if page is defined and page in narrow_pages else '' }}">
+{% set narrow_pages = ['company', 'reports', 'week', 'help'] %}
+<body class="{{ 'admin' if is_admin else '' }} {{ 'narrow' if page is defined and page in narrow_pages else '' }} {{ 'auth' if auth is defined else '' }}">
 <header class="{{ 'admin' if is_admin else '' }}"><div class="bar">
-<a class="brand" href="{{ '/admin' if is_admin else '/opportunities' }}">BD Signals{% if is_admin %} <span class="area">Admin</span>{% endif %}</a>
+<a class="brand" href="{{ '/admin' if is_admin else '/week' }}">BD Signals{% if is_admin %} <span class="area">Admin</span>{% endif %}</a>
 {% if nav is not defined or nav %}
 <nav>
-{% if is_admin %}<a class="top" href="/opportunities">← Back to analysis</a>
-{% else %}<a class="top {{ 'on' if page in ('opportunities', 'company') else '' }}" href="/opportunities">Opportunities</a>
+{% if is_admin %}<a class="top" href="/week">← Back to analysis</a>
+{% else %}<a class="top {{ 'on' if page in ('week', 'help') else '' }}" href="/week">This week</a>
+<a class="top {{ 'on' if page in ('opportunities', 'company') else '' }}" href="/opportunities">Companies</a>
 <a class="top {{ 'on' if page in report_pages else '' }}" href="/reports">Reports</a>{% endif %}
 </nav>
 <div class="right">{% if not is_admin %}<a class="adminlink" href="/admin">Admin</a>{% endif %}
-{% if hosted %}<form method="post" action="/logout" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Sign out</button></form>{% endif %}</div>
+{% if hosted %}<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Sign out</button></form>{% endif %}</div>
 {% endif %}
 </div></header>
+{% if not is_admin %}<div class="hero {% block herocls %}{% endblock %}">{% block hero %}{% endblock %}</div>{% endif %}
 <div class="shell">
 {% if is_admin and (nav is not defined or nav) %}<aside class="adminnav">
 {% for gname, items in admin_groups %}<p class="gname">{{ gname }}</p><ul>

@@ -40,16 +40,17 @@ from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
 from bd.charts import priority_svg, trend_svg
 from bd.priority import build_priority
-from bd.profile import build_profile
+from bd.week import build_week, signs_line
+from bd.profile import brief_text, build_profile
 from bd.health import build_health
 from bd.market import build_market
 from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
-from bd.leadership import build_changes, coverage
+from bd.leadership import coverage
 from bd.lookup import find as find_company
 from bd.matrix import SORTS, build_matrix, sort_rows
-from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
+from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date, money
 from bd.pe_store import add_firm, set_firm_status
 from bd.ask_store import add_question, clean_question, recent as recent_questions
 from bd.rfp_store import list_open as list_open_rfps
@@ -92,17 +93,6 @@ class Response:
     headers: list[tuple[str, str]] = field(default_factory=list)
 
 
-def money(v: object) -> str:
-    if v is None or v == "":
-        return "unknown"
-    v = float(v)  # type: ignore[arg-type]
-    if v >= 1e9:
-        return f"${v / 1e9:.1f}B"
-    if v >= 1e6:
-        return f"${v / 1e6:.0f}M"
-    return f"${v:,.0f}"
-
-
 def show(v: object) -> str:
     return "unknown" if v is None or v == "" else str(v)
 
@@ -129,7 +119,7 @@ def safe_url(u: object) -> str:
     return u if urlparse(u).scheme in ("http", "https") and urlparse(u).netloc else ""
 
 
-# Two areas on one login. ANALYSIS is what a viewer uses: the Opportunities ranking, a company's profile and the extra reports.
+# Two areas on one login. ANALYSIS is what a viewer uses: This week, the Companies explorer, a company's brief and the extra reports.
 # ADMIN is everything that maintains the data or runs the machine. (page key, href, label, hint, hosted only)
 REPORT_ITEMS = (
     ("market", "/market", "Market view", "Where signals are appearing across industries"),
@@ -171,7 +161,7 @@ class App:
                                trim_blocks=True, lstrip_blocks=True)
         self.env.filters.update(status_label=lambda v: {'active': 'Ready to scan', 'hold_review': 'Needs facts', 'excluded': 'Excluded'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
-                                hosted=hosted is not None, operate=jobs is not None, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
+                                hosted=hosted is not None, operate=jobs is not None, signs_line=signs_line, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
                                 report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"})
         init_conn = connect(db_path)
         init_db(init_conn)
@@ -301,7 +291,7 @@ class App:
         signed_in = self.hosted.session_ok(req.cookies.get("bd_session", ""))
         if req.path == "/login":
             if req.method == "GET":
-                return self.redirect("/opportunities") if signed_in else self.login_page()
+                return self.redirect("/week") if signed_in else self.login_page()
             return self.login(req)
         if not signed_in:
             if req.method == "GET":
@@ -333,7 +323,7 @@ class App:
             return self.login_page(f"Too many attempts. Try again in {wait} seconds.", "429 Too Many Requests")
         if self.hosted.check_password(req.f("password")):
             self.throttle.succeeded(client)
-            return self.redirect("/opportunities", [("Set-Cookie", self._cookie(req, self.hosted.make_session(),
+            return self.redirect("/week", [("Set-Cookie", self._cookie(req, self.hosted.make_session(),
                                                                    self.hosted.session_hours * 3600))])
         self.throttle.failed(client)
         import time
@@ -391,7 +381,9 @@ class App:
                 return self.job_page(int(p[6:]), conn)
         parts = p.strip("/").split("/")
         table = {
-            ("GET", "/"): lambda: self.home(conn) if self.jobs is not None else self.opportunities(req, conn),
+            ("GET", "/"): lambda: self.home(conn) if self.jobs is not None else self.week_page(conn),
+            ("GET", "/week"): lambda: self.week_page(conn),
+            ("GET", "/help"): lambda: self.help_page(),
             ("GET", "/opportunities"): lambda: self.opportunities(req, conn),
             ("POST", "/update"): lambda: self.update_start(req, conn),
             ("POST", "/check"): lambda: self.check_start(),
@@ -399,7 +391,7 @@ class App:
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
             ("GET", "/admin"): lambda: self.admin_page(),
-            ("GET", "/leadership"): lambda: self.redirect("/opportunities"),
+            ("GET", "/leadership"): lambda: self.redirect("/week"),
             ("GET", "/reports"): lambda: self.reports_page(),
             ("GET", "/lookup"): lambda: self.lookup_page(req, conn),
             ("GET", "/clients"): lambda: self.clients_page(conn),
@@ -443,6 +435,8 @@ class App:
             return self.redirect(f"/companies/{int(parts[1])}")                                        # the profile is the printable summary now
         if m == "GET" and len(parts) == 2 and parts[0] == "companies" and parts[1].isdigit():
             return self.company_profile(conn, int(parts[1]))
+        if m == "GET" and len(parts) == 3 and parts[0] == "companies" and parts[1].isdigit() and parts[2] == "text":
+            return self.company_text(conn, int(parts[1]))
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch", "client"):
             return self.pipeline_update(req, conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
@@ -481,7 +475,7 @@ class App:
         elif opps == 0:
             step = ("Press Update my list", f"{ready} companies are ready. The update scans them for news, hiring and leadership changes.", "update")
         else:
-            step = ("Open Opportunities", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
+            step = ("Open This week", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
         last = self.jobs.last_job(("update",))
         return self.render("home.html", page="home", problems=problems, total=total, ready=ready, need=need, opps=opps, top=top, u=u,
                            step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS,
@@ -516,7 +510,7 @@ class App:
     def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = score_dates(conn)
         empty = dict(page="opportunities", dates=dates, run_date=None, items=[], total=0, error=None, q={}, families=[], lines=[], stale=[],
-                     prev_date=None, view="matrix", matrix=None, cov=None, changes=None, priority=None, chart=None)
+                     prev_date=None, view="matrix", matrix=None, cov=None, priority=None, chart=None)
         if not dates:
             return self.render("opportunities.html", **empty)
         chosen = req.q("date") if req.q("date") in dates else dates[0]
@@ -554,7 +548,7 @@ class App:
                            error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale, view=view, matrix=matrix, priority=priority, chart=chart,
                            prev_date=ol.prev_date.isoformat() if ol.prev_date else None, bands=["Hot", "Warm", "Watch", "Stored"],
                            statuses=["card", "over_cap", "held", "tracking"], stages=STAGES, stage_labels=STAGE_LABELS, cov=cov,
-                           changes=build_changes(conn, ol, today), link=link,
+                           link=link,
                            industries=sorted({o.account.industry for o in ol.items if o.account.industry}),
                            sort_keys=[("score", "Score"), ("types", "Signal types"), ("newest", "Newest signal"), ("change", "Biggest change")])
 
@@ -572,7 +566,7 @@ class App:
         else:
             on = req.f("on") == "1"
             ok = set_watching(conn, account_id, on)
-            self.say("ok" if ok else "err", ("Added to" if on else "Removed from") + " your watchlist." if ok else "No such account.")
+            self.say("ok" if ok else "err", ("Now tracking this company." if on else "No longer tracking this company.") if ok else "No such account.")
         back = req.f("back")
         return self.redirect(back if back.startswith("/") and not back.startswith("//") else f"/accounts/{account_id}")
 
@@ -585,6 +579,12 @@ class App:
         label = lambda d: f"{date.fromisoformat(d):%b} {date.fromisoformat(d).day}"  # noqa: E731
         trend = trend_svg([(label(p.run_date), p.hot, p.warm, p.watch) for p in m.trend])
         return self.render("market.html", page="market", m=m, trend_chart=trend, run_label=label)
+
+    def week_page(self, conn: sqlite3.Connection) -> Response:
+        return self.render("week.html", page="week", w=build_week(conn, self.cfg, date.today()), stage_labels=STAGE_LABELS)
+
+    def help_page(self) -> Response:
+        return self.render("help.html", page="help", sc=self.cfg.scoring, bands=self.cfg.scoring.bands, schedule_note="Mondays 05:00 America/Chicago")
 
     def reports_page(self) -> Response:
         return self.render("reports.html", page="reports", items=REPORT_ITEMS)
@@ -645,8 +645,15 @@ class App:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
         if a is None:
             return self.error("404 Not Found", "No such company.")
-        return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, date.today()), stage_labels=STAGE_LABELS,
+        return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, date.today()), stage_labels=STAGE_LABELS, stages=STAGES,
                            cfg_hiring_days=self.cfg.hiring.window_days)
+
+    def company_text(self, conn: sqlite3.Connection, account_id: int) -> Response:
+        a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
+        if a is None:
+            return self.error("404 Not Found", "No such company.")
+        text = brief_text(build_profile(conn, self.cfg, a, date.today()), self.cfg.hiring.window_days, safe_url)
+        return Response("200 OK", text.encode(), [("Content-Type", "text/plain; charset=utf-8")])
 
     def health_page(self, req: Request, conn: sqlite3.Connection) -> Response:
         try:

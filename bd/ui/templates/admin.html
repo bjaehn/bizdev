@@ -3,10 +3,10 @@
 {% block body %}
 <h1>Admin</h1>
 <p class="sub">Maintains the data behind the analysis: updating the list, reviewing and fixing company facts, and how the system is running. Nothing here is needed to read the analysis.</p>
-<div class="admin-grid">
+<div class="cols">
 {% for name, items in groups %}
-<div class="card"><h2 style="margin-top:0">{{ name }}</h2>
-<ul class="plain">{% for key, href, label, hint, _ in items %}<li><a class="name" style="font-size:16px" href="{{ href }}">{{ label }}</a><br><span class="meta">{{ hint }}</span></li>{% endfor %}</ul></div>
+<div class="card"><h2>{{ name }}</h2>
+<ul class="plain">{% for key, href, label, hint, _ in items %}<li><a class="name" href="{{ href }}">{{ label }}</a><br><span class="meta">{{ hint }}</span></li>{% endfor %}</ul></div>
 {% endfor %}
 </div>
 {% endblock %}

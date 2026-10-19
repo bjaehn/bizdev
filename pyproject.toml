@@ -27,7 +27,7 @@ bd = "bd.cli:app"
 include = ["bd*"]
 
 [tool.setuptools.package-data]
-bd = ["prompts/*.md", "ui/templates/*.html"]
+bd = ["prompts/*.md", "ui/templates/*.html", "ui/templates/*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

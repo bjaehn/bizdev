@@ -58,7 +58,7 @@ def test_the_ranking_is_a_matrix_with_one_row_per_company_and_a_column_per_signa
     assert f'href="/companies/{ids["Wideco <b>"]}"' in body                                   # every row and cell opens the company profile
     assert 'class="cell hi"' in body or 'class="cell ' in body
     assert "<b>4</b>/8" in body and "<b>1</b>/8" in body                                       # types firing, out of eight
-    assert "different signals" in body and "dashed box" in body and "Signal matrix" in body
+    assert "kinds of signs" in body and "dashed box" in body and "Signal matrix" in body
     # ranked by score: the widest company first
     assert body.index("Wideco") < body.index("Midco") < body.index("Deepco")
 
@@ -74,7 +74,8 @@ def test_the_strip_and_the_what_changed_line(seeded):
     e, ids = seeded
     body = e.get("/opportunities").body
     assert "<b>3</b> companies" in body and "Hot or Warm" in body
-    assert "New this week:" in body and "Wideco" in body                                      # was below Watch last run, Hot or Warm now
+    assert "New this week:" not in body                                                       # that strip now lives on This week, not here
+    assert "Newly Hot or Warm:" in e.get("/week").body and "Wideco" in e.get("/week").body    # was below Watch last run, Hot or Warm now
 
 
 def test_sorting_filtering_and_the_list_view_keep_working(seeded):
@@ -87,7 +88,7 @@ def test_sorting_filtering_and_the_list_view_keep_working(seeded):
     assert "Deepco" not in e.get("/opportunities").body.split("<tbody>")[1]                    # below Watch: not an opportunity yet
     assert 'href="/opportunities?view=list' in e.get("/opportunities").body and "sort=types" in e.get("/opportunities").body
     lst = e.get("/opportunities?view=list&industry=Insurance").body
-    assert 'class="card opp"' in lst and '<table class="matrix">' not in lst and "Wideco" not in lst.split('class="views"')[1]
+    assert 'class="why"' in lst and '<table class="matrix">' not in lst and "Wideco" not in lst.split('class="tabs"')[1]
     assert e.get("/opportunities?view=bogus&sort=bogus&industry=<x>").code == 200
 
 
@@ -101,9 +102,9 @@ def test_the_profile_explains_the_score_and_its_parts_add_up(seeded):
     assert [p.key for p in ex.parts][-1] == "bonus" and ex.parts[-1].points == opp.result.stacking_bonus
     assert "4 different signal types agree" in ex.sentence and ex.score == opp.result.score
     body = e.get(f"/companies/{ids['Wideco <b>']}").body
-    assert "Why this score" in body and body.count("<rect") >= 4 and "Stacking bonus" in body and "4 different signal types agree" in body
-    assert "Signals over the last 180 days" in body and body.count("<circle") == 4 and "Evidence" in body
-    assert "Wideco &lt;b&gt;" in body and "Wideco <b>" not in body and "Manage this company" in body and "noprint" in body
+    assert "How the score is built" in body and body.count("<rect") >= 4 and "Stacking bonus" in body and "4 different signal types agree" in body
+    assert "The last 180 days" in body and body.count("<circle") == 4 and "What happened" in body
+    assert "Wideco &lt;b&gt;" in body and "Wideco <b>" not in body and "Manage (Admin)" in body and "noprint" in body
 
 
 def test_a_company_with_one_signal_type_gets_the_no_bonus_explanation(seeded):

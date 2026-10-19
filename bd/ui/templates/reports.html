@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Reports{% endblock %}
+{% block hero %}<h1>Reports</h1>
+<p class="sub">More ways to look at the same signals, beyond the ranking.</p>{% endblock %}
 {% block body %}
-<h1>Reports</h1>
-<p class="sub">More ways to look at the same signals, beyond the ranking.</p>
-<div class="card" style="border-top:2px solid var(--ink)"><ul class="plain">
-{% for key, href, label, hint in items %}<li><a class="name" style="font-size:20px" href="{{ href }}">{{ label }}</a><br><span class="meta">{{ hint }}</span></li>{% endfor %}
-</ul></div>
+<div class="cols">
+{% for key, href, label, hint in items %}<div class="card card--link"><a class="name" href="{{ href }}">{{ label }}</a><br><span class="meta">{{ hint }}</span></div>{% endfor %}
+</div>
 {% endblock %}

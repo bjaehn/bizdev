@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}How this works{% endblock %}
+{% block hero %}<h1>How this works</h1>
+<p class="sub">BD Signals finds Chicago-area companies that show signs of needing management consulting, ranks them, and shows exactly what it found and where.</p>{% endblock %}
+{% block body %}
+<div class="prose">
+
+<h2>What to do here</h2>
+<ol>
+<li><b>See what to look at this week.</b> Open <a href="/week">This week</a>. Companies are listed with the most reasons to talk first. Each one says <i>why now</i> in a sentence.</li>
+<li><b>Prepare for one company.</b> Search by name on This week (or open <a href="/opportunities">Companies</a>), then open its brief. The brief is a two-minute read: the short version, what happened and when, with a link to every source. Use <b>Print / Save as PDF</b> or <b>Copy as text</b> to send it to someone.</li>
+<li><b>Show the market to leadership.</b> This week has a short market summary; <a href="/reports">Reports</a> has the Market view (which industries are heating up, signs by industry and by month).</li>
+<li><b>Track a company over time.</b> On a company's brief choose <b>Track this company</b>. This week then shows what is new about it, and you can mark its stage and keep notes.</li>
+</ol>
+
+<h2>Words used here</h2>
+<dl>
+<dt>Sign (signal)</dt><dd>One dated event found in a public source: a new executive named, a restructuring filing, a cluster of related job postings. Each one links to the page it came from.</dd>
+<dt>Kinds of signs</dt><dd>Leadership, hiring, company events, private equity, technology, procurement, filings and financials. A company with three <i>different</i> kinds of signs is a stronger lead than one with three signs of the same kind.</dd>
+<dt>Score</dt><dd>A number from 0 to {{ sc.score_max }}, worked out by plain code (no model) from the signals: how strong each kind of sign is, how recent, how trustworthy its source, and a bonus of +{{ sc.stacking_bonus_per_family|round|int }} for each extra kind that agrees (up to +{{ sc.stacking_bonus_max|round|int }}). The company page shows the sum.</dd>
+<dt>Bands</dt><dd><b>Hot</b> is {{ bands.hot }} or more, <b>Warm</b> {{ bands.warm }} or more, <b>Watch</b> {{ bands.watch }} or more. Below that a company is tracked but not listed.</dd>
+<dt>Client</dt><dd>An existing SEI client. Clients are scored like any company but listed apart, as expansion rather than new business.</dd>
+<dt>Needs facts / not scored</dt><dd>A company is only scanned once its basic facts (location, size, ownership) are known. Until then it waits, and an admin can fill them in.</dd>
+</dl>
+
+<h2>How fresh is it</h2>
+<p>The list is refreshed by a scheduled run ({{ schedule_note }}) or when an admin presses Update my list. Every page says the date it was scored. If the scores are more than a week old, This week says so.</p>
+
+<h2>What it does not do</h2>
+<ul class="plain">
+<li>It does not write outreach or tell you what to say. It reports what was found.</li>
+<li>It does not use LinkedIn or paywalled sites, and it only shows a source link for a page it actually retrieved.</li>
+<li>It never posts to Teams from this screen.</li>
+<li>It cannot see anything that is not public. A quiet company may simply be one the sources do not cover.</li>
+</ul>
+
+<h2>Where the admin work is</h2>
+<p>The small <b>Admin</b> link at the top right opens a separate area: updating the list, adding or looking up a company, marking clients, reviewing new companies, settings and run history. Everything you read is on the analysis side.</p>
+</div>
+{% endblock %}

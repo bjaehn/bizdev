@@ -4,19 +4,19 @@
 <h1>Home</h1>
 <div class="card">
 <div class="row"><div>
-<h2 style="margin:0 0 4px">{{ step[0] }}</h2>
-<p class="sub" style="margin:0">{{ step[1] }}</p></div>
-{% if step[2] == 'opportunities' %}<a class="btn" href="/opportunities">Open Opportunities</a>{% endif %}</div>
+<h2>{{ step[0] }}</h2>
+<p class="sub">{{ step[1] }}</p></div>
+{% if step[2] == 'opportunities' %}<a class="btn" href="/week">Open This week</a>{% endif %}</div>
 </div>
 
 <div class="pill-row">
 <a class="badge good" href="/accounts?status=active">{{ ready }} companies ready</a>
 <a class="badge warm" href="/accounts?status=hold_review">{{ need }} need facts</a>
-<a class="badge" href="/opportunities">{{ opps }} ranked opportunities</a>
+<a class="badge" href="/week">{{ opps }} companies ranked</a>
 </div>
 
 <div class="card">
-<h2 style="margin-top:0">Update my list</h2>
+<h2>Update my list</h2>
 <p>One press does all of this, in order, and stops at the spending limit:</p>
 <ol>
 <li>Fills size, public ownership and headquarters for companies that file with the SEC, straight from the SEC's own data (free).</li>
@@ -24,7 +24,7 @@
 <li>Searches <b>{{ u.segments }}</b> industry segments for new Chicagoland companies.</li>
 <li>Scans up to <b>{{ u.scan }}</b> ready companies for news, leadership changes and job postings.</li>
 {% if u.rfps %}<li>Searches Chicago-area agency sites for open public RFPs (Open RFPs page).</li>{% endif %}
-<li>Scores everything and ranks it on Opportunities.</li>
+<li>Scores everything and ranks it on This week.</li>
 </ol>
 {% if busy %}<div class="flash err">An update is already running. Open it from "Last update" below.</div>{% endif %}
 <form method="post" action="/update"><input type="hidden" name="csrf" value="{{ csrf }}">
@@ -34,15 +34,15 @@
 </div>
 
 {% if last %}<div class="card">
-<h2 style="margin-top:0">Last update</h2>
+<h2>Last update</h2>
 <p><span class="badge {{ 'good' if last.status == 'ok' else ('bad' if last.status in ('failed','interrupted') else '') }}">{{ last.status }}</span>
  started {{ last.started or last.created }} UTC · <a href="/jobs/{{ last.id }}">see what it did</a></p>
 {% if last.note %}<p class="meta">{{ last.note }}</p>{% endif %}
-{% if last_log %}<pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px">{{ last_log }}</pre>{% endif %}
+{% if last_log %}<pre class="pre">{{ last_log }}</pre>{% endif %}
 </div>{% endif %}
 
 <div class="card">
-<h2 style="margin-top:0">Setup</h2>
+<h2>Setup</h2>
 {% if problems %}<ul>{% for p in problems %}<li class="bad">{{ p }}</li>{% endfor %}</ul>
 <p class="meta">These are set in the hosting dashboard (Railway → Variables), never in this app.</p>
 {% else %}<p class="good">Everything the app needs is set.</p>{% endif %}
@@ -50,9 +50,9 @@
 <span class="meta"> A tiny model call (a fraction of a cent) that tells you in plain words what to fix.</span></form>
 </div>
 
-{% if top %}<h2>Top opportunities</h2>
+{% if top %}<h2>Top companies</h2>
 {% for o in top %}<div class="card"><div class="row"><div><span class="meta">#{{ o.rank }}</span> <a class="name" href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a>
 <div class="meta">{{ o.why_now }}</div></div>
 <span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} · {{ o.result.score }}</span></div></div>{% endfor %}
-<p><a href="/opportunities">See all {{ opps }} opportunities</a></p>{% endif %}
+<p><a href="/week">See This week</a> · <a href="/opportunities">All {{ opps }} companies</a></p>{% endif %}
 {% endblock %}
