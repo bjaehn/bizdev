@@ -4,7 +4,7 @@
 {% block body %}
 <h1>Job #{{ job.id }}: {{ label }}</h1>
 <p class="sub"><span class="badge {{ 'good' if job.status == 'ok' else ('bad' if job.status in ('failed','interrupted') else '') }}">{{ job.status }}</span>
- {% if running %}refreshing every 5 seconds{% endif %} · <a href="/operate">back to Operate</a> · <a href="/runs">cost on Runs</a></p>
+ {% if running %}refreshing every 5 seconds{% endif %}{% if company %} · <a href="/accounts/{{ company['id'] }}">open {{ company['name'] }}</a>{% endif %} · <a href="/operate">back to Operate</a> · <a href="/runs">cost on Runs</a></p>
 {% if job.note %}<div class="flash err">{{ job.note }}</div>{% endif %}
 <div class="card"><pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px">{{ log or '(no output yet)' }}</pre></div>
 {% endblock %}

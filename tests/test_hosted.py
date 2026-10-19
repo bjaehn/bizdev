@@ -191,7 +191,7 @@ def test_there_is_no_posting_job_and_scheduled_only_job_is_not_user_startable():
         validate("weekly", {})
     assert validate("weekly", {}, scheduled=True) == []
     for kind in KINDS:
-        for step in sequence_for(kind, validate(kind, {"limit": "5", "id": "5", "research": "5", "segments": "1", "scan": "5", "budget": "5"}, scheduled=True), "2026-01-05"):
+        for step in sequence_for(kind, validate(kind, {"limit": "5", "id": "5", "research": "5", "segments": "1", "scan": "5", "budget": "5", "only": "Acme Corp"}, scheduled=True), "2026-01-05"):
             if step[0] == "card" and kind != "weekly":
                 assert "--dry-run" in step
 
@@ -209,6 +209,7 @@ def test_weekly_posts_only_by_omitting_dry_run_and_honors_bd_dry_run(monkeypatch
     ("enrich", {"limit": "5", "only": "--all"}), ("enrich", {"limit": "5", "only": "a;rm -rf /"}),
     ("scan", {"limit": "5", "tier": "C"}), ("scan", {"limit": "5", "scanners": "evil"}), ("nope", {}),
     ("scan", {"limit": "5", "scanners": "hiring,$(x)"}),
+    ("lookup", {}), ("lookup", {"only": "--all"}), ("lookup", {"only": "a;rm -rf /"}), ("lookup", {"only": "x" * 61}), ("sec_fill", {"only": "$(x)"}),
 ])
 def test_job_validation_rejects_bad_input(kind, form):
     with pytest.raises(JobError):

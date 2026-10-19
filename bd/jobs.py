@@ -55,6 +55,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "rfps": ("Find open public RFPs", True, False),
     "ask": ("Ask a question about your data", True, False),
     "sec_fill": ("Fill facts from SEC filings (free)", False, False),
+    "lookup": ("Research and scan one company", True, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -115,7 +116,10 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
     if kind == "check":
         return ["check"]
     if kind == "sec_fill":
-        return ["sec-fill"]
+        only = company_name(form)
+        return ["sec-fill", "--only", only, "--exact"] if only else ["sec-fill"]
+    if kind == "lookup":
+        return ["lookup", "--only", company_name(form, required=True), "--budget", str(LOOKUP_BUDGET)]
     if kind == "ask":
         return ["ask", "--id", str(num("id", 1, 10**9, required=True))]
     if kind == "rfps":
@@ -157,6 +161,22 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
     return []   # weekly / weekly_dry: steps are fixed in sequence_for()
 
 
+LOOKUP_BUDGET = 3        # dollars: the most one "research and scan this company" may spend, whatever the company
+_NAME = re.compile(r"[A-Za-z0-9 .,&'()/-]+")
+
+
+def company_name(form: dict[str, str], required: bool = False) -> str:
+    """The company name for a one-company job: letters, digits and basic punctuation only (it becomes an argv element)."""
+    name = " ".join((form.get("only") or "").split())
+    if not name:
+        if required:
+            raise JobError("Type a company name.")
+        return ""
+    if len(name) > 60 or not _NAME.fullmatch(name) or name.startswith("-"):
+        raise JobError("A company name may use letters, digits and basic punctuation (60 characters at most).")
+    return name
+
+
 def refresh_scanners() -> str:
     """Scanners for the light refresh: the free job-board feed always; SEC filings only when BD_USER_AGENT is set (the SEC
     requires a declared contact). Only filings not read before cost a model call."""
@@ -193,6 +213,12 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         if a.get("--rfps", "0") != "0":
             steps.append(["rfps", "--allow-empty", "--as-of", as_of])
         return steps + [["score", "--allow-empty", "--as-of", as_of]]
+    if kind == "lookup":
+        name = args[args.index("--only") + 1]
+        one = ["--only", name, "--exact"]
+        return [["sec-fill", *one, "--as-of", as_of], ["enrich", *one, "--limit", "1", "--allow-empty", "--as-of", as_of],
+                ["apply-proposals", "enrich_proposals.csv"], ["scan", *one, "--force", "--allow-empty", "--as-of", as_of],
+                ["score", "--allow-empty", "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
@@ -325,7 +351,7 @@ class JobRunner:
         try:
             self._set(job_id, status="running", started=_now())
             as_of = chicago_today()
-            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind == "update" else None
+            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind in ("update", "lookup") else None
             start_id = self._max_run_id() if budget else 0
             skipped_for_budget = False
             with (self.log_dir / f"{job_id}.log").open("ab") as log:

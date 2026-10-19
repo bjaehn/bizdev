@@ -134,6 +134,8 @@ def _print_gate(g) -> None:
 @app.command()
 def scan(
     tier: str = typer.Option("all", help="A, B or all"),
+    only: Optional[str] = typer.Option(None, help="Only accounts whose name contains this text"),
+    exact: bool = typer.Option(False, "--exact", help="With --only: the whole name must match (not just contain the text)"),
     limit: Optional[int] = typer.Option(None, help="Scan at most N accounts"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
     scanners: str = typer.Option("all", help="Comma list of scanner names, or all implemented"),
@@ -166,9 +168,12 @@ def scan(
     if held_back:
         typer.echo(f"{held_back} auto-added account(s) not yet reviewed are held back this run "
                    f"(limit {cfg.discovery.scan_unreviewed_per_run}); mark them reviewed in the app to scan them all.")
+    if only:
+        accounts = [a for a in accounts if (a.name.lower() == only.lower() if exact else only.lower() in a.name.lower())]
     if not accounts:
         if allow_empty:
-            typer.echo("No companies are ready to scan yet (each needs a confirmed Chicagoland location and size).")
+            typer.echo(f"{only!r} is not ready to scan (it needs a confirmed Chicagoland location and size, or it is not on your list)."
+                       if only else "No companies are ready to scan yet (each needs a confirmed Chicagoland location and size).")
             return
         _fail("No accounts passed the fit gate. Fill in the held accounts' facts or run `bd seed accounts.csv`.")
     due = sorted((a for a in accounts if is_due(a, run_date, cfg, force)), key=lambda a: (a.last_scanned or "", a.id))
@@ -545,6 +550,7 @@ def enrich(
     out: str = typer.Option("enrich_proposals.csv", help="Where to write the review CSV"),
     all_accounts: bool = typer.Option(False, "--all", help="Also re-check accounts that already pass the fit gate"),
     only: Optional[str] = typer.Option(None, help="Only accounts whose name contains this text"),
+    exact: bool = typer.Option(False, "--exact", help="With --only: the whole name must match (not just contain the text)"),
     limit: Optional[int] = typer.Option(None, help="At most N accounts"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
     workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
@@ -563,7 +569,7 @@ def enrich(
     cfg, settings = load_config(), Settings.from_env()
     conn = connect(settings.db_path)
     init_db(conn)
-    accounts = select_accounts(conn, all_accounts, only, limit)
+    accounts = select_accounts(conn, all_accounts, only, limit, exact)
     if not accounts:
         if allow_empty:
             typer.echo("No companies need facts right now.")
@@ -597,6 +603,7 @@ def enrich(
 @app.command(name="sec-fill")
 def sec_fill(
     only: Optional[str] = typer.Option(None, help="Only accounts whose name contains this text"),
+    exact: bool = typer.Option(False, "--exact", help="With --only: the whole name must match (not just contain the text)"),
     limit: Optional[int] = typer.Option(None, help="Read at most N SEC records (default sec_fill.max_accounts_per_run)"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
 ) -> None:
@@ -615,7 +622,7 @@ def sec_fill(
         return
     conn = connect(settings.db_path)
     init_db(conn)
-    s = run_sec_fill(conn, cfg, EdgarClient(cfg, settings.user_agent), run_date, limit=limit, only=only, log=typer.echo)
+    s = run_sec_fill(conn, cfg, EdgarClient(cfg, settings.user_agent), run_date, limit=limit, only=only, exact=exact, log=typer.echo)
     if not s.candidates:
         typer.echo("Nothing for the SEC to fill: every company already has its size, ownership and headquarters, or is not a filer.")
         return
