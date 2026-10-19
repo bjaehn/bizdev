@@ -95,7 +95,7 @@ def test_pages_and_forms(app_env):  # noqa: F811
     assert "Acme" in body and "2 signals in 90 days" in body and "Hiring cluster" in body
     opp = e.get("/opportunities").body
     assert '<span class="badge good">client</span>' in opp
-    assert "Acme" in e.get("/opportunities?client=yes").body and "No opportunities match" in e.get("/opportunities?client=no").body
+    assert "Acme" in e.get("/opportunities?client=yes").body and "No companies match" in e.get("/opportunities?client=no").body
     r = e.post("/clients/mark", {"names": "Acme Inc\nNew Target <b>\n"})
     assert r.code == 200 and "Already marked: Acme" in r.body and "/lookup?q=New%20Target%20%3Cb%3E" in r.body and "&lt;b&gt;" in r.body
     assert e.post("/clients/mark", {"names": "  "}).code == 303

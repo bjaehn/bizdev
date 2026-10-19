@@ -17,7 +17,7 @@
 {% set l = c.lead %}
 <div class="card">
 <div class="row">
-<div><a class="name" href="/accounts/{{ l.account.id }}">{{ l.account.name }}</a>
+<div><a class="name" href="/companies/{{ l.account.id }}">{{ l.account.name }}</a>
 <div class="meta">{{ [l.account.industry, l.account.hq_city, l.account.ownership if l.account.ownership != 'public' else none, ('sponsor: ' ~ l.account.sponsor) if l.account.sponsor else none]|select|join(' · ') or 'no company details recorded' }}</div></div>
 <div><span class="badge {{ 'hot' if l.result.band == 'Hot' else 'warm' }}">{{ l.result.band }} · {{ l.result.score }}</span>
 {% if c.posted %}<span class="badge good">posted</span>{% endif %}</div>
@@ -52,7 +52,7 @@
 <h2>Tracked, not posted</h2>
 <div class="wrap"><table>
 <tr><th>Account</th><th class="num">Score</th><th>Band</th><th>Why not posted</th></tr>
-{% for s in skipped %}<tr><td><a href="/accounts/{{ s.account.id }}">{{ s.account.name }}</a></td><td class="num">{{ s.score }}</td><td>{{ s.band }}</td><td>{{ s.reason }}</td></tr>{% endfor %}
+{% for s in skipped %}<tr><td><a href="/companies/{{ s.account.id }}">{{ s.account.name }}</a></td><td class="num">{{ s.score }}</td><td>{{ s.band }}</td><td>{{ s.reason }}</td></tr>{% endfor %}
 </table></div>
 {% endif %}
 {% endif %}

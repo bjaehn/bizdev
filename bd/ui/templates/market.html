@@ -38,7 +38,7 @@
 {% if m.quiet %}
 <div class="wrap"><table>
 <tr><th>Company</th><th>Industry</th><th class="num">Revenue</th><th class="num">Employees</th><th>Last scanned</th><th class="num">Signals ever</th></tr>
-{% for q in m.quiet %}<tr><td><a href="/accounts/{{ q.account_id }}">{{ q.name }}</a></td><td>{{ q.industry }}</td><td class="num">{{ q.revenue|money }}</td><td class="num">{{ '{:,}'.format(q.employees) if q.employees else '-' }}</td><td>{{ q.last_scanned or 'never' }}</td><td class="num">{{ q.signals_total }}</td></tr>{% endfor %}
+{% for q in m.quiet %}<tr><td><a href="/companies/{{ q.account_id }}">{{ q.name }}</a></td><td>{{ q.industry }}</td><td class="num">{{ q.revenue|money }}</td><td class="num">{{ '{:,}'.format(q.employees) if q.employees else '-' }}</td><td>{{ q.last_scanned or 'never' }}</td><td class="num">{{ q.signals_total }}</td></tr>{% endfor %}
 </table></div>
 {% endif %}
 {% endblock %}

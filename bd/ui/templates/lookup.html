@@ -20,7 +20,7 @@
 {% if h.latest_signal %}<p style="margin:8px 0 0"><b>{{ labels[h.latest_signal['type']] }}</b> · {{ h.latest_signal['event_date']|fdate }}{% if h.signals_90d > 1 %} · {{ h.signals_90d }} signals in 90 days{% endif %}<br><span class="meta">{{ h.latest_signal['summary'] }}</span>
 {% if h.latest_signal['source_url']|safe_url %}<br><a href="{{ h.latest_signal['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ h.latest_signal['source_url']|host }}</a>{% endif %}</p>
 {% elif h.account.status == 'active' %}<p class="meta" style="margin:8px 0 0">No signals found yet.</p>{% endif %}
-<p class="meta" style="margin:8px 0 0"><a href="/accounts/{{ h.account.id }}/onepager">One-page summary</a> · <a href="/accounts/{{ h.account.id }}">Company page</a></p>
+<p class="meta" style="margin:8px 0 0"><a href="/companies/{{ h.account.id }}">Analysis profile</a> · <a href="/accounts/{{ h.account.id }}">Manage</a></p>
 {% if can_run and h.account.status != 'excluded' %}
 <form method="post" action="/lookup/run" class="filters" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ h.account.name }}">
 {% if h.account.status != 'active' %}<button class="ghost" type="submit" {{ 'disabled' if busy else '' }}>Check the SEC (free)</button>{% endif %}

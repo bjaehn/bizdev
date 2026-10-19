@@ -75,12 +75,12 @@ def test_lookup_clients_and_pursuits_live_in_admin(app_env):  # noqa: F811
     assert 'href="/lookup"' not in nav_of(e.get("/opportunities").body)
 
 
-def test_a_company_page_leads_with_the_story_and_keeps_every_form(app_env):  # noqa: F811
+def test_the_manage_page_is_an_admin_page_that_keeps_every_form(app_env):  # noqa: F811
     e = app_env
     a = add_account(e.conn, "Acme")
     add_signal(e.conn, e.cfg, a, "leadership_change", 5)
     page = e.get(f"/accounts/{a}").body
-    assert '<header class="admin">' not in page                                         # for now the company page is on the analysis side
+    assert '<header class="admin">' in page and "View the analysis" in page                # editing lives in Admin; the analysis profile is one click away
     story, rest = page.split("<summary>Edit facts</summary>")[0], page.split("<summary>Edit facts</summary>")[1]
     assert "Why now" in story and "Signals (1)" in story and "Leadership change" in story
     assert story.split("<main>")[1].count('<form method="post"') == 3                    # stage, watch, client: the action row only
@@ -117,9 +117,9 @@ def test_opportunities_keeps_every_filter_under_more_filters(app_env):  # noqa: 
     body = e.get("/opportunities").body
     form = body.split('<form method="get" action="/opportunities"')[1].split("</form>")[0]
     visible, hidden = form.split('<details class="more">')
-    assert 'name="q"' in visible and 'name="band"' in visible and visible.count("<select") == 1
+    assert 'name="q"' in visible and 'name="band"' in visible and 'name="industry"' in visible and visible.count("<select") == 2
     for name in ("date", "family", "service_line", "status", "stage", "client", "sort", "pe", "new", "tracked"):
         assert f'name="{name}"' in hidden, name
     # every old query string still works (bookmarks and links keep their meaning)
     assert "Acme" in e.get("/opportunities?q=acme&client=no&stage=open&sort=change").body
-    assert "No opportunities match" in e.get("/opportunities?q=zzz").body and "No opportunities match" in e.get("/opportunities?client=yes").body
+    assert "No companies match" in e.get("/opportunities?q=zzz").body and "No companies match" in e.get("/opportunities?client=yes").body
