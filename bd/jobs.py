@@ -24,7 +24,8 @@ from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
 PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "rfps", "ask", "card"})
-SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials")
+SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials", "sec_events")
+FREE_SCANNERS = frozenset({"ats", "financials", "sec_events"})     # no model call: never counted against, or stopped by, the spending limit
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
 LOG_TAIL_BYTES = 20_000
@@ -159,7 +160,22 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 def refresh_scanners() -> str:
     """Scanners for the light refresh: the free job-board feed always; SEC filings only when BD_USER_AGENT is set (the SEC
     requires a declared contact). Only filings not read before cost a model call."""
-    return "ats" + (",edgar,earnings,financials" if os.environ.get("BD_USER_AGENT") else "")
+    return "ats" + (",edgar,earnings,financials,sec_events" if os.environ.get("BD_USER_AGENT") else "")
+
+
+def free_scanners() -> str:
+    """The scanners that cost nothing: job boards always; SEC filings and figures only when BD_USER_AGENT is set."""
+    return "ats" + (",financials,sec_events" if os.environ.get("BD_USER_AGENT") else "")
+
+
+def is_paid(step: list[str]) -> bool:
+    """Does this `bd` step spend model tokens (so the update's spending limit applies to it)? A scan restricted to free scanners does not."""
+    if step[0] not in PAID_STEPS:
+        return False
+    if step[0] == "scan" and "--scanners" in step:
+        names = step[step.index("--scanners") + 1].split(",")
+        return not set(names) <= FREE_SCANNERS
+    return True
 
 
 def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
@@ -171,7 +187,9 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
             steps += [["enrich", "--limit", a["--research"], "--allow-empty", "--as-of", as_of], ["apply-proposals", "enrich_proposals.csv"]]
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
-        steps += [["pe-sync"], ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of]]
+        # free sources first, for every ready company: they cost nothing, so a first look is never empty and the limit is not spent on them
+        steps += [["pe-sync"], ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
+                  ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of]]
         if a.get("--rfps", "0") != "0":
             steps.append(["rfps", "--allow-empty", "--as-of", as_of])
         return steps + [["score", "--allow-empty", "--as-of", as_of]]
@@ -313,7 +331,7 @@ class JobRunner:
             with (self.log_dir / f"{job_id}.log").open("ab") as log:
                 for step in sequence_for(kind, args, as_of):
                     step_env = env
-                    if budget and step[0] in PAID_STEPS:
+                    if budget and is_paid(step):
                         remaining = budget - self._spent_since(start_id)
                         if remaining <= 0:
                             log.write(f"\n(skipped `bd {step[0]}`: the ${budget} spending limit for this update is used up)\n".encode())

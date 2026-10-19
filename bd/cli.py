@@ -33,6 +33,9 @@ def _parse_date(s: Optional[str]) -> date:
         raise
 
 
+SEC_SCANNERS = ("edgar", "earnings", "financials", "sec_events")       # need BD_USER_AGENT (the SEC requires a declared contact)
+
+
 def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
     """`all` = every implemented scanner, minus edgar when no BD_USER_AGENT is configured (the SEC
     requires a declared contact). Naming edgar explicitly without one is an error."""
@@ -41,7 +44,7 @@ def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
     implemented = [n for n, c in SCANNERS.items() if c.implemented]
     if opt == "all":
         if not settings.user_agent_configured:
-            skipped = [n for n in ("edgar", "earnings", "financials") if n in implemented]
+            skipped = [n for n in SEC_SCANNERS if n in implemented]
             for n in skipped:
                 implemented.remove(n)
             if skipped:
@@ -52,8 +55,8 @@ def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
     bad = [n for n in names if n not in SCANNERS or not SCANNERS[n].implemented]
     if bad:
         _fail(f"unknown or unimplemented scanner(s): {bad}")
-    if any(n in names for n in ("edgar", "earnings", "financials")) and not settings.user_agent_configured:
-        _fail("The edgar, earnings and financials scanners need BD_USER_AGENT set to your company name and contact email (SEC fair access).")
+    if any(n in names for n in SEC_SCANNERS) and not settings.user_agent_configured:
+        _fail("The edgar, earnings, financials and sec_events scanners need BD_USER_AGENT set to your company name and contact email (SEC fair access).")
     return names
 
 
@@ -73,7 +76,7 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     web = AnthropicWebSearchClient(cfg, model=model, api_key=key)
     text = AnthropicWebSearchClient(cfg, model=model, api_key=key, web_search=False)
     verifier = UrlVerifier(cfg, settings.user_agent)
-    edgar = EdgarClient(cfg, settings.user_agent) if any(n in names for n in ("edgar", "earnings", "financials")) else None
+    edgar = EdgarClient(cfg, settings.user_agent) if any(n in names for n in SEC_SCANNERS) else None
     ats = AtsClient(cfg, settings.user_agent) if "ats" in names else None
     return [SCANNERS[n].create(cfg, web, text, verifier, edgar, ats=ats) for n in names]
 

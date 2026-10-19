@@ -177,25 +177,35 @@ class EdgarClient:
         return self.recent_items(cik, since, until, limit, "5.02")
 
     def recent_items(self, cik: str, since: date, until: date, limit: int, item: str) -> list[Filing]:
+        return self.recent_filings(cik, since, until, limit, {item})
+
+    def recent_filings(self, cik: str, since: date, until: date, limit: int, items: set[str]) -> list[Filing]:
+        """8-K filings (newest first) that report at least one of `items`, with an event date inside the window. One request."""
         recent = self.submissions(cik)["filings"]["recent"]
         cols = [recent.get(k) for k in ("accessionNumber", "filingDate", "reportDate", "form", "items", "primaryDocument")]
         if not all(isinstance(c, list) for c in cols[:2] + cols[3:]):
             raise EdgarError("unexpected filings.recent layout")
         reports = cols[2] if isinstance(cols[2], list) else []
         out: list[Filing] = []
-        for i, (acc, fdate, form, items, doc) in enumerate(zip(cols[0], cols[1], cols[3], cols[4], cols[5])):
+        for i, (acc, fdate, form, listed, doc) in enumerate(zip(cols[0], cols[1], cols[3], cols[4], cols[5])):
             fd = _date(fdate)
             if form not in _FORMS or fd is None or not _ACCESSION.match(str(acc)) or not _DOCNAME.match(str(doc)):
                 continue
-            if item not in [x.strip() for x in str(items or "").split(",")]:
+            reported = [x.strip() for x in str(listed or "").split(",")]
+            if not items & set(reported):
                 continue
             f = Filing(cik=f"{int(cik):010d}", accession=str(acc), filing_date=fd,
                        report_date=_date(reports[i]) if i < len(reports) else None,
-                       form=str(form), items=tuple(x.strip() for x in str(items).split(",")), primary_document=str(doc))
+                       form=str(form), items=tuple(reported), primary_document=str(doc))
             if since <= f.event_date <= until:
                 out.append(f)
         out.sort(key=lambda f: (f.filing_date, f.accession), reverse=True)
         return out[:limit]
+
+    def filing_items(self, filing: Filing, items: set[str]) -> set[str]:
+        """Which of `items` have their "Item x.xx" heading in the filing document itself (fetches the document once)."""
+        text = html_to_text(self._get(filing.url).text)
+        return {i for i in items if re.search(r"item\s*" + re.escape(i), text, re.I)}
 
     def filing_text(self, filing: Filing) -> str:
         return excerpt(html_to_text(self._get(filing.url).text), self._cfg.edgar.max_chars)

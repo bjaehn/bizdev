@@ -21,6 +21,7 @@ MAX_POSTINGS_KEPT = 200
 
 class AtsScanner(HiringScanner):
     name = "ats"
+    free = True                # reads the company's public job board; no model call
 
     def __init__(self, cfg, client: AtsClient | None) -> None:
         super().__init__(cfg, None, None)

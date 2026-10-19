@@ -247,7 +247,7 @@ def test_scan_all_skips_edgar_without_a_user_agent_and_explicit_edgar_fails(tmp_
     seeded(tmp_path)
     monkeypatch.delenv("BD_USER_AGENT", raising=False)
     r = runner.invoke(app, ["scan", "--dry-run"])
-    assert r.exit_code == 0 and "edgar, earnings, financials scanner(s) skipped: set BD_USER_AGENT" in r.output
+    assert r.exit_code == 0 and "edgar, earnings, financials, sec_events scanner(s) skipped: set BD_USER_AGENT" in r.output
     r = runner.invoke(app, ["scan", "--dry-run", "--scanners", "edgar"])
     assert r.exit_code == 1 and "BD_USER_AGENT" in r.output
 
@@ -261,7 +261,7 @@ def test_edgar_counts_only_accounts_with_a_cik_in_the_dry_run(tmp_path, monkeypa
     monkeypatch.setenv("BD_USER_AGENT", "SEI BD ops@example.com")
     r = runner.invoke(app, ["scan", "--dry-run"])
     assert r.exit_code == 0 and "2 of 2 accounts due" in r.output
-    assert "= 15 calls" in r.output           # 6 scanners for each of 2 accounts (12) + edgar, earnings and financials for Acme only (3)
+    assert "= 16 calls" in r.output           # 6 scanners for each of 2 accounts (12) + edgar, earnings, financials and sec_events for Acme only (4)
 
 
 def test_enrich_needs_accounts_and_a_key(tmp_path):

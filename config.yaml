@@ -202,6 +202,15 @@ financials:
 sec_fill:
   max_accounts_per_run: 60      # SEC records read per run (about two requests each, spaced by edgar.min_interval_seconds)
 
+# Signals read straight from SEC 8-K item codes (no model, so no cost). The SEC says which items a filing reports; code dates the
+# signal by the filing's report date, fetches the filing and requires the item heading in it, and writes the summary from the label
+# below. Each item maps to one signal type and the service lines it points to.
+sec_events:
+  max_filings_per_scan: 6
+  items:
+    "2.05": {type: restructuring_layoffs, label: "costs associated with exit or disposal activities", service_lines: [Strategy & Operations]}
+    "2.01": {type: ma_divestiture, label: "completion of an acquisition or disposition of assets", service_lines: [Strategy & Operations]}
+
 # Open public RFPs / RFQs / RFIs from Chicago-area agencies. One search per group, restricted to that group's own domains, so
 # every result is an official page. Not tied to a company and never scored; shown on the Open RFPs page.
 rfps:

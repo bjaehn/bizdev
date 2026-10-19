@@ -19,6 +19,7 @@ from bd.scanners.base import AcceptedSignal, Rejection, ScanOutcome, Scanner
 
 class FinancialsScanner(Scanner):
     name = "financials"
+    free = True
     allowed_types = frozenset({"financial_pressure"})
 
     def __init__(self, cfg: Config, edgar: EdgarClient | None) -> None:
