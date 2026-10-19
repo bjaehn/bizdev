@@ -109,12 +109,13 @@ def save_refresh(conn: sqlite3.Connection, enabled: bool, actor: str = "ui") -> 
 
 
 # ---- "Update my list": the numbers behind the one button ---------------------------------------------------------------
-UPDATE_DEFAULTS = {"research": 25, "segments": 2, "scan": 25, "budget": 8}
+UPDATE_DEFAULTS = {"research": 25, "segments": 2, "scan": 25, "budget": 8, "rfps": 1}
 UPDATE_FIELDS = {  # name -> (label, min, max)
     "research": ("Companies to research per update", 0, 100),
     "segments": ("Industry segments to search for new companies", 0, 30),
     "scan": ("Companies to scan for signals per update", 1, 100),
     "budget": ("Spending limit per update (US dollars)", 1, 100),
+    "rfps": ("Search agency sites for open RFPs (1 = yes, 0 = no; about $0.90)", 0, 1),
 }
 
 
@@ -135,6 +136,9 @@ def load_update(conn: sqlite3.Connection) -> dict[str, int]:
 def parse_update(form: dict[str, str]) -> tuple[dict[str, int], list[str]]:
     out, errs = {}, []
     for k, (label, lo, hi) in UPDATE_FIELDS.items():
+        if k == "rfps" and k not in form:        # a form that predates this setting keeps the default
+            out[k] = UPDATE_DEFAULTS[k]
+            continue
         raw = (form.get(k) or "").strip()
         if not raw.isdigit() or not lo <= int(raw) <= hi:
             errs.append(f"{label} must be a whole number from {lo} to {hi}")

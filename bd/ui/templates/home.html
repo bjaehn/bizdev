@@ -22,6 +22,7 @@
 <li>Researches up to <b>{{ u.research }}</b> companies that need facts, and fills in the ones with a source that checked out.</li>
 <li>Searches <b>{{ u.segments }}</b> industry segments for new Chicagoland companies.</li>
 <li>Scans up to <b>{{ u.scan }}</b> ready companies for news, leadership changes and job postings.</li>
+{% if u.rfps %}<li>Searches Chicago-area agency sites for open public RFPs (Open RFPs page).</li>{% endif %}
 <li>Scores everything and ranks it on Opportunities.</li>
 </ol>
 {% if busy %}<div class="flash err">An update is already running. Open it from "Last update" below.</div>{% endif %}

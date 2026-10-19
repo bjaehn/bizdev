@@ -457,7 +457,7 @@ class App:
             return self.redirect("/")
 
     def settings_update(self, req: Request, conn: sqlite3.Connection) -> Response:
-        errs = save_update(conn, {k: req.f(k) for k in UPDATE_FIELDS})
+        errs = save_update(conn, {k: req.f(k) for k in UPDATE_FIELDS if k in req.form or k != "rfps"})
         if errs:
             self.say("err", "Not saved: " + "; ".join(errs))
         else:

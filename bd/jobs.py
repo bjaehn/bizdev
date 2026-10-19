@@ -119,7 +119,9 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
     if kind == "update":
         research, segs = num("research", 0, 100, required=True), num("segments", 0, 30, required=True)
         scan, budget = num("scan", 1, 100, required=True), num("budget", 1, 100, required=True)
-        return ["update", "--research", str(research), "--segments", str(segs), "--scan", str(scan), "--budget", str(budget)]
+        rfps = num("rfps", 0, 1)
+        return ["update", "--research", str(research), "--segments", str(segs), "--scan", str(scan), "--budget", str(budget),
+                "--rfps", str(1 if rfps is None else rfps)]
     if kind in ("refresh", "refresh_now"):
         return []   # steps are fixed in sequence_for()
     if kind == "discover":
@@ -166,8 +168,10 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
             steps += [["enrich", "--limit", a["--research"], "--allow-empty", "--as-of", as_of], ["apply-proposals", "enrich_proposals.csv"]]
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
-        return steps + [["pe-sync"], ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of],
-                        ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--allow-empty", "--as-of", as_of]]
+        steps += [["pe-sync"], ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of]]
+        if a.get("--rfps", "1") != "0":
+            steps.append(["rfps", "--allow-empty", "--as-of", as_of])
+        return steps + [["score", "--allow-empty", "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):

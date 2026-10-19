@@ -30,6 +30,7 @@ from bd.verify import UrlVerifier
 
 class RfpResponse(BaseModel):
     rfps: list[RfpExtract]
+    notes: str | None = None          # one sentence from the model on what it saw (why a list is empty, for example)
 
 
 @dataclass
@@ -39,6 +40,7 @@ class GroupOutcome:
     rejections: list[tuple[str, str]] = field(default_factory=list)      # (reason, url)
     usage: Usage = field(default_factory=Usage)
     error: str | None = None
+    note: str | None = None
 
 
 class RfpFinder:
@@ -63,6 +65,7 @@ class RfpFinder:
             out.usage = e.usage
             return out
         out.usage = res.usage
+        out.note = " ".join(resp.notes.split())[:200] if resp.notes else None
         seen: set[str] = set()
         canon = {s.lower(): s for s in self.cfg.service_lines}
         for r in resp.rfps:
@@ -133,7 +136,9 @@ def run_rfps(conn: sqlite3.Connection, cfg: Config, finder: RfpFinder, as_of: da
         with conn:
             conn.execute("INSERT INTO runs(run_date,step,account_id,accounts_scanned,signals_found,tokens,est_cost,errors) "
                          "VALUES (?,?,?,?,?,?,?,?)", (as_of.isoformat(), "rfps", None, 0, new, r.usage.total_tokens, cost,
-                                                      r.error or (f"{len(r.rejections)} rejected" if r.rejections else None)))
+                                                      r.error or (f"{len(r.rejections)} rejected" if r.rejections else None)
+                                                      or (f"model note: {r.note}" if r.note and not r.rfps else None)))
         log(f"  {g.name}: {new} new, {known} known, {len(r.rejections)} rejected, {r.usage.total_tokens:,} tokens, "
-            + ("unpriced" if cost is None else f"${cost:.4f}") + (f"  ERROR {r.error}" if r.error else ""))
+            + ("unpriced" if cost is None else f"${cost:.4f}") + (f"  ERROR {r.error}" if r.error else "")
+            + (f"\n    model note: {r.note}" if r.note else ""))
     return out

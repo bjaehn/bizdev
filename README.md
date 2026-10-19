@@ -77,6 +77,8 @@ signals validated by code; none writes outreach.
 
 **Ask your data** (`/ask`, under More, hosted app only) answers a plain-English question about your own database. It runs as a job (paid-call tick, a few cents): a model writes one read-only query from the table layout, code checks and runs it on a read-only connection limited to an allow-list of tables, and a second call phrases the answer from the returned rows. The answer, the rows and the SQL are stored and shown together. Your free-text notes are not available to it. `bd ask --id N` is the command behind the button.
 
+**Facts for SEC filers come from the SEC, not the model.** For a company with a CIK, `bd enrich` (and discover's research) reads the SEC's company-facts and submissions files in code: revenue is the latest fiscal year from its 10-K, ownership is `public` when it has a listed ticker, and HQ city is the business address. The evidence link on each fact is the SEC file read. Private companies and nonprofits still rely on the model's sourced figures. **Update my list** also has a setting for whether to search agency sites for RFPs (about $0.90 a run).
+
 ## Commands
 
 | Command | What it does |

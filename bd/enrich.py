@@ -33,7 +33,8 @@ from bd.accounts import PROPOSAL_ONLY_COLUMNS, SEED_COLUMNS, Account, normalize_
 from bd.budget import Reserve
 from bd.config import Config
 from bd.cost import estimate_cost
-from bd.edgar import EdgarClient, EdgarError
+from bd.edgar import EdgarClient, EdgarError, facts_url, submissions_url
+from bd.sec_facts import read as read_sec_facts
 from bd.llm import LLM, LLMError, Usage, generate_validated
 from bd.models import SourceType
 from bd.scanners.base import reconcile_source_type
@@ -83,12 +84,14 @@ class EnrichResult:
     row: dict[str, str] = field(default_factory=dict)      # CSV row (proposals only)
     dropped: list[str] = field(default_factory=list)       # what was found but not accepted, and why
     missing: list[str] = field(default_factory=list)       # facts still needed that the model did not return at all
+    sec_notes: list[str] = field(default_factory=list)     # what code read from the SEC's own data (or why it could not)
     usage: Usage = field(default_factory=Usage)
     error: str | None = None
 
 
-def needed_facts(a: Account) -> list[str]:
-    """The facts this account still lacks, in the model's field names (what the search should be about)."""
+def needed_facts(a: Account, from_sec: bool = False) -> list[str]:
+    """The facts this account still lacks, in the model's field names (what the search should be about). `from_sec`: the account has a
+    CIK and an SEC client is available, so revenue, ownership and the CIK come from the SEC's own data and the model is not asked."""
     need = []
     if not a.domain:
         need.append("domain")
@@ -98,17 +101,26 @@ def needed_facts(a: Account) -> list[str]:
         need.append("industry")
     if a.chicagoland == "unknown":
         need.append("il_county")
-    if a.revenue is None:
+    if a.revenue is None and not from_sec:
         need.append("revenue_usd")
     if a.employees is None:
         need.append("employees")
-    if not a.ownership:
+    if not a.ownership and not from_sec:
         need.append("ownership")
-    if not a.sponsor and a.ownership in (None, "pe-backed"):
+    if not a.sponsor and a.ownership in (None, "pe-backed") and not from_sec:
         need.append("sponsor")
     if not a.cik and a.ownership in (None, "public"):
         need.append("cik")
     return need
+
+
+def _parse_evidence(raw: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for part in (raw or "").split(";"):
+        key, sep, url = part.strip().partition("=")
+        if sep and key.strip():
+            out[key.strip()] = url.strip()
+    return out
 
 
 def _county(raw: str, configured: list[str]) -> str:
@@ -126,7 +138,8 @@ class Enricher:
 
     def enrich(self, account: Account, as_of: date) -> EnrichResult:
         res = EnrichResult(account=account, row={"name": account.name})
-        need = needed_facts(account)
+        sec_ready = self.edgar is not None and hasattr(self.edgar, "company_facts") and bool(account.cik)
+        need = needed_facts(account, from_sec=sec_ready)
         user = (f"Company: {account.name}\nKnown website domain: {account.domain or 'unknown'}\n"
                 f"Known headquarters city: {account.hq_city or 'unknown'}\nToday's date: {as_of.isoformat()}\n"
                 f"Facts still needed: {', '.join(need) or 'none'}. Search for these; the others are already on file, so return null for them.\n\n"
@@ -139,6 +152,7 @@ class Enricher:
             return res
         res.usage = llm_res.usage
         self._accept(account, resp.facts, llm_res.retrieved_urls, res)
+        self._fill_from_sec(account, as_of, res)
         got = set(res.row)
         want = {"domain": "domain", "hq_city and hq_state": "hq_city", "industry": "industry", "il_county": "chicagoland",
                 "revenue_usd": "revenue", "employees": "employees", "ownership": "ownership", "sponsor": "sponsor", "cik": "cik"}
@@ -151,6 +165,42 @@ class Enricher:
         elif res.missing:
             res.row["notes"] += " | not found: " + ", ".join(m.split(" ")[0] for m in res.missing)
         return res
+
+    def _fill_from_sec(self, acct: Account, as_of: date, res: EnrichResult) -> None:
+        """For a company with a CIK (already on file, or just proposed and confirmed with EDGAR): revenue, public ownership and the HQ
+        city come from the SEC's own data, fetched by code, so each carries the SEC URL it was read from. Fills only what the account
+        lacks; where the model also proposed revenue or ownership, the SEC's value wins (it is the filing itself)."""
+        e = self.edgar
+        cik = acct.cik or res.row.get("cik")
+        if e is None or not cik or not hasattr(e, "company_facts") or not hasattr(e, "submissions"):
+            return
+        row, evid = res.row, _parse_evidence(res.row.get("evidence_urls", ""))
+        need_rev = acct.revenue is None
+        subs = facts = None
+        try:
+            subs = e.submissions(cik)
+        except EdgarError as err:
+            res.sec_notes.append(f"SEC record not read ({err})")
+        if need_rev:
+            try:
+                facts = e.company_facts(cik)
+            except EdgarError as err:
+                res.sec_notes.append(f"SEC financial data not read ({err})")
+        sec = read_sec_facts(subs, facts, as_of, need_revenue=need_rev)
+        res.sec_notes += sec.notes
+        if sec.revenue is not None and need_rev:
+            row["revenue"] = f"{sec.revenue:.0f}"
+            evid["revenue_usd"] = facts_url(cik)
+            res.sec_notes.append(sec.revenue_note)
+        if sec.public and not acct.ownership:
+            row["ownership"] = "public"
+            evid["ownership"] = submissions_url(cik)
+        if sec.hq and not acct.hq_city and "hq_city" not in row:
+            row["hq_city"] = sec.hq
+        if evid:
+            row["evidence_urls"] = "; ".join(f"{k}={v}" for k, v in evid.items())
+        if res.sec_notes:
+            row["notes"] = " | ".join(x for x in (row.get("notes"), "SEC: " + "; ".join(res.sec_notes)) if x)
 
     # -- acceptance rules -----------------------------------------------------------------------
     def _evidence_ok(self, name: str, f: Facts, retrieved: set[str], res: EnrichResult) -> Evidence | None:

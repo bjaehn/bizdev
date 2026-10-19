@@ -56,6 +56,10 @@ class Filing:
                 f"{self.accession.replace('-', '')}/{self.primary_document}")
 
 
+def submissions_url(cik: str) -> str:
+    return f"{API_HOST}/submissions/CIK{int(cik):010d}.json"
+
+
 def facts_url(cik: str) -> str:
     return f"{API_HOST}/api/xbrl/companyfacts/CIK{int(cik):010d}.json"
 
@@ -131,7 +135,7 @@ class EdgarClient:
         if not cik.isdigit():
             raise EdgarError("bad cik")
         try:
-            data = self._get(f"{API_HOST}/submissions/CIK{int(cik):010d}.json").json()
+            data = self._get(submissions_url(cik)).json()
         except ValueError as e:
             raise EdgarError("response was not JSON") from e
         if not isinstance(data, dict) or not isinstance(data.get("filings", {}).get("recent"), dict):
