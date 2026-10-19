@@ -260,6 +260,6 @@ def test_the_help_page_uses_the_real_thresholds_and_names_the_jobs(seeded):
     body = e.get("/help").body
     b = e.cfg.scoring.bands
     assert f"<b>Hot</b> is {b.hot} or more" in body and f"<b>Warm</b> {b.warm} or more" in body and f"<b>Watch</b> {b.watch} or more" in body
-    for job in ("See what changed this week", "Browse every signal", "Prepare for one company", "Show the market to leadership", "Track a company over time"):
+    for job in ("See who is worth a call", "Browse every signal", "Prepare for one company", "Show the market to leadership", "Track a company over time"):
         assert job in body, job
     assert "does not write outreach" in body and "LinkedIn" in body

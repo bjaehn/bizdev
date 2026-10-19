@@ -51,7 +51,10 @@ def test_what_happened_lists_each_signal_with_its_source_and_marks_less_certain_
 def test_the_score_maths_is_collapsed_and_the_headline_says_the_band_and_score(seeded):
     e, a, bare = seeded
     body = e.get(f"/companies/{a}").body
-    assert '<details class="card"' in body and "How the score is built" in body.split("<details")[1].split("</summary>")[0]
+    assert '<details class="card"' in body and "More detail" in body.split("<details")[1].split("</summary>")[0]
+    detail = body.split("More detail")[1].split("Track this company")[0]
+    assert "The last 180 days" in detail and "Background" in detail and "How the score is built" in detail      # timeline, facts and score maths all sit behind one fold
+    assert "How the score is built" not in body.split("More detail")[0]
 
 
 def test_a_company_with_no_signals_says_it_was_not_scanned_or_found_nothing_and_does_not_list_missing_facts(seeded):

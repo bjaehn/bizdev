@@ -107,7 +107,7 @@ def test_the_profile_explains_the_score_and_its_parts_add_up(seeded):
     assert "4 different signal types agree" in ex.sentence and ex.score == opp.result.score
     body = e.get(f"/companies/{ids['Wideco <b>']}").body
     assert "How the score is built" in body and body.count("<rect") >= 4 and "Stacking bonus" in body and "4 different signal types agree" in body
-    assert "The last 180 days" in body and body.count("<circle") == 4 and "What happened" in body
+    assert "The last 180 days" in body and body.split("The last 180 days")[1].split("Background")[0].count("<circle") == 4 and "What happened" in body
     assert "Wideco &lt;b&gt;" in body and "Wideco <b>" not in body and "Manage (Admin)" in body and "noprint" in body
 
 

@@ -18,6 +18,7 @@
 {% if d.opp and d.opp.theme %}{% set t = d.opp.theme %}
 <p class="why"><b>{{ t.name }}</b>{% if t.service_line %} · points to <b>{{ t.service_line }}</b>{% endif %}</p>
 <p class="meta">{{ t.rule }}. {{ d.signs }}.</p>
+<div class="score-line"><div><span class="bignum">{{ d.opp.result.score }}</span>{% if d.opp.delta is not none and d.opp.delta != 0 %} <span class="{{ 'up' if d.opp.delta > 0 else 'down' }}">{{ '▲ +' if d.opp.delta > 0 else '▼ ' }}{{ d.opp.delta }} since last run</span>{% endif %}</div>{{ spark(d.history)|safe }}</div>
 {{ evidence_list(t.evidence, 6) }}
 {% if t.more %}<p class="meta">{{ t.more }} more signal{{ '' if t.more == 1 else 's' }} of the same kind below.</p>{% endif %}
 {% if d.opp.themes|length > 1 %}<h3>Also showing</h3>
@@ -39,28 +40,28 @@
 </ul>{% if d.signals|length > 12 %}<p class="meta">Showing the 12 most recent of {{ d.signals|length }}.</p>{% endif %}</div>
 {% else %}<div class="card empty">Nothing found yet. Quiet can mean nothing is happening, or that the sources do not cover this company.</div>{% endif %}
 
-<h2>The last 180 days</h2>
-{% if d.timeline %}<div class="card">{{ d.timeline|safe }}
-<p class="meta">{% for label, color in d.legend %}<span class="dot" style="--c:{{ color }}">●</span> {{ label }}{{ '  ' if not loop.last }} {% endfor %}· paler dots are Medium confidence{% if d.outside_window %} · {{ d.outside_window }} older signal{{ '' if d.outside_window == 1 else 's' }} not shown{% endif %}</p></div>
-{% else %}<div class="card empty">No signals in the last 180 days.</div>{% endif %}
-
-{% if d.facts or d.firms or d.postings or d.unverified %}<h2>Background</h2>
-<div class="card"><ul class="plain">
+<details class="card"><summary><b>More detail</b> <span class="meta">(timeline, background, how the score is built)</span></summary>
+<h3>The last 180 days</h3>
+{% if d.timeline %}{{ d.timeline|safe }}
+<p class="meta">{% for label, color in d.legend %}<span class="dot" style="--c:{{ color }}">●</span> {{ label }}{{ '  ' if not loop.last }} {% endfor %}· paler dots are Medium confidence{% if d.outside_window %} · {{ d.outside_window }} older signal{{ '' if d.outside_window == 1 else 's' }} not shown{% endif %}</p>
+{% else %}<p class="meta">No signals in the last 180 days.</p>{% endif %}
+{% if d.facts or d.firms or d.postings or d.unverified %}<h3>Background</h3>
+<ul class="plain">
 {% if d.facts %}<li>{{ d.facts }}</li>{% endif %}
 {% if d.unverified %}<li>Not confirmed: {{ d.fit.reasons|join('; ') }}. That does not stop it being scanned for signals.</li>{% endif %}
 {% if d.firms %}<li>Owned by {{ d.firms|join(', ') }}.</li>{% endif %}
 {% if d.postings %}<li><b>{{ d.postings }}</b> open job posting{{ '' if d.postings == 1 else 's' }} in the last {{ cfg_hiring_days }} days{% if d.leadership_postings %}, {{ d.leadership_postings }} at leadership level{% endif %}.</li>{% endif %}
-</ul></div>{% endif %}
-
-{% if d.explain and d.explain.parts %}<details class="card"><summary><b>How the score is built</b> <span class="meta">({{ d.opp.result.band|band_name }}, {{ d.explain.score }})</span></summary>
-<div>{{ d.explain.svg|safe }}
+</ul>{% endif %}
+{% if d.explain and d.explain.parts %}<h3>How the score is built <span class="meta">({{ d.opp.result.band|band_name }}, {{ d.explain.score }})</span></h3>
+{{ d.explain.svg|safe }}
 <table><tbody>
 {% for p in d.explain.parts %}<tr><td class="shrink"><span class="swatch sq" style="--c:{{ p.color }}"></span></td>
 <td><b>{{ p.label }}</b>{% if p.note %}<br><span class="meta">{{ p.note }}</span>{% endif %}</td><td class="num">+{{ p.points|round(1) }}</td></tr>{% endfor %}
 <tr><td></td><td><b>Score</b>{% if d.explain.capped %} <span class="meta">(total {{ d.explain.raw|round|int }}, capped)</span>{% endif %}</td><td class="num"><b>{{ d.explain.score }}</b></td></tr>
 </tbody></table>
 <p>{{ d.explain.sentence }}</p>
-<p class="meta">Each signal earns points by its type, how recent it is and how trustworthy its source is; further signals of the same type count half. Computed by plain code from the stored signals; no model is involved.{% if d.run_date %} Scored {{ d.run_date|fdate }}.{% endif %}</p></div></details>{% endif %}
+<p class="meta">Each signal earns points by its type, how recent it is and how trustworthy its source is; further signals of the same type count half. Computed by plain code from the stored signals; no model is involved.{% if d.run_date %} Scored {{ d.run_date|fdate }}.{% endif %}</p>{% endif %}
+</details>
 
 <h2 class="noprint">Track this company</h2>
 <div class="card noprint">
