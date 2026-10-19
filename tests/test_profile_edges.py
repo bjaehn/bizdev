@@ -12,7 +12,7 @@ def world(app_env):  # noqa: F811
     e = app_env
     today = date.today()
     ids = {
-        "held": add_account(e.conn, "Heldco", status="hold_review", chicagoland="unknown", revenue=None, ownership=None),
+        "held": add_account(e.conn, "Heldco", chicagoland="unknown", revenue=None, ownership=None),
         "excluded": add_account(e.conn, "Excludedco", status="excluded"),
         "quiet": add_account(e.conn, "Quietco", industry=None, revenue=None, ownership=None),
         "unscored": add_account(e.conn, "Unscoredco", industry="Energy"),
@@ -39,7 +39,7 @@ def test_a_company_with_nothing_to_explain_says_so_rather_than_drawing_an_empty_
         body = e.get(f"/companies/{ids[who]}").body
         assert "How the score is built" not in body and "<svg" not in body, who
         assert "not scored" in body and "No signals in the last 180 days" in body, who
-    assert "needs facts" in e.get(f"/companies/{ids['held']}").body
+    assert "unverified" in e.get(f"/companies/{ids['held']}").body
 
 
 def test_a_company_whose_signals_have_not_been_scored_yet_is_explained_from_its_signals(world):

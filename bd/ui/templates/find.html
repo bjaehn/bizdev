@@ -2,18 +2,23 @@
 {% block title %}Find a company{% endblock %}
 {% block head %}{% if job and running %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block hero %}<h1>Find a company</h1>
-<p class="sub">Preparing for a call? Type a name. If it is on the list you see where it stands; if not, a free check adds it and reads SEC filings and public job boards.</p>
+<p class="sub">Preparing for a call? Type a name. If it is on the list you see its signals; if not, a signal scan adds it and looks for leadership changes, hiring and press.</p>
 <form method="get" action="/find" class="search noprint">
 <input type="text" name="q" value="{{ q }}" placeholder="Company name" aria-label="Company name" autofocus maxlength="120">
 <button type="submit">Find</button>
 </form>{% endblock %}
 {% block body %}
+{% macro scan_form(name, label) %}
+<form method="post" action="/find/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ name }}">
+<label class="check"><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls, up to ${{ find_budget }}.</label>
+<button type="submit" {{ 'disabled' if busy else '' }}>{{ label }}</button></form>
+{% endmacro %}
 {% if job %}
 <div class="card">
-{% if running %}<h2>Checking {{ name }}</h2>
-<p>Reading SEC filings and public job boards, then scoring. This takes about a minute and spends no model money. This page refreshes by itself and opens the brief when the check is done.</p>
-{% else %}<h2>The check did not finish</h2>
-<p>{{ name }} was added to the list, but the free check stopped early{% if job.note %} ({{ job.note }}){% endif %}. Try again in a minute, or ask an admin to look at the run history.</p>
+{% if running %}<h2>Scanning {{ name }}</h2>
+<p>Reading job boards, then searching for leadership changes, hiring, press and company news, then scoring. This takes a few minutes and spends at most ${{ find_budget }}. This page refreshes by itself and opens the brief when the scan is done.</p>
+{% else %}<h2>The scan did not finish</h2>
+<p>{{ name }} was added to the list, but the scan stopped early{% if job.note %} ({{ job.note }}){% endif %}. Try again in a minute, or ask an admin to look at the run history.</p>
 {% if company %}<div><a class="btn" href="/companies/{{ company.id }}">Open what we have</a></div>{% endif %}{% endif %}
 </div>
 {% elif q %}
@@ -22,24 +27,22 @@
 <div class="entry-head"><a class="name" href="/companies/{{ h.account.id }}">{{ h.account.name }}</a>
 {% if h.score is not none %}<span class="badge {{ 'hot' if h.band == 'Hot' else ('warm' if h.band == 'Warm' else '') }}">{{ h.band|band_name }} {{ h.score }}</span>{% else %}<span class="badge">not scored yet</span>{% endif %}
 {% if h.state.client %}<span class="badge good">client</span>{% endif %}
-{% if h.account.status == 'excluded' %}<span class="badge bad">excluded</span>{% elif h.account.status != 'active' %}<span class="badge warm">waiting for facts</span>{% endif %}</div>
-<div class="meta">{{ [h.account.industry, h.account.hq_city, h.account.ownership, (h.account.revenue|money ~ ' revenue') if h.account.revenue else none]|select|join(' · ') or 'no company details recorded yet' }}</div>
-{% if h.reasons %}<p class="meta">Not scored because: {{ h.reasons|join('; ') }}.{% if not h.can_check and h.account.status != 'excluded' %} The SEC does not list this company, so the free check cannot fill it in; an admin can research it.{% endif %}</p>{% endif %}
+{% if h.account.status == 'excluded' %}<span class="badge bad">out of scope</span>{% elif h.reasons %}<span class="badge warm">unverified</span>{% endif %}</div>
+<div class="meta">{{ [h.account.industry, h.account.hq_city]|select|join(' · ') }}</div>
+{% if h.account.status == 'excluded' %}<p class="meta">Not scanned: {{ h.reasons|join('; ') }}.</p>{% endif %}
 {% if h.latest_signal %}<p><b>{{ labels[h.latest_signal['type']] }}</b> · {{ h.latest_signal['event_date']|fdate }}{% if h.signals_90d > 1 %} · {{ h.signals_90d }} signals in 90 days{% endif %}<br><span class="meta">{{ h.latest_signal['summary'] }}</span></p>
-{% elif h.account.status == 'active' %}<p class="meta">No signals found yet.</p>{% endif %}
-<div class="filters"><a class="btn" href="/companies/{{ h.account.id }}">Open brief →</a>
-{% if can_run and h.can_check and (h.account.status != 'active' or h.score is none) %}<form method="post" action="/find/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ h.account.name }}">
-<button class="ghost" type="submit" {{ 'disabled' if busy else '' }}>Check again (free)</button></form>{% endif %}</div>
+{% elif h.account.status != 'excluded' %}<p class="meta">{{ 'Scanned ' ~ (h.account.last_scanned|fdate) ~ ': no signals found.' if h.account.last_scanned else 'Not scanned yet.' }}</p>{% endif %}
+<div class="stack"><div><a class="btn" href="/companies/{{ h.account.id }}">Open brief →</a></div>
+{% if can_run and h.can_check and (not h.account.last_scanned or h.score is none) %}{{ scan_form(h.account.name, 'Scan for signals') }}{% endif %}</div>
 </div></div>
 {% endfor %}
 {% if not exact %}
 <div class="card">
 <h2>{% if hits %}Not the company you meant?{% else %}Not on the list: {{ q }}{% endif %}</h2>
 {% if can_run %}
-<p>A free check adds &ldquo;{{ q }}&rdquo; to the list. For a public company it reads size, ownership and headquarters from SEC filings, then looks for signals in job boards and SEC event filings. It takes about a minute and spends no model money. A company the SEC does not cover is added as waiting for facts; an admin can research it.</p>
+<p>A signal scan adds &ldquo;{{ q }}&rdquo; to the list, reads its job board if it has one (free), then searches for leadership changes, hiring, press and company news. It takes a few minutes and spends at most ${{ find_budget }}.</p>
 {% if busy %}<div class="flash err">Another job is running. Wait for it to finish, then try again.</div>{% endif %}
-<form method="post" action="/find/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ q }}">
-<button type="submit" {{ 'disabled' if busy else '' }}>Add and check (free)</button></form>
+{{ scan_form(q, 'Add and scan for signals') }}
 {% else %}<p class="meta">This copy cannot look up new companies. Add it from the hosted app.</p>{% endif %}
 </div>
 {% endif %}

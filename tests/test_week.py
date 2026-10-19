@@ -143,13 +143,46 @@ def test_this_week_opens_with_what_the_tool_is_and_a_way_to_find_a_company(seede
     assert "<b>different kinds</b>" in body and "Preparing for a call?" in body and 'action="/find"' in body
 
 
-def test_this_week_lists_companies_in_plain_words_with_why_now_and_a_brief_link(seeded):
+def test_this_week_lists_opportunities_named_by_their_theme_with_the_evidence_and_a_brief_link(seeded):
     e, ids = seeded
     body = e.get("/week").body
-    assert "Companies to look at" in body and "Hotco &lt;b&gt;" in body and "Hotco <b>" not in body
-    assert "Why now:" in body and "3 kinds of signs agree" in body and f'href="/companies/{ids["Hotco <b>"]}"' in body and "Open brief" in body
+    top = build_week(e.conn, e.cfg, date.today()).targets[0]
+    assert top.account.name == "Hotco <b>" and top.theme and top.theme.compound
+    opps = body.split("<h2>Opportunities</h2>")[1].split("<h2>Newest signals</h2>")[0]
+    assert "Hotco &lt;b&gt;" in opps and "Hotco <b>" not in body
+    assert top.theme.name in opps and "3 kinds of signs agree" in opps and "Why now:" not in body
+    assert top.theme.evidence[0].summary in opps and 'href="https://www.sec.gov/Archives/' in opps and "www.sec.gov" in opps       # the evidence and its source
+    assert f'href="/companies/{ids["Hotco <b>"]}"' in opps and "Open brief" in opps
     assert "Existing clients with news" in body and "Clientco" in body.split("Existing clients with news")[1]
-    assert "Clientco" not in body.split("Companies to look at")[1].split("Existing clients with news")[0]
+    assert "Clientco" not in opps
+
+
+def test_this_week_shows_the_signal_feed_by_kind_with_counts_and_links_to_the_full_page(seeded):
+    e, ids = seeded
+    body = e.get("/week").body
+    feed = body.split("<h2>Newest signals</h2>")[1].split("<h2>What changed</h2>")[0]
+    for label in ("Leadership changes", "Hiring", "Press and media", "Company events and technology"):
+        assert label in feed, label
+    assert "Trackco" in feed.split("Leadership changes")[1].split("Hiring")[0]
+    assert 'href="/signals"' in body and 'href="/signals?group=leadership"' in body
+    tiles = body.split('<div class="tiles">')[1].split("</div>")[0]
+    assert "leadership changes" in tiles and "hiring signals" in tiles and "Hot or Warm" in tiles
+
+
+def test_the_signals_page_filters_by_kind_and_window(seeded):
+    e, ids = seeded
+    all_ = e.get("/signals").body
+    assert "<h1>Signals</h1>" in all_ and "Hotco &lt;b&gt;" in all_ and "Trackco" in all_ and 'href="/signals?group=hiring&amp;days=30"' in all_
+    hiring = e.get("/signals?group=hiring").body
+    assert "Hiring cluster" in hiring and "Leadership change" not in hiring.split("<ul")[1] and 'class="on"' in hiring
+    assert "Nothing found in the last 7 days" not in e.get("/signals?days=7").body
+    junk = e.get("/signals?group=zzz&days=999").body                          # unknown values fall back to the defaults
+    assert junk.count("Leadership change") >= 1 and 'days=30" class="on"' in junk and 'class="on">All' in junk
+    assert 'href="/signals"' in e.get("/week").body and ">Signals<" in e.get("/week").body
+
+
+def test_the_signals_page_says_so_when_nothing_was_found(app_env):  # noqa: F811
+    assert "Nothing found in the last 30 days" in app_env.get("/signals").body
 
 
 def test_this_week_has_tracking_and_market_sections_and_links_to_the_deeper_views(seeded):
@@ -171,14 +204,14 @@ def test_this_week_says_how_to_start_tracking_when_nothing_is_tracked(app_env): 
 
 def test_the_empty_state_tells_an_analysis_reader_what_to_do(app_env):  # noqa: F811
     body = app_env.get("/week").body
-    assert "Nothing has been scored yet" in body and "Admin area" in body
+    assert "Nothing has been scored yet" in body and "Admin area" in body and "leadership changes, hiring and press" in body
 
 
-def test_the_help_page_uses_the_real_thresholds_and_names_the_four_jobs(seeded):
+def test_the_help_page_uses_the_real_thresholds_and_names_the_jobs(seeded):
     e, ids = seeded
     body = e.get("/help").body
     b = e.cfg.scoring.bands
     assert f"<b>Hot</b> is {b.hot} or more" in body and f"<b>Warm</b> {b.warm} or more" in body and f"<b>Watch</b> {b.watch} or more" in body
-    for job in ("See what to look at this week", "Prepare for one company", "Show the market to leadership", "Track a company over time"):
+    for job in ("See what changed this week", "Browse every signal", "Prepare for one company", "Show the market to leadership", "Track a company over time"):
         assert job in body, job
     assert "does not write outreach" in body and "LinkedIn" in body

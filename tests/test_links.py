@@ -28,14 +28,14 @@ def seeded(app_env):  # noqa: F811
             add_signal(e.conn, e.cfg, a, t, 4, as_of=today)
         ids.append(a)
     set_client(e.conn, ids[0], True)
-    add_account(e.conn, "Waitco", status="hold_review", chicagoland="unknown", revenue=None, ownership=None)
+    add_account(e.conn, "Waitco", chicagoland="unknown", revenue=None, ownership=None)
     score_accounts(e.conn, e.cfg, today)
     return e, ids
 
 
 def test_every_link_on_the_main_pages_resolves(seeded):
     e, ids = seeded
-    start = ["/", "/week", "/help", "/find?q=acme", "/find?q=Zeta+Holdings", "/opportunities", "/opportunities?view=list", "/opportunities?view=chart", "/reports", "/admin", "/lookup?q=acme", "/clients", "/watchlist", "/market", "/hiring",
+    start = ["/", "/week", "/signals", "/signals?group=hiring&days=7", "/help", "/find?q=acme", "/find?q=Zeta+Holdings", "/opportunities", "/opportunities?view=list", "/opportunities?view=chart", "/reports", "/admin", "/lookup?q=acme", "/clients", "/watchlist", "/market", "/hiring",
              "/firms", "/monday", "/accounts", f"/accounts/{ids[0]}", f"/companies/{ids[0]}", "/health", "/settings"]
     seen, bad = set(), []
     for path in start:

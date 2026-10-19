@@ -27,13 +27,16 @@ def section_order(body, *names):
     return pos == sorted(pos)
 
 
-def test_the_brief_leads_with_the_short_version_then_what_happened_and_keeps_the_score_maths_below(seeded):
+def test_the_brief_leads_with_what_the_signals_add_up_to_then_what_happened_and_keeps_facts_and_score_maths_below(seeded):
     e, a, bare = seeded
     body = e.get(f"/companies/{a}").body
-    assert section_order(body, "The short version", "What happened", "The last 180 days", "How the score is built", "Track this company")
-    short = body.split("The short version")[1].split("What happened")[0]
-    assert "Why now:" in short and "3 kinds of signs agree: leadership, hiring, company events" in short and "Research only" in short
-    assert "Healthcare · Chicago" in body and "$3.4B revenue" in body and "9,000 employees" in body
+    assert section_order(body, "What this adds up to", "What happened", "The last 180 days", "Background", "How the score is built", "Track this company")
+    short = body.split("What this adds up to")[1].split("What happened")[0]
+    assert "3 kinds of signs agree: leadership, hiring, company events" in short and "Research only" in short and "Why now" not in body
+    assert "Shown when a" in short and "Names a new chief operating officer." in short and 'href="https://www.sec.gov/Archives/briefco/coo.htm"' in short
+    assert "Also showing" in short                                                       # more than one theme matches this company
+    assert "Healthcare · Chicago" in body.split("Background")[1] and "$3.4B revenue" in body and "9,000 employees" in body
+    assert "Healthcare · Chicago" not in body.split("Background")[0]                      # company facts are background, not the lead
     assert "Briefco &lt;i&gt;" in body and "Briefco <i>" not in body
 
 
@@ -51,11 +54,15 @@ def test_the_score_maths_is_collapsed_and_the_headline_says_the_band_and_score(s
     assert '<details class="card"' in body and "How the score is built" in body.split("<details")[1].split("</summary>")[0]
 
 
-def test_a_company_with_no_facts_or_signals_says_what_is_missing_and_what_it_cannot_say(seeded):
+def test_a_company_with_no_signals_says_it_was_not_scanned_or_found_nothing_and_does_not_list_missing_facts(seeded):
     e, a, bare = seeded
     body = e.get(f"/companies/{bare}").body
-    assert "Not on file: industry, headquarters city, ownership, size (revenue or employees)." in body
-    assert "Nothing found yet" in body and "has not been scored yet" in body
+    assert "Not on file" not in body and "Nothing found yet" in body
+    assert "Not scanned yet. The next update looks for leadership changes, hiring and press" in body and "Scan for signals now" in body
+    e.conn.execute("UPDATE accounts SET last_scanned = '2026-10-12' WHERE id = ?", (bare,))
+    e.conn.commit()
+    body = e.get(f"/companies/{bare}").body
+    assert "Scanned Oct 12, 2026: no leadership, hiring, press or company-event signals found." in body
 
 
 def test_tracking_a_company_from_its_brief_returns_to_the_brief_and_shows_it_on_this_week(seeded):
@@ -101,8 +108,8 @@ def test_the_plain_text_version_has_the_same_story_with_sources_and_no_markup(se
     r = e.get(f"/companies/{a}/text")
     assert r.code == 200 and r.h["Content-Type"].startswith("text/plain")
     t = r.body
-    assert t.startswith("Briefco <i>\nHealthcare · Chicago") and "WHY NOW" in t and "WHAT HAPPENED" in t
-    assert "3 kinds of signs agree: leadership, hiring, company events" in t
+    assert t.startswith("Briefco <i>\nHealthcare · Chicago") and "WHAT IT ADDS UP TO" in t and "WHAT HAPPENED" in t and "WHY NOW" not in t
+    assert "3 kinds of signs agree: leadership, hiring, company events" in t and "Shown when a" in t
     assert "Names a new chief operating officer. (Dana Fox, COO) Source: https://www.sec.gov/Archives/briefco/coo.htm" in t
     assert "Research only" in t and "<b>" not in t and "<div" not in t
 
@@ -114,7 +121,7 @@ def test_the_plain_text_version_never_prints_a_link_that_is_not_a_web_page_and_s
     t = e.get(f"/companies/{a}/text").body
     assert "javascript:" not in t and "4 related operations postings." in t
     b = e.get(f"/companies/{bare}/text").body
-    assert "Not scored yet." in b and "No signals found." in b and "NOT ON FILE:" in b
+    assert "Not scanned yet." in b and "No signals found." in b and "NOT ON FILE" not in b
 
 
 def test_the_plain_text_version_of_an_unknown_company_is_a_404(seeded):

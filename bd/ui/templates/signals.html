@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Signals{% endblock %}
+{% from "_ui.html" import feed_row %}
+{% block hero %}<h1>Signals</h1>
+<p class="sub">Every leadership change, hiring signal, press item and company event found at Chicago-area companies, newest first. Each links to the page it came from.</p>{% endblock %}
+{% block body %}
+{% macro link(g, d) %}/signals?{% if g %}group={{ g }}&amp;{% endif %}days={{ d }}{% endmacro %}
+<div class="tabs"><a href="{{ link('', days) }}" class="{{ 'on' if not group else '' }}">All ({{ total }})</a>
+{% for key, label in groups %}<a href="{{ link(key, days) }}" class="{{ 'on' if group == key else '' }}">{{ label }} ({{ counts[key] }})</a>{% endfor %}</div>
+<div class="tabs"><span class="meta">Found in the last</span>{% for d in (7, 30, 90) %}<a href="{{ link(group, d) }}" class="{{ 'on' if days == d else '' }}">{{ d }} days</a>{% endfor %}</div>
+{% if items %}
+<div class="card"><ul class="plain">{% for i in items %}{{ feed_row(i) }}{% endfor %}</ul>
+{% if shown_total > items|length %}<p class="meta">Showing the newest {{ items|length }} of {{ shown_total }}.</p>{% endif %}</div>
+{% else %}<div class="card empty">Nothing found in the last {{ days }} days{% if group %} in this group{% endif %}. Quiet can mean nothing is happening, or that the sources do not cover these companies.</div>{% endif %}
+<p class="meta">Low-confidence reports (rumours) are stored but never shown. Several reports of one event show once, at the most trustworthy source.</p>
+{% endblock %}

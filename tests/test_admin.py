@@ -24,15 +24,15 @@ def test_after_login_the_app_opens_on_this_week(app_env):  # noqa: F811
     assert call(app_env.app, "GET", "/", cookie=ck).code == 200                                  # "/" is still the Update page (Admin)
 
 
-ANALYSIS_PAGES = ["/week", "/help", "/opportunities", "/reports", "/market", "/hiring", "/firms", "/rfps", "/ask", "/monday"]
+ANALYSIS_PAGES = ["/week", "/signals", "/help", "/opportunities", "/reports", "/market", "/hiring", "/firms", "/rfps", "/ask", "/monday"]
 
 
-def test_the_analysis_side_has_three_links_and_no_admin_machinery(app_env):  # noqa: F811
+def test_the_analysis_side_has_four_links_and_no_admin_machinery(app_env):  # noqa: F811
     e = app_env
     for path in ANALYSIS_PAGES:
         body = e.get(path).body
         assert e.get(path).code == 200, path
-        assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/week", "/opportunities", "/reports"], path
+        assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/week", "/signals", "/opportunities", "/reports"], path
         assert 'class="adminlink" href="/admin"' in body and 'class="adminnav"' not in body and "<header class=\"admin\">" not in body, path
         assert "Update my list" not in nav_of(body) and "Look up" not in nav_of(body)
     assert 'class="top on" href="/week"' in nav_of(e.get("/week").body) and 'class="top on" href="/week"' in nav_of(e.get("/help").body)

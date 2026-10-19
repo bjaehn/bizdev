@@ -29,10 +29,12 @@ def test_update_job_is_validated_and_runs_the_steps_in_order():
     args = validate("update", UPD)
     assert args == ["update", "--research", "25", "--segments", "2", "--scan", "25", "--budget", "8", "--rfps", "0"]
     steps = sequence_for("update", args, "2026-10-16")
-    assert [s[0] for s in steps] == ["check", "sec-fill", "enrich", "apply-proposals", "discover", "pe-sync", "scan", "scan", "score"]
+    # signals first: free sources, then the paid scan; company facts (research) and new companies only after, with what is left of the limit
+    assert [s[0] for s in steps] == ["check", "sec-fill", "pe-sync", "scan", "scan", "discover", "enrich", "apply-proposals", "score"]
     assert steps[1] == ["sec-fill", "--as-of", "2026-10-16"]
-    assert steps[2] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
-    assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[-2]
+    assert steps[6] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
+    assert "--scanners" in steps[3] and "--scanners" not in steps[4] and steps[4][:3] == ["scan", "--limit", "25"]
+    assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[4]
     skip = sequence_for("update", validate("update", {**UPD, "research": "0", "segments": "0"}), "2026-10-16")
     assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "scan", "scan", "score"]
     for bad in ({**UPD, "budget": "0"}, {**UPD, "budget": "101"}, {**UPD, "scan": "0"}, {**UPD, "research": "x"}, {}):
@@ -80,15 +82,15 @@ def calls(tmp):
 
 def test_one_spending_limit_covers_the_whole_update(fake, monkeypatch):
     runner_, tmp = fake
-    monkeypatch.setenv("FAKE_COSTS", json.dumps({"enrich": 3.0, "discover": 2.5, "scan": 9.0}))
+    monkeypatch.setenv("FAKE_COSTS", json.dumps({"scan": 3.0, "discover": 2.5, "enrich": 9.0}))
     jid = runner_.submit("update", {**UPD, "budget": "5"}, confirmed=True)
     runner_.wait()
     job = runner_.get(jid)
     by = {c["step"]: c for c in calls(tmp) if "--scanners" not in c["args"]}
-    assert float(by["enrich"]["budget"]) == 5.0 and float(by["discover"]["budget"]) == 2.0     # what was left after enrich
-    assert "scan" not in by                                                                      # 5.5 spent: limit used up, scan skipped
-    free = [c for c in calls(tmp) if c["step"] == "scan"]
-    assert len(free) == 1 and "--scanners" in free[0]["args"] and free[0]["budget"] is None      # the free sources still run, with no limit applied
+    assert float(by["scan"]["budget"]) == 5.0 and float(by["discover"]["budget"]) == 2.0       # the signal scan gets the whole limit; discovery what was left
+    assert "enrich" not in by                                                                    # 5.5 spent: limit used up, fact research skipped
+    free = [c for c in calls(tmp) if c["step"] == "scan" and "--scanners" in c["args"]]
+    assert len(free) == 1 and free[0]["budget"] is None                                          # the free sources run first, with no limit applied
     assert "apply-proposals" in by and "pe-sync" in by and "score" in by                         # the free steps still run
     assert job.status == "ok" and "Spent about $5.50 of the $5 limit" in job.note and "skipped" in job.note
     assert "spending limit for this update is used up" in runner_.log_tail(jid)
@@ -300,8 +302,8 @@ def test_a_failed_update_shows_why_on_home(app_env):
 def test_navigation_is_short_and_local_mode_is_unchanged(app_env, cfg, tmp_path):
     body = app_env.get("/opportunities").body
     nav = body.split("<nav>")[1].split("</nav>")[0]
-    assert nav.count('<a class="top') == 3 and "menu" not in nav                    # three plain links on the analysis side
-    for label in ("This week", "Companies", "Reports"):
+    assert nav.count('<a class="top') == 4 and "menu" not in nav                    # four plain links on the analysis side
+    for label in ("This week", "Signals", "Companies", "Reports"):
         assert label in nav
     assert 'class="adminlink" href="/admin"' in body and "Advanced tools" in app_env.get("/admin").body
     from bd.ui.app import App
@@ -368,7 +370,7 @@ def test_the_rfp_search_can_be_switched_off_for_an_update(app_env):
     assert validate("update", UPD)[-2:] == ["--rfps", "0"]                      # off unless asked for: it has found nothing so far
     assert on[-2:] == ["--rfps", "1"] and off[-2:] == ["--rfps", "0"] and "rfps" in [s[0] for s in sequence_for("update", on, "2026-10-16")]
     assert "rfps" not in [s[0] for s in sequence_for("update", off, "2026-10-16")]
-    assert [s[0] for s in sequence_for("update", off, "2026-10-16")][-2:] == ["scan", "score"]
+    assert [s[0] for s in sequence_for("update", off, "2026-10-16")][-2:] == ["apply-proposals", "score"]
     with pytest.raises(JobError):
         validate("update", {**UPD, "rfps": "2"})
     e = app_env

@@ -12,7 +12,7 @@
 {% elif error %}<div class="errors"><b>{{ error }}</b></div>
 {% else %}
 {% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} compan{{ 'y' if stale|length == 1 else 'ies' }} ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). An admin needs to run Score again.</div>{% endif %}
-<p class="meta"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> scanned · <b>{{ cov.with_signal_90d }}</b> with news in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
+<p class="meta"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> scanned · <b>{{ cov.with_signal_90d }}</b> with signals in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
 {% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err">These scores are {{ cov.score_age_days }} days old.</div>{% endif %}
 
 <form method="get" action="/opportunities" class="filters">
@@ -51,6 +51,7 @@
 <tbody>
 {% for r in matrix.rows %}{% set o = r.opp %}<tr>
 <td class="co"><span class="rank">{{ o.rank }}</span><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>{% if o.client %} <span class="badge good">client</span>{% endif %}
+{% if o.theme %}<div><b>{{ o.theme.name }}</b></div>{% endif %}
 <div class="meta">{{ [o.account.industry, o.account.hq_city]|select|join(' · ') or 'no company details' }}</div></td>
 <td class="sc"><div class="meter {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}"><i style="--w:{{ r.score_pct }}%"></i></div>
 <b>{{ o.result.score }}</b> <span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }}</span>{% if o.delta is not none and o.delta > 0 %} <span class="badge good">+{{ o.delta }}</span>{% endif %}</td>

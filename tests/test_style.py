@@ -1,3 +1,4 @@
+import re
 from datetime import date, timedelta
 
 import pytest
@@ -8,7 +9,7 @@ from tests.conftest import add_account, add_signal
 from tests.test_admin import ADMIN_GROUPS, call, PW  # noqa: F401
 from tests.test_update import app_env  # noqa: F401  (fixture)
 
-ANALYSIS = ["/week", "/help", "/opportunities", "/opportunities?view=chart", "/reports", "/market", "/hiring", "/firms", "/rfps", "/ask", "/monday"]
+ANALYSIS = ["/week", "/signals", "/help", "/opportunities", "/opportunities?view=chart", "/reports", "/market", "/hiring", "/firms", "/rfps", "/ask", "/monday"]
 
 
 @pytest.fixture
@@ -39,7 +40,8 @@ def test_every_analysis_page_has_its_title_in_the_header_band(seeded, path):
 def test_the_company_brief_puts_name_facts_and_badges_in_the_band(seeded):
     e, a = seeded
     b = band(e.get(f"/companies/{a}").body)
-    assert "<h1>Styleco &lt;i&gt;</h1>" in b and "Healthcare · Chicago" in b and "Hot · 100" in b and "Plain-text version" in b
+    assert "<h1>Styleco &lt;i&gt;</h1>" in b and "3 kinds of signs agree" in b and "Hot · 100" in b and "Plain-text version" in b
+    assert "Healthcare · Chicago" not in b                                                      # company facts are background, not the headline
     assert "Styleco <i>" not in b
 
 
@@ -55,22 +57,24 @@ def test_the_login_page_is_a_centred_card_without_a_band(app_env):  # noqa: F811
     assert 'class="card card--narrow"' in body and "<h1" not in band(body) and "Sign in" in body
 
 
-def test_this_week_shows_four_numbers_that_match_the_page(seeded):
+def test_this_week_shows_four_signal_numbers_that_match_the_page(seeded):
     e, a = seeded
     body = e.get("/week").body
-    assert "<b>1</b><span>Hot or Warm now</span>" in body and "<b>3</b><span>new signals, last 7 days</span>" in body
+    days = 30
+    assert f"<b>1</b><span>leadership changes, last {days} days</span>" in body and f"<b>1</b><span>hiring signals, last {days} days</span>" in body
+    assert "<b>1</b><span>Hot or Warm opportunities</span>" in body                              # the three signals made one company Hot
     assert 'class="tile hot"' in body and 'class="tile good"' in body and 'class="tile accent"' in body
-    assert "<b>1</b><span>company you track</span>" in body                                      # the one watched company
+    assert len(re.findall(r'class="tile[ "]', body)) == 4
 
 
-def test_with_no_earlier_run_the_second_tile_says_so_instead_of_a_number(seeded):
+def test_with_no_earlier_run_what_changed_says_so_instead_of_a_number(seeded):
     e, a = seeded
     body = e.get("/week").body
-    assert "<b>–</b><span>no earlier run to compare</span>" in body
+    assert "first scoring run, so there is nothing to compare it with yet" in body
     prev = (date.today() - timedelta(days=7)).isoformat()
     e.conn.execute("INSERT INTO scores(account_id, run_date, score, band, components_json, rationale) VALUES (?,?,?,?,'{}','x')", (a, prev, 10, "Stored"))
     e.conn.commit()
-    assert "<b>1</b><span>newly Hot or Warm</span>" in e.get("/week").body
+    assert "1 company became Hot or Warm" in e.get("/week").body
 
 
 def test_the_stylesheet_has_light_dark_phone_and_print_rules_and_no_script(seeded):

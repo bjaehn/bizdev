@@ -282,7 +282,7 @@ def test_sec_fill_is_a_free_job_and_the_first_step_after_the_check():
 
 def test_home_and_operate_describe_the_free_step(app_env):
     e = app_env
-    assert "straight from the SEC's own data (free)" in e.get("/").body
+    assert "Reads the SEC's own data for public companies (free)" in e.get("/").body
     body = e.get("/operate").body
     assert 'value="sec_fill"' in body and "Fill from SEC (free)" in body
     r = e.post("/operate/run", {"kind": "sec_fill"})                  # free: no confirmation tick

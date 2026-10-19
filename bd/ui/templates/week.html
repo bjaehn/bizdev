@@ -1,28 +1,41 @@
 {% extends "base.html" %}
 {% block title %}This week{% endblock %}
-{% from "_ui.html" import company_entry, band_badge %}
+{% from "_ui.html" import company_entry, band_badge, feed_groups %}
 {% block herocls %}tall{% endblock %}
 {% block hero %}<h1>This week</h1>
-<p class="sub">Chicago-area companies showing signs they may need consulting help, ranked by how many <b>different kinds</b> of signs agree. <a href="/help">How this works</a></p>
+<p class="sub">Leadership changes, hiring, press and company news at Chicago-area companies, and what they add up to. Opportunities are ranked by how many <b>different kinds</b> of signals agree. <a href="/help">How this works</a></p>
 <form method="get" action="/find" class="search noprint">
 <label for="q">Preparing for a call?</label>
 <input id="q" type="text" name="q" placeholder="Find a company by name">
 <button type="submit">Find</button>
 </form>{% endblock %}
 {% block body %}
-{% if not w.problem %}{% set cov = w.coverage %}
+{% set feed = w.feed %}
+{% set cov = w.coverage %}
 <div class="tiles">
-<a class="tile hot" href="/opportunities?band=Hot"><b>{{ cov.hot + cov.warm }}</b><span>Hot or Warm now</span></a>
-<div class="tile accent"><b>{{ w.new_hot_warm if w.new_hot_warm is not none else '–' }}</b><span>{{ 'newly Hot or Warm' if w.new_hot_warm is not none else 'no earlier run to compare' }}</span></div>
-<div class="tile good"><b>{{ w.changes.new_signal_total }}</b><span>new signals, last 7 days</span></div>
-<div class="tile"><b>{{ w.tracked|length }}</b><span>compan{{ 'y' if w.tracked|length == 1 else 'ies' }} you track</span></div>
+<a class="tile good" href="/signals?group=leadership"><b>{{ feed.group('leadership').total }}</b><span>leadership changes, last {{ feed.days }} days</span></a>
+<a class="tile accent" href="/signals?group=hiring"><b>{{ feed.group('hiring').total }}</b><span>hiring signals, last {{ feed.days }} days</span></a>
+<a class="tile" href="/signals?group=press"><b>{{ feed.group('press').total }}</b><span>press and media items</span></a>
+{% if w.problem %}<a class="tile" href="/signals"><b>{{ feed.companies }}</b><span>companies with signals</span></a>
+{% else %}<a class="tile hot" href="/opportunities?band=Hot"><b>{{ cov.hot + cov.warm }}</b><span>Hot or Warm opportunities</span></a>{% endif %}
 </div>
-{% endif %}
 {% if w.problem %}
 <div class="card empty">{{ w.problem }}</div>
+{% if feed.total %}<h2>Newest signals</h2>
+{{ feed_groups(feed) }}{% endif %}
 {% else %}
-{% set cov = w.coverage %}
 {% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err">These scores are {{ cov.score_age_days }} days old. An admin needs to run an update from the Admin area.</div>{% endif %}
+
+<h2>Opportunities</h2>
+{% if w.targets %}
+<p class="meta">{% if w.padded %}Few companies are Hot or Warm right now, so the strongest Watch companies are included.{% else %}{{ w.hot_warm }} new-business compan{{ 'y is' if w.hot_warm == 1 else 'ies are' }} Hot or Warm.{% endif %} Each is named by what its signals add up to, with the signals behind it. Open a brief for everything found and where.</p>
+{% for o in w.targets %}{{ company_entry(o, loop.index) }}{% endfor %}
+{% if w.more %}<p class="meta">{{ w.more }} more compan{{ 'y is' if w.more == 1 else 'ies are' }} at Watch or better. <a href="/opportunities">Compare all companies</a>.</p>{% endif %}
+{% else %}<div class="card empty">No new-business company is at Watch or better in this run. The coverage line below says how many companies were scanned.</div>{% endif %}
+
+<h2>Newest signals</h2>
+<p class="meta">Everything found in the last {{ feed.days }} days across {{ feed.companies }} compan{{ 'y' if feed.companies == 1 else 'ies' }}, newest first. Each links to the page it came from. <a href="/signals">See the full feed</a>.</p>
+{{ feed_groups(feed, skip=('background',)) }}
 
 <h2>What changed</h2>
 <div class="card">
@@ -30,19 +43,12 @@
 {% set ch = w.changes %}
 {% if ch.new_leads %}<p><b>Newly Hot or Warm:</b> {% for o in ch.new_leads %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> ({{ o.result.band|band_name }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
 {% if ch.risers %}<p><b>Moving up:</b> {% for o in ch.risers %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> +{{ o.delta }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
-<p class="meta">Scored {{ w.run_date|fdate }} · {{ cov.ready }} compan{{ 'y' if cov.ready == 1 else 'ies' }} checked · {{ cov.with_signal_90d }} with news in the last 90 days{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
+<p class="meta">Scored {{ w.run_date|fdate }} · {{ cov.ready }} compan{{ 'y' if cov.ready == 1 else 'ies' }} on the scan list · {{ cov.with_signal_90d }} with signals in the last 90 days{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
 </div>
-
-<h2>Companies to look at</h2>
-{% if w.targets %}
-<p class="meta">{% if w.padded %}Few companies are Hot or Warm right now, so the strongest Watch companies are included.{% else %}{{ w.hot_warm }} new-business compan{{ 'y is' if w.hot_warm == 1 else 'ies are' }} Hot or Warm. The first one has the most reasons to talk now.{% endif %} Open a brief to see exactly what was found and where.</p>
-{% for o in w.targets %}{{ company_entry(o, loop.index) }}{% endfor %}
-{% if w.more %}<p class="meta">{{ w.more }} more compan{{ 'y is' if w.more == 1 else 'ies are' }} at Watch or better. <a href="/opportunities">Compare all companies</a>.</p>{% endif %}
-{% else %}<div class="card empty">No new-business company is at Watch or better in this run. The coverage line above says how many companies were checked.</div>{% endif %}
 
 {% if w.clients %}
 <h2>Existing clients with news</h2>
-<p class="meta">SEI clients that also show signs this week. They are scored like any company but kept apart from new business.</p>
+<p class="meta">SEI clients that also show signals this week. They are scored like any company but kept apart from new business.</p>
 {% for o in w.clients %}{{ company_entry(o, loop.index, false) }}{% endfor %}
 {% endif %}
 
@@ -58,10 +64,10 @@
 
 <h2>The market this week</h2>
 {% if w.pulse.lines %}<ul class="plain">{% for line in w.pulse.lines %}<li>{{ line }}</li>{% endfor %}</ul>
-{% if w.pulse.families %}<p class="meta">Busiest kinds of signs this month: {% for label, n in w.pulse.families %}{{ label }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+{% if w.pulse.families %}<p class="meta">Busiest kinds of signals this month: {% for label, n in w.pulse.families %}{{ label }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
 {% else %}<p class="meta">No industry has enough fresh signals to report yet.</p>{% endif %}
 
 <h2>Look deeper</h2>
-<div class="pill-row noprint"><a class="pill" href="/opportunities">Compare all companies (signal matrix)</a><a class="pill" href="/opportunities?view=chart">Priority chart</a><a class="pill" href="/market">Market view</a><a class="pill" href="/help">How this works</a></div>
+<div class="pill-row noprint"><a class="pill" href="/signals">All signals</a><a class="pill" href="/opportunities">Compare all companies (signal matrix)</a><a class="pill" href="/opportunities?view=chart">Priority chart</a><a class="pill" href="/market">Market view</a><a class="pill" href="/help">How this works</a></div>
 {% endif %}
 {% endblock %}
