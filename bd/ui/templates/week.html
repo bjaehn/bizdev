@@ -4,8 +4,7 @@
 {% block herocls %}tall{% endblock %}
 {% block hero %}<h1>This week</h1>
 <p class="sub">Chicago-area companies showing signs they may need consulting help, ranked by how many <b>different kinds</b> of signs agree. <a href="/help">How this works</a></p>
-<form method="get" action="/opportunities" class="search noprint">
-<input type="hidden" name="tracked" value="1">
+<form method="get" action="/find" class="search noprint">
 <label for="q">Preparing for a call?</label>
 <input id="q" type="text" name="q" placeholder="Find a company by name">
 <button type="submit">Find</button>
@@ -29,7 +28,7 @@
 <div class="card">
 <p>{{ w.changed_line }}</p>
 {% set ch = w.changes %}
-{% if ch.new_leads %}<p><b>Newly Hot or Warm:</b> {% for o in ch.new_leads %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> ({{ o.result.band }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+{% if ch.new_leads %}<p><b>Newly Hot or Warm:</b> {% for o in ch.new_leads %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> ({{ o.result.band|band_name }}){{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
 {% if ch.risers %}<p><b>Moving up:</b> {% for o in ch.risers %}<a href="/companies/{{ o.account.id }}">{{ o.account.name }}</a> +{{ o.delta }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
 <p class="meta">Scored {{ w.run_date|fdate }} · {{ cov.ready }} compan{{ 'y' if cov.ready == 1 else 'ies' }} checked · {{ cov.with_signal_90d }} with news in the last 90 days{% if cov.waiting %} · {{ cov.waiting }} waiting for facts, not yet scored{% endif %}</p>
 </div>

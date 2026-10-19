@@ -259,3 +259,19 @@ def export_exclusions_csv(conn: sqlite3.Connection, path: str | Path) -> int:
         for r in rows:
             w.writerow([r["name"], r["domain"] or "", r["reason"]])
     return len(rows)
+
+
+# Which companies the SEC could tell us something about (used by bd.sec_fill, and by the UI to explain a thin list without importing it).
+def wants_lookup(a: Account) -> bool:
+    """No CIK on file and not recorded as private or PE-backed (a company the SEC would not list)."""
+    return not a.cik and a.ownership in (None, "public")
+
+
+def wants_read(a: Account) -> bool:
+    return bool(a.cik) and (a.revenue is None or not a.ownership or not a.hq_city)
+
+
+def can_check_free(a: Account) -> bool:
+    """Can the free check (SEC filings, job boards, SEC event filings) add anything? A ready company has free sources to read; a company on
+    hold only if the SEC could answer for it. An excluded company, or a private one the SEC does not list, gets nothing from it."""
+    return a.status == "active" or (a.status == "hold_review" and (wants_lookup(a) or wants_read(a)))

@@ -24,7 +24,7 @@
 
 {% for c in rows %}
 <div class="card"><div class="row"><div><a class="name" href="/accounts/{{ c.account_id }}">{{ c.name }}</a>
-<div class="meta">{{ c.industry or 'industry not recorded' }}{% if c.status != 'active' %} · not yet scanned (waiting for facts){% endif %}{% if c.score is not none %} · score {{ c.score }} ({{ c.band }}){% endif %}</div></div>
+<div class="meta">{{ c.industry or 'industry not recorded' }}{% if c.status != 'active' %} · not yet scanned (waiting for facts){% endif %}{% if c.score is not none %} · score {{ c.score }} ({{ c.band|band_name }}){% endif %}</div></div>
 <div>{% if c.signals_90d %}<span class="badge good">{{ c.signals_90d }} signal{{ '' if c.signals_90d == 1 else 's' }} in 90 days</span>{% else %}<span class="badge">nothing in 90 days</span>{% endif %}</div></div>
 {% if c.latest_signal %}<p><b>{{ labels[c.latest_signal['type']] }}</b> · {{ c.latest_signal['event_date']|fdate }}<br><span class="meta">{{ c.latest_signal['summary'] }}</span>
 {% if c.latest_signal['source_url']|safe_url %}<br><a href="{{ c.latest_signal['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ c.latest_signal['source_url']|host }}</a>{% endif %}</p>{% endif %}

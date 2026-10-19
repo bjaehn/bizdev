@@ -1,5 +1,5 @@
 {# Shared markup for design-system components used on more than one page. Styling lives only in design.css. #}
-{% macro band_badge(o) %}<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} {{ o.result.score }}</span>{% endmacro %}
+{% macro band_badge(o) %}<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }} {{ o.result.score }}</span>{% endmacro %}
 
 {# A ranked company entry: rank, name, badges, why now, how many kinds of signs agree, and the link to its brief. #}
 {% macro company_entry(o, rank, extra_badges=true) %}

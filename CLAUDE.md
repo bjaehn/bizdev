@@ -39,7 +39,7 @@ To change the look of the whole app: edit the tokens or one component in `design
 
 ## Where things are
 - `bd/ui/app.py` routes and handlers; `bd/ui/templates/` pages; `design.css` the design system; `_ui.html` / `_cards.html` shared markup.
-- `bd/week.py` the This week home; `bd/matrix.py` the signal matrix; `bd/profile.py` the company brief and its plain-text copy;
+- `bd/week.py` the This week home; `bd/readiness.py` why the list is thin (Admin Home); the viewer lookup is the free `find` job in `bd/jobs.py` + `/find` in `app.py`; `bd/matrix.py` the signal matrix; `bd/profile.py` the company brief and its plain-text copy;
   `bd/priority.py` the priority chart data; `bd/market.py` the Market view data; `bd/charts.py` SVG charts.
 - Analysis nav is This week, Companies, Reports. `ADMIN_GROUPS` in `app.py` lists the Admin pages.
 

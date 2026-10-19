@@ -140,7 +140,7 @@ def test_this_week_opens_with_what_the_tool_is_and_a_way_to_find_a_company(seede
     e, ids = seeded
     body = e.get("/week").body
     assert "<h1>This week</h1>" in body and "How this works" in body and 'href="/help"' in body
-    assert "<b>different kinds</b>" in body and "Preparing for a call?" in body and 'action="/opportunities"' in body
+    assert "<b>different kinds</b>" in body and "Preparing for a call?" in body and 'action="/find"' in body
 
 
 def test_this_week_lists_companies_in_plain_words_with_why_now_and_a_brief_link(seeded):

@@ -56,6 +56,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "ask": ("Ask a question about your data", True, False),
     "sec_fill": ("Fill facts from SEC filings (free)", False, False),
     "lookup": ("Research and scan one company", True, False),
+    "find": ("Look up one company (free: SEC filings and job boards)", False, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -120,6 +121,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return ["sec-fill", "--only", only, "--exact"] if only else ["sec-fill"]
     if kind == "lookup":
         return ["lookup", "--only", company_name(form, required=True), "--budget", str(LOOKUP_BUDGET)]
+    if kind == "find":
+        return ["find", "--only", company_name(form, required=True)]
     if kind == "ask":
         return ["ask", "--id", str(num("id", 1, 10**9, required=True))]
     if kind == "rfps":
@@ -218,6 +221,11 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         one = ["--only", name, "--exact"]
         return [["sec-fill", *one, "--as-of", as_of], ["enrich", *one, "--limit", "1", "--allow-empty", "--as-of", as_of],
                 ["apply-proposals", "enrich_proposals.csv"], ["scan", *one, "--force", "--allow-empty", "--as-of", as_of],
+                ["score", "--allow-empty", "--as-of", as_of]]
+    if kind == "find":      # free only: the SEC's own data, the job-board feed and the SEC event filings, then the score; no model is called
+        name = args[args.index("--only") + 1]
+        one = ["--only", name, "--exact"]
+        return [["sec-fill", *one, "--as-of", as_of], ["scan", *one, "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
                 ["score", "--allow-empty", "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]

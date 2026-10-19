@@ -42,6 +42,7 @@ from bd.charts import priority_svg, trend_svg
 from bd.priority import build_priority
 from bd.week import build_week, signs_line
 from bd.profile import brief_text, build_profile
+from bd.readiness import waiting_for_facts
 from bd.health import build_health
 from bd.market import build_market
 from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
@@ -159,7 +160,7 @@ class App:
         self._flash: list[tuple[str, str]] = []
         self.env = Environment(loader=PackageLoader("bd.ui", "templates"), autoescape=select_autoescape(["html"]),
                                trim_blocks=True, lstrip_blocks=True)
-        self.env.filters.update(status_label=lambda v: {'active': 'Ready to scan', 'hold_review': 'Needs facts', 'excluded': 'Excluded'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
+        self.env.filters.update(band_name=lambda b: {'Stored': 'Below Watch'}.get(b, b), status_label=lambda v: {'active': 'Ready to scan', 'hold_review': 'Needs facts', 'excluded': 'Excluded'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
                                 hosted=hosted is not None, operate=jobs is not None, signs_line=signs_line, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
                                 report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"})
@@ -377,6 +378,10 @@ class App:
                 return self.job_start(req)
             if (m, p) == ("POST", "/lookup/run"):
                 return self.lookup_run(req, conn)
+            if (m, p) == ("POST", "/find/run"):
+                return self.find_run(req, conn)
+            if m == "GET" and p.startswith("/find/wait/") and p[11:].isdigit():
+                return self.find_wait(int(p[11:]), conn)
             if m == "GET" and p.startswith("/jobs/") and p[6:].isdigit():
                 return self.job_page(int(p[6:]), conn)
         parts = p.strip("/").split("/")
@@ -384,6 +389,7 @@ class App:
             ("GET", "/"): lambda: self.home(conn) if self.jobs is not None else self.week_page(conn),
             ("GET", "/week"): lambda: self.week_page(conn),
             ("GET", "/help"): lambda: self.help_page(),
+            ("GET", "/find"): lambda: self.find_page(req, conn),
             ("GET", "/opportunities"): lambda: self.opportunities(req, conn),
             ("POST", "/update"): lambda: self.update_start(req, conn),
             ("POST", "/check"): lambda: self.check_start(),
@@ -478,7 +484,7 @@ class App:
             step = ("Open This week", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
         last = self.jobs.last_job(("update",))
         return self.render("home.html", page="home", problems=problems, total=total, ready=ready, need=need, opps=opps, top=top, u=u,
-                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS,
+                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, waiting=waiting_for_facts(conn, self.cfg, u),
                            last_log=self.jobs.log_tail(last.id)[-1500:] if last and last.status == "failed" else "")
 
     def update_start(self, req: Request, conn: sqlite3.Connection) -> Response:
@@ -596,29 +602,68 @@ class App:
                            stage_labels=STAGE_LABELS, can_run=bool(self.jobs is not None and self.hosted),
                            busy=bool(self.jobs and self.jobs.busy()), budget=LOOKUP_BUDGET)
 
+    def _company_for_job(self, conn: sqlite3.Connection, typed: str) -> tuple[str, bool]:
+        """The one company a one-company job acts on: the exact match on the list, or the company added now (as a manual entry).
+        Raises JobError (with a plain message) when the name is unusable, ambiguous, or cannot be added."""
+        exact = [h for h in find_company(conn, self.cfg, typed, date.today().isoformat()) if h.exact]
+        if len(exact) > 1:
+            raise JobError("More than one company on your list has that name; open the one you mean and use its page.")
+        name = company_name({"only": exact[0].account.name if exact else typed}, required=True)
+        if exact:
+            return name, False
+        res = create_account(conn, self.cfg, name, {"tier": "B"}, "ui", extra={"origin": "manual"})
+        if not res.ok:
+            raise JobError("; ".join(res.errors))
+        return name, True
+
     def lookup_run(self, req: Request, conn: sqlite3.Connection) -> Response:
         """Check one company: add it if it is not on the list, then run the free SEC check or the paid research-and-scan job."""
         assert self.jobs is not None
         typed = " ".join(req.f("name").split())
         back = "/lookup?q=" + quote(typed[:120])
-        exact = [h for h in find_company(conn, self.cfg, typed, date.today().isoformat()) if h.exact]
-        if len(exact) > 1:
-            self.say("err", "More than one company on your list has that name; open the one you mean and use its page.")
-            return self.redirect(back)
         added = False
         try:
-            name = company_name({"only": exact[0].account.name if exact else typed}, required=True)
-            if not exact:
-                res = create_account(conn, self.cfg, name, {"tier": "B"}, "ui", extra={"origin": "manual"})
-                if not res.ok:
-                    self.say("err", "; ".join(res.errors))
-                    return self.redirect(back)
-                added = True
+            name, added = self._company_for_job(conn, typed)
             job_id = self.jobs.submit("lookup" if req.f("deep") == "1" else "sec_fill", {"only": name}, confirmed=bool(req.f("confirm")))
         except JobError as e:
             self.say("err", ("Added the company. " if added else "") + str(e))
             return self.redirect(back)
         return self.redirect(f"/jobs/{job_id}")
+
+    def find_page(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """The analysis-side search: where does a company stand, and, if it is not on the list or not ready, a free check."""
+        q = " ".join(req.q("q").split())[:120]
+        hits = find_company(conn, self.cfg, q, date.today().isoformat()) if q else []
+        return self.render("find.html", page="find", q=q, hits=hits, exact=any(h.exact for h in hits), labels=TYPE_LABELS, job=None, name="", company=None, running=False,
+                           can_run=bool(self.jobs is not None and self.hosted), busy=bool(self.jobs and self.jobs.busy()))
+
+    def find_run(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """Anyone signed in can run the FREE check for one company: add it if needed, read its size, ownership and headquarters from SEC
+        filings, check job boards and SEC event filings for signals, and score it. No model is called, so nothing is spent."""
+        assert self.jobs is not None
+        typed = " ".join(req.f("name").split())
+        back = "/find?q=" + quote(typed[:120])
+        added = False
+        try:
+            name, added = self._company_for_job(conn, typed)
+            job_id = self.jobs.submit("find", {"only": name})
+        except JobError as e:
+            self.say("err", ("Added the company. " if added else "") + str(e))
+            return self.redirect(back)
+        return self.redirect(f"/find/wait/{job_id}")
+
+    def find_wait(self, job_id: int, conn: sqlite3.Connection) -> Response:
+        """Progress page for a free check; when it finishes it opens the company's brief."""
+        assert self.jobs is not None
+        job = self.jobs.get(job_id)
+        if job is None or job.kind != "find" or "--only" not in job.args:
+            return self.error("404 Not Found", "No such check.")
+        name = job.args[job.args.index("--only") + 1]
+        acct = conn.execute("SELECT id FROM accounts WHERE lower(name) = lower(?)", (name,)).fetchone()
+        if job.status == "ok" and acct:
+            return self.redirect(f"/companies/{acct['id']}")
+        return self.render("find.html", page="find", q=name, hits=[], exact=False, labels=TYPE_LABELS, job=job, name=name, company=acct,
+                           running=job.status in ("queued", "running"), can_run=True, busy=False)
 
     def clients_page(self, conn: sqlite3.Connection, result=None) -> Response:
         return self.render("clients.html", page="clients", rows=client_rows(conn, date.today()), result=result, labels=TYPE_LABELS,

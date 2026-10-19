@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
-from bd.accounts import Account, list_accounts, log_audit
+from bd.accounts import Account, list_accounts, log_audit, wants_lookup, wants_read
 from bd.config import Config
 from bd.curate import apply_selected
 from bd.edgar import EdgarClient, EdgarError, facts_url, submissions_url
@@ -46,15 +46,6 @@ class FillSummary:
     passed_gate: int = 0                                 # companies that moved from on hold to ready because of this run
     not_reached: int = 0                                 # candidates left for the next run by the per-run cap
     errors: int = 0
-
-
-def wants_lookup(a: Account) -> bool:
-    """No CIK on file and not recorded as private or PE-backed (a company the SEC would not list)."""
-    return not a.cik and a.ownership in (None, "public")
-
-
-def wants_read(a: Account) -> bool:
-    return bool(a.cik) and (a.revenue is None or not a.ownership or not a.hq_city)
 
 
 def cik_cleared(conn: sqlite3.Connection) -> set[int]:

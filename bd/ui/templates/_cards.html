@@ -3,7 +3,7 @@
 <div class="card">
 <div class="row"><div><span class="meta">#{{ o.rank }}</span> <a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>
 <div class="meta">{{ [o.account.industry, o.account.hq_city]|select|join(' · ') or 'no company details recorded' }}</div></div>
-<div class="tags"><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} · {{ o.result.score }}</span>
+<div class="tags"><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }} · {{ o.result.score }}</span>
 {% if o.delta is not none and o.delta > 0 %}<span class="badge good">+{{ o.delta }}</span>{% endif %}
 {% if o.client %}<span class="badge good">client</span>{% endif %}
 {% if o.stage in ('pursuing', 'won') %}<span class="badge good">{{ stage_labels[o.stage] }}</span>{% endif %}</div></div>

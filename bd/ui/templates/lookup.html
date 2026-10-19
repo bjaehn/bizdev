@@ -12,7 +12,7 @@
 <div class="card">
 <div class="row"><div><a class="name" href="/accounts/{{ h.account.id }}">{{ h.account.name }}</a>{% if h.exact and hits|length > 1 %} <span class="badge good">best match</span>{% endif %}
 <div class="meta">{{ [h.account.industry, h.account.hq_city, h.account.ownership, (h.account.revenue|money ~ ' revenue') if h.account.revenue else none]|select|join(' · ') or 'no company details recorded yet' }}</div></div>
-<div>{% if h.score is not none %}<span class="badge {{ 'hot' if h.band == 'Hot' else ('warm' if h.band == 'Warm' else '') }}">{{ h.band }} · {{ h.score }}</span> {% endif %}
+<div>{% if h.score is not none %}<span class="badge {{ 'hot' if h.band == 'Hot' else ('warm' if h.band == 'Warm' else '') }}">{{ h.band|band_name }} · {{ h.score }}</span> {% endif %}
 {% if h.state.client %}<span class="badge good">client</span> {% endif %}
 {% if h.state.stage != 'new' %}<span class="badge">{{ stage_labels[h.state.stage] }}</span> {% endif %}
 {% if h.account.status == 'active' %}<span class="badge good">ready to scan</span>{% elif h.account.status == 'excluded' %}<span class="badge bad">excluded</span>{% else %}<span class="badge warm">waiting for facts</span>{% endif %}</div></div>

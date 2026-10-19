@@ -15,6 +15,14 @@
 <a class="badge" href="/week">{{ opps }} companies ranked</a>
 </div>
 
+{% if waiting %}<div class="card">
+<h2>Why the list is thin</h2>
+<p><b>{{ waiting.count }}</b> compan{{ 'y is' if waiting.count == 1 else 'ies are' }} waiting for facts, so {{ 'it is' if waiting.count == 1 else 'they are' }} not scanned or scored and cannot appear on This week.</p>
+<ul class="plain">{% for reason, n in waiting.reasons %}<li>{{ n }} &times; {{ reason }}</li>{% endfor %}</ul>
+<p>{% if waiting.sec_can_try %}<b>{{ waiting.sec_can_try }}</b> may be public companies: the free SEC step in Update my list tries them first. {% endif %}{% if waiting.needs_research %}<b>{{ waiting.needs_research }}</b> need research (a private or PE-owned company is not in the SEC's list){% if waiting.presses %}: at {{ waiting.per_press }} per press that is about <b>{{ waiting.presses }}</b> press{{ '' if waiting.presses == 1 else 'es' }}, each spending at most ${{ waiting.spend_cap }}{% elif waiting.presses is none %}, but research is switched off in <a href="/settings">Settings</a>{% endif %}. You can also fill facts in by hand on the <a href="/accounts?status=hold_review">accounts waiting</a>.{% endif %}</p>
+</div>
+
+{% endif %}
 <div class="card">
 <h2>Update my list</h2>
 <p>One press does all of this, in order, and stops at the spending limit:</p>
@@ -53,6 +61,6 @@
 {% if top %}<h2>Top companies</h2>
 {% for o in top %}<div class="card"><div class="row"><div><span class="meta">#{{ o.rank }}</span> <a class="name" href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a>
 <div class="meta">{{ o.why_now }}</div></div>
-<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band }} · {{ o.result.score }}</span></div></div>{% endfor %}
+<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }} · {{ o.result.score }}</span></div></div>{% endfor %}
 <p><a href="/week">See This week</a> · <a href="/opportunities">All {{ opps }} companies</a></p>{% endif %}
 {% endblock %}

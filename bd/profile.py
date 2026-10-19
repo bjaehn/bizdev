@@ -9,7 +9,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date
 
-from bd.accounts import Account
+from bd.accounts import Account, can_check_free
 from bd.charts import breakdown_svg
 from bd.config import Config
 from bd.dossier import build_dossier
@@ -96,6 +96,7 @@ def build_profile(conn: sqlite3.Connection, cfg: Config, a: Account, today: date
     d["signs"] = signs_line(d["opp"].result) if d["opp"] else ""
     d["missing"] = missing_facts(a)
     d["facts"] = facts_line(a)
+    d["can_check"] = can_check_free(a)
     return d
 
 
