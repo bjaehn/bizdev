@@ -160,7 +160,7 @@ def scan(
     from bd.accounts import list_accounts
     from bd.db import connect, init_db
     from bd.fit_gate import apply_fit_gate
-    from bd.runner import accounts_with_signals, is_due, run_scans
+    from bd.runner import accounts_with_signals, quiet_accounts, run_scans, split_due
     from bd.scanners import SCANNERS
 
     if tier not in ("A", "B", "all"):
@@ -188,7 +188,12 @@ def scan(
                        if only else "No companies to scan: the list is empty or every company is known to be out of scope.")
             return
         _fail("No accounts to scan. Add companies with `bd seed accounts.csv`.")
-    due = sorted((a for a in accounts if is_due(a, run_date, cfg, force)), key=lambda a: (a.last_scanned or "", a.id))
+    due, later = split_due(conn, accounts, run_date, cfg, force)
+    due.sort(key=lambda a: (a.last_scanned or "", a.id))
+    waiting = len(quiet_accounts(conn, later, run_date, cfg))
+    if waiting:
+        typer.echo(f"{waiting} compan{'y is' if waiting == 1 else 'ies are'} quiet (no signal in {cfg.scan.quiet_days} days) and checked every "
+                   f"{cfg.scan.quiet_every_weeks} weeks, not yet due again.")
     if limit:
         due = due[:limit]                           # --limit counts accounts that are due; never-scanned ones go first
     probes = [SCANNERS[n].create(cfg, None, None, None, None) for n in names]
@@ -233,6 +238,45 @@ def scan(
     if summary.calls and summary.errors == summary.calls:
         typer.echo("Every scan call failed (bad API key or model, no network?). Exiting with an error so a scheduled "
                    "run stops before scoring and posting.", err=True)
+        raise typer.Exit(code=3)
+
+
+@app.command()
+def compare(
+    count: int = typer.Option(4, "--count", min=1, max=8, help="How many companies to test (those with the most stored signals)"),
+    only: Optional[str] = typer.Option(None, help="Test this one company instead (exact name)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+) -> None:
+    """Test the combined sweep scanner (on ANTHROPIC_SCAN_MODEL when set) against what the separate scanners already stored.
+    Stores nothing; costs a few cents a company."""
+    from bd.accounts import list_accounts
+    from bd.compare import pick_accounts, report, run_compare
+    from bd.db import connect, init_db
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    from bd.settings_store import apply_overrides
+    cfg = apply_overrides(cfg, conn)
+    accounts = list_accounts(conn)
+    if only:
+        accounts = [a for a in accounts if a.name.lower() == only.lower()]
+    else:
+        accounts = pick_accounts(conn, accounts, run_date, cfg.scan.window_days, count)
+    if not accounts:
+        _fail("No company to test: " + (f"{only!r} is not on your list." if only else
+                                          "none has a stored signal yet. Run an update first, so there is something to compare with."))
+    scanner = _build_scanners(["sweep"], cfg, settings)[0]
+    model = scanner.model_name or settings.anthropic_model
+    typer.echo(f"Testing the sweep on {len(accounts)} compan{'y' if len(accounts) == 1 else 'ies'} with {model} (nothing is stored): "
+               + ", ".join(a.name for a in accounts))
+    rows = run_compare(conn, cfg, scanner, accounts, run_date, settings.anthropic_model, max_cost=cfg.llm.max_cost_per_run_usd, log=typer.echo)
+    typer.echo("")
+    for line in report(rows, model):
+        typer.echo(line)
+    if rows and all(r.error for r in rows if not r.skipped):
+        typer.echo("Every sweep call failed (does this model support web search? is the key right?).", err=True)
         raise typer.Exit(code=3)
 
 

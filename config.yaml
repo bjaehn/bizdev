@@ -117,6 +117,10 @@ scan:
   status_type_age_days:
     pe_hold_2_4: [730, 1461]
   max_future_days: 30   # event_date later than run date + this is rejected as implausible
+  # A company already scanned that shows no signal in quiet_days days is checked every quiet_every_weeks weeks instead of its tier's cadence
+  # (most companies are quiet most weeks, and each check costs real money). A company that shows a signal goes back to its tier's cadence; 0 turns this off.
+  quiet_days: 60
+  quiet_every_weeks: 4
   tiers:
     A: {every_weeks: 1, max_searches: 6}     # deeper search for the accounts that matter most
     B: {every_weeks: 2, max_searches: 3}

@@ -8,7 +8,7 @@ from bd.accounts import Account
 from bd.db import connect, init_db
 from bd.llm import Usage
 from bd.models import SignalExtract
-from bd.runner import accounts_with_signals, is_due, run_scans
+from bd.runner import accounts_with_signals, is_due, quiet_accounts, run_scans, split_due
 from bd.scanners.base import AcceptedSignal, Rejection, ScanOutcome, Scanner
 from tests.conftest import AS_OF
 
@@ -227,3 +227,47 @@ def test_accounts_with_signals_picks_those_with_a_trustworthy_recent_signal(tmp_
     assert [a.name for a in accounts_with_signals(conn, accts, AS_OF, 180)] == ["Fresh"]
     assert accounts_with_signals(conn, [], AS_OF, 180) == []
     assert [a.name for a in accounts_with_signals(conn, accts, AS_OF, 500)] == ["Fresh", "Old"]
+
+
+# ---- quiet companies are checked less often -------------------------------------------------------------------------------------------
+def test_a_quiet_company_waits_longer_but_never_less_than_its_tier(cfg):
+    assert cfg.scan.quiet_every_weeks == 4 and cfg.scan.quiet_days == 60
+    day = lambda n: (AS_OF - timedelta(days=n)).isoformat()      # noqa: E731
+    a = Account(id=1, name="X", tier="A", last_scanned=day(7))
+    assert is_due(a, AS_OF, cfg) and not is_due(a, AS_OF, cfg, quiet=True)                     # weekly normally, every four weeks when quiet
+    assert not is_due(a.model_copy(update={"last_scanned": day(26)}), AS_OF, cfg, quiet=True)
+    assert is_due(a.model_copy(update={"last_scanned": day(27)}), AS_OF, cfg, quiet=True)      # 4 weeks less the one-day grace
+    assert is_due(a, AS_OF, cfg, force=True, quiet=True) and is_due(Account(id=2, name="Y", tier="A"), AS_OF, cfg, quiet=True)   # forced, or never scanned
+    slow = cfg.model_copy(update={"scan": cfg.scan.model_copy(update={"quiet_every_weeks": 1})})
+    b = Account(id=3, name="B", tier="B", last_scanned=day(7))
+    assert not is_due(b, AS_OF, slow, quiet=True)                                              # never faster than the tier's own two weeks
+
+
+def test_only_scanned_companies_without_a_recent_signal_are_quiet(tmp_path, cfg):
+    from tests.conftest import add_account, add_signal, make_db
+    conn = make_db(tmp_path)
+    stamp = (AS_OF - timedelta(days=7)).isoformat()
+    loud, silent, old, fresh = (add_account(conn, n, last_scanned=None if n == "Fresh" else stamp) for n in ("Loud", "Silent", "Old", "Fresh"))
+    add_signal(conn, cfg, loud, "leadership_change", 20)
+    add_signal(conn, cfg, old, "leadership_change", 90)          # older than quiet_days
+    from bd.accounts import list_accounts
+    accts = list_accounts(conn)
+    assert quiet_accounts(conn, accts, AS_OF, cfg) == {silent, old}                            # never scanned is not quiet: it has not had a first look
+    due, later = split_due(conn, accts, AS_OF, cfg)
+    assert [a.name for a in due] == ["Loud", "Fresh"] and [a.name for a in later] == ["Silent", "Old"]
+    due, later = split_due(conn, accts, AS_OF, cfg, force=True)
+    assert len(due) == 4 and later == []
+    off = cfg.model_copy(update={"scan": cfg.scan.model_copy(update={"quiet_every_weeks": 0})})
+    assert quiet_accounts(conn, accts, AS_OF, off) == set() and len(split_due(conn, accts, AS_OF, off)[0]) == 4        # 0 switches it off
+
+
+def test_a_run_skips_quiet_companies_without_calls_and_reports_them_as_not_due(tmp_path, cfg):
+    from tests.conftest import add_account, add_signal, make_db
+    conn = make_db(tmp_path)
+    stamp = (AS_OF - timedelta(days=7)).isoformat()
+    loud, silent = add_account(conn, "Loud", last_scanned=stamp), add_account(conn, "Silent", last_scanned=stamp)
+    add_signal(conn, cfg, loud, "leadership_change", 20)
+    from bd.accounts import list_accounts
+    sc = FakeScanner(cfg)
+    s = run_scans(conn, cfg, [sc], list_accounts(conn), AS_OF, MODEL)
+    assert [a.name for a in s.skipped_not_due] == ["Silent"] and sc.calls == ["Loud"]

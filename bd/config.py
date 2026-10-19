@@ -152,6 +152,8 @@ class Scan(_Strict):
     status_type_age_days: dict[str, tuple[int, int]] = {}
     tiers: dict[str, Tier]
     sweep_searches: int = 6              # web searches the combined sweep may use per company (one call)
+    quiet_days: int = 60                 # a scanned company with no signal dated this recently is "quiet"...
+    quiet_every_weeks: int = 4           # ...and is scanned this often instead of its tier's cadence (0 turns this off)
 
 
 class Llm(_Strict):

@@ -47,7 +47,7 @@ from bd.week import build_week, signs_line
 from bd.profile import brief_text, build_profile
 from bd.health import build_health
 from bd.market import build_market
-from bd.jobs import FIND_BUDGET, KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
+from bd.jobs import COMPARE_BUDGET, FIND_BUDGET, KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.leadership import coverage
@@ -348,7 +348,7 @@ class App:
                  ("Teams webhook (TEAMS_WEBHOOK_URL), needed for the Monday post", bool(env.get("TEAMS_WEBHOOK_URL")))]
         last = self.jobs.last_scheduled()
         return self.render("operate.html", page="operate", ready=ready, kinds=KINDS, scanners=SCANNER_NAMES,
-                           jobs=self.jobs.recent(), busy=self.jobs.busy(), cap=self.cfg.llm.max_cost_per_run_usd,
+                           jobs=self.jobs.recent(), busy=self.jobs.busy(), cap=self.cfg.llm.max_cost_per_run_usd, compare_budget=COMPARE_BUDGET,
                            next_run=next_run(datetime.now(timezone.utc)),
                            posts=bool(env.get("TEAMS_WEBHOOK_URL")) and env.get("BD_DRY_RUN") != "1", last=last)
 

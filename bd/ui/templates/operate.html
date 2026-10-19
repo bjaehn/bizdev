@@ -85,6 +85,16 @@
 </div>
 
 <div class="card">
+<h2>Test the cheaper scan</h2>
+<p class="meta">Runs the combined scan (one model call a company instead of four) on the companies that already have the most signals, and sets what it finds beside what the separate scans stored. Set <code>ANTHROPIC_SCAN_MODEL</code> in the hosting dashboard to test a cheaper model. Nothing is saved or scored. Spends up to ${{ compare_budget }}; four companies usually cost well under $1. Read the result in the job log, then decide.</p>
+<form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="compare">
+<div class="grid"><div><label>How many companies (1-8)</label><input type="number" name="limit" value="4" min="1" max="8" required></div>
+<div><label>Or just this one (exact name, optional)</label><input type="text" name="only" maxlength="60"></div></div>
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
+<p><button class="ghost" type="submit">Run the test</button></p></form>
+</div>
+
+<div class="card">
 <h2>Score, then preview the card</h2>
 <form class="inline" method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="score"><button type="submit">Run score (free)</button></form>
 <form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="card_dry">
