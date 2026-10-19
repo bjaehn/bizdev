@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Existing clients{% endblock %}
+{% block body %}
+<h1>Existing clients</h1>
+<p class="sub">SEI's current clients, kept apart from new business. A client is still scanned and scored like any other company; the difference is that news here points to <b>more work for an existing relationship</b>. Mark one from its company page, or paste a list below.</p>
+
+{% if result %}
+<div class="card">
+{% if result.marked %}<p class="flash ok" style="margin:0 0 8px">Marked {{ result.marked|length }} as existing clients: {{ result.marked|join(', ') }}.</p>{% endif %}
+{% if result.already %}<p class="meta">Already marked: {{ result.already|join(', ') }}.</p>{% endif %}
+{% if result.unmatched %}<p class="meta"><b>Not on your list ({{ result.unmatched|length }}):</b> {% for n in result.unmatched %}<a href="/lookup?q={{ n|urlencode }}">{{ n }}</a>{{ ', ' if not loop.last }}{% endfor %}. Open one to add it, then paste again.</p>{% endif %}
+{% if result.ambiguous %}<p class="meta"><b>More than one company has that name, so none was marked:</b> {{ result.ambiguous|join(', ') }}.</p>{% endif %}
+{% if result.too_many %}<p class="meta">Only the first {{ max_names }} lines were read.</p>{% endif %}
+{% if not (result.marked or result.already or result.unmatched or result.ambiguous) %}<p class="meta">Nothing to mark.</p>{% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+<h2 style="margin-top:0">Paste your client list</h2>
+<form method="post" action="/clients/mark"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="names">One company name per line (up to {{ max_names }}). A line matches a company on your list when the names are the same apart from Inc, Corp, punctuation and capitals. Nothing is created or guessed.</label>
+<textarea id="names" name="names" rows="6" style="width:100%" maxlength="60000"></textarea>
+<p><button type="submit">Mark as clients</button></p></form>
+</div>
+
+{% for c in rows %}
+<div class="card"><div class="row"><div><a class="name" href="/accounts/{{ c.account_id }}">{{ c.name }}</a>
+<div class="meta">{{ c.industry or 'industry not recorded' }}{% if c.status != 'active' %} · not yet scanned (waiting for facts){% endif %}{% if c.score is not none %} · score {{ c.score }} ({{ c.band }}){% endif %}</div></div>
+<div>{% if c.signals_90d %}<span class="badge good">{{ c.signals_90d }} signal{{ '' if c.signals_90d == 1 else 's' }} in 90 days</span>{% else %}<span class="badge">nothing in 90 days</span>{% endif %}</div></div>
+{% if c.latest_signal %}<p style="margin:8px 0 0"><b>{{ labels[c.latest_signal['type']] }}</b> · {{ c.latest_signal['event_date']|fdate }}<br><span class="meta">{{ c.latest_signal['summary'] }}</span>
+{% if c.latest_signal['source_url']|safe_url %}<br><a href="{{ c.latest_signal['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ c.latest_signal['source_url']|host }}</a>{% endif %}</p>{% endif %}
+</div>
+{% else %}<div class="card empty">No clients marked yet.<br>Paste your client list above, or open a company and press <b>Mark as an existing SEI client</b>.</div>{% endfor %}
+{% endblock %}

@@ -53,6 +53,7 @@ class Opportunity:
     firms: list[str] = field(default_factory=list)
     stage: str = "new"                         # where you have taken it (bd.pipeline)
     watching: bool = False
+    client: bool = False                       # an existing SEI client (expansion), not a new logo
 
     @property
     def delta(self) -> int | None:
@@ -147,7 +148,7 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
         o.firms = firms.get(acc.id, [])
         st = states.get(acc.id)
         if st:
-            o.stage, o.watching = st.stage, st.watching
+            o.stage, o.watching, o.client = st.stage, st.watching, st.client
         if not gated or acc.name in out.stale:
             o.status, o.status_text = STATUS_UNKNOWN, "scores are out of date: re-run score"
         elif acc.id in on_card:
@@ -168,7 +169,7 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
 
 def filter_opportunities(items: list[Opportunity], band: str = "", family: str = "", service_line: str = "", pe_only: bool = False,
                          q: str = "", new_only: bool = False, status: str = "", sort: str = "score",
-                         stage: str = "") -> list[Opportunity]:
+                         stage: str = "", client: str = "") -> list[Opportunity]:
     q = q.strip().lower()
     out = [o for o in items
            if (not band or o.result.band == band)
@@ -178,7 +179,8 @@ def filter_opportunities(items: list[Opportunity], band: str = "", family: str =
            and (not q or q in o.account.name.lower())
            and (not new_only or o.is_new)
            and (not status or o.status == status)
-           and (not stage or (o.stage in OPEN_STAGES if stage == "open" else o.stage == stage))]
+           and (not stage or (o.stage in OPEN_STAGES if stage == "open" else o.stage == stage))
+           and (client not in ("yes", "no") or o.client == (client == "yes"))]
     if sort == "change":
         out.sort(key=lambda o: (-(o.delta if o.delta is not None else o.result.score), o.rank))
     elif sort == "hiring":

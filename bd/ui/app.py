@@ -47,8 +47,8 @@ from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
 from bd.ask_store import add_question, clean_question, recent as recent_questions
 from bd.rfp_store import list_open as list_open_rfps
-from bd.pipeline import (STAGE_LABELS, STAGES, add_note, default_since, get_state, notes_for, set_stage, set_watching, stage_counts,
-                         watchlist_changes)
+from bd.pipeline import (MAX_CLIENT_NAMES, STAGE_LABELS, STAGES, add_note, client_rows, default_since, get_state, mark_clients, notes_for, set_client,
+                         set_stage, set_watching, stage_counts, watchlist_changes)
 from bd.opportunities import build_opportunities, filter_opportunities, score_dates
 from bd.setup_check import static_problems
 from bd.settings_store import (UPDATE_FIELDS, load_update, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
@@ -359,6 +359,8 @@ class App:
             ("POST", "/settings/update"): lambda: self.settings_update(req, conn),
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
+            ("GET", "/clients"): lambda: self.clients_page(conn),
+            ("POST", "/clients/mark"): lambda: self.clients_mark(req, conn),
             ("GET", "/rfps"): lambda: self.rfps_page(req, conn),
             ("GET", "/ask"): lambda: self.ask_page(conn),
             ("POST", "/ask"): lambda: self.ask_start(req, conn),
@@ -394,7 +396,7 @@ class App:
             ok = set_firm_status(conn, int(parts[1]), req.f("status"))
             self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
             return self.redirect(f"/firms/{int(parts[1])}")
-        if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch"):
+        if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch", "client"):
             return self.pipeline_update(req, conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
             return self.reviewed(conn, int(parts[1]))
@@ -475,12 +477,12 @@ class App:
         except ShortlistError as e:
             return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=[], total=0, error=str(e),
                                q={}, families=[], lines=[], stale=[], prev_date=None)
-        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage")}
+        q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage", "client")}
         q["pe"] = req.q("pe") == "1"
         q["new"] = req.q("new") == "1"
         items = filter_opportunities(ol.items, band=q["band"], family=q["family"], service_line=q["service_line"], pe_only=q["pe"],
                                      q=q["q"], new_only=q["new"], status=q["status"], sort=q["sort"] or "score",
-                                     stage=q["stage"])
+                                     stage=q["stage"], client=q["client"])
         families = sorted({r.kind for o in ol.items for r in o.reasons})
         return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=items, total=len(ol.items),
                            error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale,
@@ -494,12 +496,27 @@ class App:
         elif what == "note":
             ok = add_note(conn, account_id, req.f("body"))
             self.say("ok" if ok else "err", "Note added." if ok else "Write something first.")
+        elif what == "client":
+            on = req.f("on") == "1"
+            ok = set_client(conn, account_id, on)
+            self.say("ok" if ok else "err", ("Marked as an existing client." if on else "No longer marked as a client.") if ok else "No such account.")
         else:
             on = req.f("on") == "1"
             ok = set_watching(conn, account_id, on)
             self.say("ok" if ok else "err", ("Added to" if on else "Removed from") + " your watchlist." if ok else "No such account.")
         back = req.f("back")
         return self.redirect(back if back.startswith("/") and not back.startswith("//") else f"/accounts/{account_id}")
+
+    def clients_page(self, conn: sqlite3.Connection, result=None) -> Response:
+        return self.render("clients.html", page="clients", rows=client_rows(conn, date.today()), result=result, labels=TYPE_LABELS,
+                           max_names=MAX_CLIENT_NAMES)
+
+    def clients_mark(self, req: Request, conn: sqlite3.Connection) -> Response:
+        raw = req.f("names")
+        if not raw.strip():
+            self.say("err", "Paste at least one company name.")
+            return self.redirect("/clients")
+        return self.clients_page(conn, result=mark_clients(conn, raw))
 
     def watchlist(self, req: Request, conn: sqlite3.Connection) -> Response:
         try:

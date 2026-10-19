@@ -19,6 +19,9 @@ status <b>{{ a.status }}</b>{% if fit.reasons %} · {{ fit.reasons|join('; ') }}
 <form method="post" action="/accounts/{{ a.id }}/watch" style="margin:8px 0"><input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="on" value="{{ '0' if state.watching else '1' }}"><button class="ghost" type="submit">{{ 'Stop watching' if state.watching else 'Watch this company' }}</button>
 <span class="meta">Watched companies appear on the <a href="/watchlist">watchlist</a> with anything new.</span></form>
+<form method="post" action="/accounts/{{ a.id }}/client" style="margin:8px 0"><input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="on" value="{{ '0' if state.client else '1' }}"><button class="ghost" type="submit">{{ 'Not a client' if state.client else 'Mark as an existing SEI client' }}</button>
+<span class="meta">Clients are still scanned; they are shown as expansion on <a href="/clients">Existing clients</a>, apart from new business.</span></form>
 <form method="post" action="/accounts/{{ a.id }}/note"><input type="hidden" name="csrf" value="{{ csrf }}">
 <label for="body">Add a note</label><textarea id="body" name="body" rows="2" maxlength="2000" style="width:100%"></textarea>
 <button class="ghost" type="submit">Add note</button></form>
