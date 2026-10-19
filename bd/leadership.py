@@ -93,7 +93,7 @@ def coverage(conn: sqlite3.Connection, today: date) -> Coverage:
     return c
 
 
-def _pulse(m: Market) -> Pulse:
+def pulse(m: Market) -> Pulse:
     p = Pulse(quiet_total=m.quiet_total, sponsors=[s for s in m.sponsors if s.signals_90d or s.firm_signals_180d][:3])
     p.segments = [s for s in m.segments if s.signals_30d or s.hot or s.warm][:LIST_MAX]
     for s in p.segments:
@@ -133,7 +133,7 @@ def build_leadership(conn: sqlite3.Connection, cfg: Config, today: date) -> Lead
     cov = out.coverage
     dates = score_dates(conn)
     out.clients = [c for c in client_rows(conn, today) if c.signals_90d][:LIST_MAX]
-    out.pulse = _pulse(build_market(conn, today))
+    out.pulse = pulse(build_market(conn, today))
     if not dates:
         out.problem = ("Nothing has been scored yet. Press Update my list on Home: it fills in company facts from the SEC, "
                        "scans for news and ranks what it finds.")

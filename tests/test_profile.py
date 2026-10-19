@@ -58,7 +58,7 @@ def test_the_ranking_is_a_matrix_with_one_row_per_company_and_a_column_per_signa
     assert f'href="/companies/{ids["Wideco <b>"]}"' in body                                   # every row and cell opens the company profile
     assert 'class="cell hi"' in body or 'class="cell ' in body
     assert "<b>4</b>/8" in body and "<b>1</b>/8" in body                                       # types firing, out of eight
-    assert "different signals" in body and "dashed box" in body and "Signal matrix" in body
+    assert "kinds of signs" in body and "dashed box" in body and "Signal matrix" in body
     # ranked by score: the widest company first
     assert body.index("Wideco") < body.index("Midco") < body.index("Deepco")
 
@@ -101,9 +101,9 @@ def test_the_profile_explains_the_score_and_its_parts_add_up(seeded):
     assert [p.key for p in ex.parts][-1] == "bonus" and ex.parts[-1].points == opp.result.stacking_bonus
     assert "4 different signal types agree" in ex.sentence and ex.score == opp.result.score
     body = e.get(f"/companies/{ids['Wideco <b>']}").body
-    assert "Why this score" in body and body.count("<rect") >= 4 and "Stacking bonus" in body and "4 different signal types agree" in body
-    assert "Signals over the last 180 days" in body and body.count("<circle") == 4 and "Evidence" in body
-    assert "Wideco &lt;b&gt;" in body and "Wideco <b>" not in body and "Manage this company" in body and "noprint" in body
+    assert "How the score is built" in body and body.count("<rect") >= 4 and "Stacking bonus" in body and "4 different signal types agree" in body
+    assert "The last 180 days" in body and body.count("<circle") == 4 and "What happened" in body
+    assert "Wideco &lt;b&gt;" in body and "Wideco <b>" not in body and "Manage (Admin)" in body and "noprint" in body
 
 
 def test_a_company_with_one_signal_type_gets_the_no_bonus_explanation(seeded):

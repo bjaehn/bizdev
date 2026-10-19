@@ -14,5 +14,5 @@
 {% if w.new_signals %}<ul class="signals">{% for s in w.new_signals %}<li><b>{{ labels[s['type']] }}</b> · {{ s['event_date']|fdate }} · {{ s['confidence'] }}<br><span class="meta">{{ s['summary'] }}</span>
 {% if s['source_url']|safe_url %}<br><a href="{{ s['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s['source_url']|host }}</a>{% endif %}</li>{% endfor %}</ul>{% endif %}
 </div>
-{% else %}<div class="card empty">You are not watching any company yet.<br>Open a company from <a href="/opportunities">Opportunities</a> and press <b>Watch this company</b>.</div>{% endfor %}
+{% else %}<div class="card empty">You are not watching any company yet.<br>Open a company from <a href="/opportunities">Companies</a> and press <b>Track this company</b>.</div>{% endfor %}
 {% endblock %}

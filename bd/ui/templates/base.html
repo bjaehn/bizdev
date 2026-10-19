@@ -96,14 +96,15 @@ ul.plain li:first-child{border-top:0}
 {% block head %}{% endblock %}
 </head>
 {% set is_admin = page is defined and page in admin_pages %}
-{% set narrow_pages = ['company', 'reports'] %}
+{% set narrow_pages = ['company', 'reports', 'week', 'help'] %}
 <body class="{{ 'admin' if is_admin else '' }} {{ 'narrow' if page is defined and page in narrow_pages else '' }}">
 <header class="{{ 'admin' if is_admin else '' }}"><div class="bar">
-<a class="brand" href="{{ '/admin' if is_admin else '/opportunities' }}">BD Signals{% if is_admin %} <span class="area">Admin</span>{% endif %}</a>
+<a class="brand" href="{{ '/admin' if is_admin else '/week' }}">BD Signals{% if is_admin %} <span class="area">Admin</span>{% endif %}</a>
 {% if nav is not defined or nav %}
 <nav>
-{% if is_admin %}<a class="top" href="/opportunities">← Back to analysis</a>
-{% else %}<a class="top {{ 'on' if page in ('opportunities', 'company') else '' }}" href="/opportunities">Opportunities</a>
+{% if is_admin %}<a class="top" href="/week">← Back to analysis</a>
+{% else %}<a class="top {{ 'on' if page in ('week', 'help') else '' }}" href="/week">This week</a>
+<a class="top {{ 'on' if page in ('opportunities', 'company') else '' }}" href="/opportunities">Companies</a>
 <a class="top {{ 'on' if page in report_pages else '' }}" href="/reports">Reports</a>{% endif %}
 </nav>
 <div class="right">{% if not is_admin %}<a class="adminlink" href="/admin">Admin</a>{% endif %}

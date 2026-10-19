@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_cards.html" import opp_card %}
-{% block title %}Opportunities{% endblock %}
+{% block title %}Companies{% endblock %}
 {% block head %}<style>
 .strip{font-family:var(--sans);font-size:14px;color:var(--muted);margin:0 0 4px}
 .strip b{color:var(--ink);font-weight:650}
@@ -29,8 +29,8 @@ table.matrix{border-top:2px solid var(--ink);table-layout:auto}
 .matrix td.co{position:sticky;left:0;background:var(--bg)}
 </style>{% endblock %}
 {% block body %}
-<h1>Opportunities</h1>
-<p class="sub">Companies ranked by how many <b>different signals</b> point to a need for consulting now. Open a company to see the evidence behind its score.</p>
+<h1>Companies</h1>
+<p class="sub">Every company the tool scores, side by side. Find one by name, or compare which kinds of signs each company has; the one to open first is at the top. The short list for the week is on <a href="/week">This week</a>.</p>
 
 {% if not dates %}
 <div class="card empty">Nothing has been scored yet.<br>An admin needs to run an update from the Admin area to fill in company facts, scan for news and rank what it finds.</div>
@@ -99,7 +99,7 @@ size = how many different signal types fired · dark outline = news in the last 
 
 {% else %}
 {% for o in items %}{{ opp_card(o, stage_labels, true) }}
-{% else %}<div class="card empty">No opportunities match.</div>{% endfor %}
+{% else %}<div class="card empty">No companies match.</div>{% endfor %}
 {% endif %}
 {% endif %}
 {% endblock %}

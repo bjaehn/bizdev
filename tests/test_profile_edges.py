@@ -30,14 +30,14 @@ def test_a_profile_opens_for_a_company_in_any_state_without_an_error(world, who)
     e, ids = world
     r = e.get(f"/companies/{ids[who]}")
     assert r.code == 200 and "<h1" in r.body and "Traceback" not in r.body
-    assert "Manage this company" in r.body
+    assert "Manage (Admin)" in r.body
 
 
 def test_a_company_with_nothing_to_explain_says_so_rather_than_drawing_an_empty_chart(world):
     e, ids = world
     for who in ("quiet", "held"):
         body = e.get(f"/companies/{ids[who]}").body.split("<main")[1]
-        assert "Why this score" not in body and "<svg" not in body, who
+        assert "How the score is built" not in body and "<svg" not in body, who
         assert "not scored" in body and "No signals in the last 180 days" in body, who
     assert "needs facts" in e.get(f"/companies/{ids['held']}").body
 
@@ -45,7 +45,7 @@ def test_a_company_with_nothing_to_explain_says_so_rather_than_drawing_an_empty_
 def test_a_company_whose_signals_have_not_been_scored_yet_is_explained_from_its_signals(world):
     e, ids = world
     body = e.get(f"/companies/{ids['unscored']}").body
-    assert "Why this score" in body and "<svg" in body and "30 points in total = score 30" in body
+    assert "How the score is built" in body and "<svg" in body and "30 points in total = score 30" in body
 
 
 def test_the_ranking_and_reports_open_when_the_only_companies_are_held_or_quiet(app_env):  # noqa: F811

@@ -48,10 +48,10 @@ def test_the_profile_page_and_the_old_onepager_address(app_env):  # noqa: F811
     r = e.get(f"/accounts/{a}/onepager")
     assert r.code == 303 and r.h["Location"] == f"/companies/{a}"                      # the printable page is now the profile
     body = e.get(f"/companies/{a}").body
-    assert "Acme" in body and "Health care" in body and "12,000 employees" in body and "Why this score" in body
+    assert "Acme" in body and "Health care" in body and "12,000 employees" in body and "How the score is built" in body
     assert "Signals over the last 180 days" in body and body.count("<circle") == 2 and "Chief Information Officer" in body
     assert "New CIO named &lt;b&gt;today&lt;/b&gt;." in body and "Intro via board" in body and "Pursuing" in body
-    assert "Research only" in body and f"/accounts/{a}" in body and "Manage this company" in body
+    assert "Research only" in body and f"/accounts/{a}" in body and "Manage (Admin)" in body
     assert e.get("/companies/999").code == 404
 
 

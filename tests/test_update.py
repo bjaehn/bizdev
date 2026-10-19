@@ -255,7 +255,7 @@ def test_home_says_what_to_do_next_in_each_state(app_env, monkeypatch):
     from bd.score_store import score_accounts
     score_accounts(e.conn, e.cfg, date.today())
     body = e.get("/").body
-    assert "Open Opportunities" in body and "Top opportunities" in body and "Readyco" in body
+    assert "Open This week" in body and "Top companies" in body and "Readyco" in body
     monkeypatch.delenv("ANTHROPIC_API_KEY")
     body = e.get("/").body
     assert "Finish setup" in body and "ANTHROPIC_API_KEY is not set" in body
@@ -300,8 +300,8 @@ def test_a_failed_update_shows_why_on_home(app_env):
 def test_navigation_is_short_and_local_mode_is_unchanged(app_env, cfg, tmp_path):
     body = app_env.get("/opportunities").body
     nav = body.split("<nav>")[1].split("</nav>")[0]
-    assert nav.count('<a class="top') == 2 and "menu" not in nav                    # two plain links on the analysis side
-    for label in ("Opportunities", "Reports"):
+    assert nav.count('<a class="top') == 3 and "menu" not in nav                    # three plain links on the analysis side
+    for label in ("This week", "Companies", "Reports"):
         assert label in nav
     assert 'class="adminlink" href="/admin"' in body and "Advanced tools" in app_env.get("/admin").body
     from bd.ui.app import App
@@ -311,7 +311,7 @@ def test_navigation_is_short_and_local_mode_is_unchanged(app_env, cfg, tmp_path)
            "CONTENT_LENGTH": "0", "wsgi.input": __import__("io").BytesIO()}
     out = {}
     page = b"".join(local(env, lambda s, h: out.update(s=s))).decode()
-    assert out["s"].startswith("200") and "Opportunities" in page and "Update my list" not in page
+    assert out["s"].startswith("200") and "This week" in page and "Update my list" not in page
 
 
 def test_user_agent_is_cleaned_into_a_legal_header():
