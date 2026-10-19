@@ -44,7 +44,6 @@ from bd.market import build_market
 from bd.jobs import KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
-from bd.leadership import MIN_RISE, NEW_SIGNAL_DAYS, STALE_SCORE_DAYS, build_leadership
 from bd.lookup import find as find_company
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date
 from bd.pe_store import add_firm, set_firm_status
@@ -126,28 +125,32 @@ def safe_url(u: object) -> str:
     return u if urlparse(u).scheme in ("http", "https") and urlparse(u).netloc else ""
 
 
-# The Admin page: everything that is not for a leadership walk-through, grouped. (page key, href, label, hint, hosted only)
+# Two areas on one login. ANALYSIS is what a viewer uses: the Opportunities ranking, a company's profile and the extra reports.
+# ADMIN is everything that maintains the data or runs the machine. (page key, href, label, hint, hosted only)
+REPORT_ITEMS = (
+    ("market", "/market", "Market view", "Where signals are appearing across industries"),
+    ("hiring", "/hiring", "Hiring", "Open senior roles at your companies"),
+    ("firms", "/firms", "Private equity firms", "Owners and their portfolio companies"),
+    ("rfps", "/rfps", "Open RFPs", "Public solicitations from Chicago-area agencies"),
+    ("ask", "/ask", "Ask your data", "Plain-English questions about your own data"),
+    ("card", "/monday", "Monday card", "What the weekly post would contain"),
+)
 ADMIN_GROUPS = (
     ("Update", (("home", "/", "Update my list", "One press fills in facts, scans, scores and ranks", True),
                 ("operate", "/operate", "Advanced tools", "Run one step at a time", True))),
     ("Companies", (("accounts", "/accounts", "All companies", "Every company on your list and its facts", False),
-                   ("watchlist", "/watchlist", "Watchlist", "Companies you follow and what is new", False),
-                   ("hiring", "/hiring", "Hiring", "Open senior roles at your companies", False),
+                   ("lookup", "/lookup", "Look up a company", "Find any company, or add one and check the SEC", False),
                    ("candidates", "/candidates", "New companies to review", "Found by research; add or reject", False),
                    ("enrich", "/enrich", "Researched facts to review", "Check facts before applying them", False),
-                   ("exclusions", "/exclusions", "Do-not-pursue list", "Clients and companies to skip", False))),
-    ("Reports", (("market", "/market", "Market view", "Where signals are appearing across industries", False),
-                 ("rfps", "/rfps", "Open RFPs", "Public solicitations from Chicago-area agencies", False),
-                 ("card", "/monday", "Monday card", "What the weekly post would contain", False),
-                 ("firms", "/firms", "Private equity firms", "Owners and their portfolio companies", False),
-                 ("ask", "/ask", "Ask your data", "Plain-English questions about your own data", False))),
+                   ("exclusions", "/exclusions", "Do-not-pursue list", "Clients and companies to skip", False),
+                   ("clients", "/clients", "Existing clients", "SEI clients, kept apart from new business", False),
+                   ("watchlist", "/watchlist", "Watchlist and pursuits", "Companies you follow, and where each pursuit stands", False))),
     ("System", (("health", "/health", "Data health", "What is producing, what it costs, what is missing", False),
                 ("runs", "/runs", "Run history and cost", "What ran and what it cost", False),
                 ("audit", "/audit", "Change log", "Who changed what, with sources", False),
                 ("settings", "/settings", "Settings", "Numbers behind the Update button", False))),
 )
-ADMIN_PAGES = frozenset(key for _, items in ADMIN_GROUPS for key, *_ in items) | {"jobs"}
-
+ADMIN_PAGES = frozenset(key for _, items in ADMIN_GROUPS for key, *_ in items) | {"admin", "jobs"}
 
 class App:
     def __init__(self, cfg: Config, db_path: str, token: str = "", root: Path | None = None,
@@ -164,7 +167,8 @@ class App:
                                trim_blocks=True, lstrip_blocks=True)
         self.env.filters.update(status_label=lambda v: {'active': 'Ready to scan', 'hold_review': 'Needs facts', 'excluded': 'Excluded'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
-                                hosted=hosted is not None, operate=jobs is not None, admin_pages=ADMIN_PAGES)
+                                hosted=hosted is not None, operate=jobs is not None, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
+                                report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"})
         init_conn = connect(db_path)
         init_db(init_conn)
         init_conn.close()
@@ -293,7 +297,7 @@ class App:
         signed_in = self.hosted.session_ok(req.cookies.get("bd_session", ""))
         if req.path == "/login":
             if req.method == "GET":
-                return self.redirect("/leadership") if signed_in else self.login_page()
+                return self.redirect("/opportunities") if signed_in else self.login_page()
             return self.login(req)
         if not signed_in:
             if req.method == "GET":
@@ -325,7 +329,7 @@ class App:
             return self.login_page(f"Too many attempts. Try again in {wait} seconds.", "429 Too Many Requests")
         if self.hosted.check_password(req.f("password")):
             self.throttle.succeeded(client)
-            return self.redirect("/leadership", [("Set-Cookie", self._cookie(req, self.hosted.make_session(),
+            return self.redirect("/opportunities", [("Set-Cookie", self._cookie(req, self.hosted.make_session(),
                                                                    self.hosted.session_hours * 3600))])
         self.throttle.failed(client)
         import time
@@ -391,7 +395,8 @@ class App:
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
             ("GET", "/admin"): lambda: self.admin_page(),
-            ("GET", "/leadership"): lambda: self.leadership_page(conn),
+            ("GET", "/leadership"): lambda: self.redirect("/opportunities"),
+            ("GET", "/reports"): lambda: self.reports_page(),
             ("GET", "/lookup"): lambda: self.lookup_page(req, conn),
             ("GET", "/clients"): lambda: self.clients_page(conn),
             ("POST", "/clients/mark"): lambda: self.clients_mark(req, conn),
@@ -547,11 +552,8 @@ class App:
         groups = [(name, [i for i in items if not i[4] or self.jobs is not None]) for name, items in ADMIN_GROUPS]
         return self.render("admin.html", page="admin", groups=[g for g in groups if g[1]])
 
-    def leadership_page(self, conn: sqlite3.Connection) -> Response:
-        v = build_leadership(conn, self.cfg, date.today())
-        return self.render("leadership.html", page="leadership", c=v.coverage, act=v.act, changes=v.changes, pulse=v.pulse, clients=v.clients,
-                           problem=v.problem, labels=TYPE_LABELS, stage_labels=STAGE_LABELS, stale_days=STALE_SCORE_DAYS,
-                           min_rise=MIN_RISE, new_signal_days=NEW_SIGNAL_DAYS)
+    def reports_page(self) -> Response:
+        return self.render("reports.html", page="reports", items=REPORT_ITEMS)
 
     def lookup_page(self, req: Request, conn: sqlite3.Connection) -> Response:
         q = " ".join(req.q("q").split())[:120]

@@ -298,12 +298,12 @@ def test_a_failed_update_shows_why_on_home(app_env):
 
 
 def test_navigation_is_short_and_local_mode_is_unchanged(app_env, cfg, tmp_path):
-    body = app_env.get("/").body
+    body = app_env.get("/opportunities").body
     nav = body.split("<nav>")[1].split("</nav>")[0]
-    assert nav.count('<a class="top') + nav.count('<div class="menu ') == 5 and "menu" not in nav       # five plain links, no dropdowns
-    for label in ("Leadership", "Opportunities", "Look up", "Clients", "Admin"):
+    assert nav.count('<a class="top') == 2 and "menu" not in nav                    # two plain links on the analysis side
+    for label in ("Opportunities", "Reports"):
         assert label in nav
-    assert "Advanced tools" in app_env.get("/admin").body
+    assert 'class="adminlink" href="/admin"' in body and "Advanced tools" in app_env.get("/admin").body
     from bd.ui.app import App
     local = App(cfg, str(tmp_path / "l.sqlite"), "tok", root=tmp_path)
     local.port = 8765

@@ -6,7 +6,6 @@ from bd.leadership import ACT_COUNT, LIST_MAX, MIN_RISE, build_leadership
 from bd.pipeline import set_client, set_stage
 from bd.score_store import score_accounts
 from tests.conftest import AS_OF, add_account, add_signal, make_db
-from tests.test_update import app_env  # noqa: F401  (fixture)
 
 PREV = (AS_OF - timedelta(days=7)).isoformat()
 
@@ -106,53 +105,3 @@ def test_stages_feed_the_pursuit_count(conn, cfg):
     acme, *_ = seeded(conn, cfg)
     set_stage(conn, acme, "pursuing")
     assert build_leadership(conn, cfg, AS_OF).coverage.stages["pursuing"] == 1
-
-
-# ---- the page ---------------------------------------------------------------------------------------------------------------------
-def test_the_page_renders_empty_and_in_the_navigation(app_env):  # noqa: F811
-    e = app_env
-    r = e.get("/leadership")
-    assert r.code == 200 and "Nothing has been scored yet" in r.body and 'href="/leadership">Leadership</a>' in r.body
-    assert "<b>0</b> companies" in r.body and "Market pulse" not in r.body and "Act on this week" not in r.body      # empty sections are hidden
-
-
-def test_the_page_shows_what_leadership_needs_and_escapes_names(app_env):  # noqa: F811
-    e = app_env
-    today = date.today()
-    acme = add_account(e.conn, "Acme <script>alert(1)</script>", industry="Healthcare")
-    beta = add_account(e.conn, "Beta", industry="Healthcare")
-    for x in (acme, beta):
-        add_signal(e.conn, e.cfg, x, "leadership_change", 4, as_of=today, url=f"https://www.sec.gov/Archives/{x}/a.htm")
-        add_signal(e.conn, e.cfg, x, "hiring_cluster", 4, as_of=today)
-    set_client(e.conn, acme, True)
-    add_account(e.conn, "Waitco", status="hold_review", revenue=None, ownership=None, chicagoland="unknown")
-    score_accounts(e.conn, e.cfg, today)
-    body = e.get("/leadership").body
-    assert "Act on this week" in body and "&lt;script&gt;" in body and "<script>alert" not in body
-    assert '<span class="badge good">client</span>' in body and "new business" not in body and "one-page summary" in body and "source: sec.gov" in body
-    assert "Market pulse" in body and "Healthcare:" in body and "What changed" in body
-    assert "1 waiting for facts" in body and "Existing clients with news" in body
-    assert 'name="q"' in body and 'action="/lookup"' in body
-    old = (today - timedelta(days=20)).isoformat()
-    e.conn.execute("UPDATE scores SET run_date = ?", (old,))
-    e.conn.commit()
-    assert "20 days old" in e.get("/leadership").body
-
-
-def test_the_page_stays_short_however_much_there_is(app_env):  # noqa: F811
-    e = app_env
-    today = date.today()
-    for i in range(12):
-        a = add_account(e.conn, f"Company {i:02d}", industry=f"Industry {i % 5}")
-        for t in ("leadership_change", "hiring_cluster"):
-            add_signal(e.conn, e.cfg, a, t, 2 + i % 4, as_of=today)
-        set_client(e.conn, a, True)
-    score_accounts(e.conn, e.cfg, today)
-    body = e.get("/leadership").body
-    assert body.count('class="card opp"') == ACT_COUNT == 5
-    changed = body.split("What changed")[1].split("Market pulse")[0]
-    assert changed.count("<li>") <= 3 * LIST_MAX
-    pulse = body.split("Market pulse")[1].split("Existing clients with news")[0]
-    assert pulse.count("<li>") <= LIST_MAX
-    assert body.split("Existing clients with news")[1].count("<li>") <= LIST_MAX
-    assert 'class="tile"' not in body and "<table" not in body                   # no stat tiles, no tables
