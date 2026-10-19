@@ -136,3 +136,17 @@ def test_jobs_and_the_page(app_env):  # noqa: F811
     assert "IT Strategy and Roadmap Services" in body and "chicago.gov" in body and "9 days" in body and "AI &amp; Technology" in body
     assert "0 shown of 1 recorded" in e.get("/rfps?service_line=Data+%26+Analytics").body
     assert "Open RFPs" in e.get("/operate").body
+
+
+def test_the_model_note_explains_an_empty_list_and_reaches_the_log_and_runs_table(cfg, tmp_path):
+    conn = make_db(tmp_path)
+    reply = json.dumps({"rfps": [], "notes": "Results were news pages; no procurement listings found."})
+    llm = FakeLLM([json.dumps({"rfps": [rfp()], "notes": "found 1"}), reply], urls=(URL,))
+    lines = []
+    s = run_rfps(conn, cfg, RfpFinder(cfg, llm, FakeVerifier()), AS_OF, "claude-sonnet-5-5", cfg.rfps.groups[:2], max_cost=5, log=lines.append)
+    assert s.new == 1 and any("model note: Results were news pages" in l for l in lines)
+    rows = [r["errors"] for r in conn.execute("SELECT errors FROM runs WHERE step = 'rfps' ORDER BY id")]
+    assert rows == [None, "model note: Results were news pages; no procurement listings found."]       # a note is kept only when nothing was found
+    assert "notes" in __import__("importlib.resources", fromlist=["files"]).files("bd.prompts").joinpath("rfps.md").read_text()
+    llm2 = FakeLLM([json.dumps({"rfps": []})], urls=(URL,))                                           # the note is optional
+    assert RfpFinder(cfg, llm2, FakeVerifier()).find(cfg.rfps.groups[0], AS_OF).note is None

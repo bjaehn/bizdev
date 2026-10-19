@@ -24,6 +24,8 @@ Skip construction, goods, equipment, staffing agencies, legal, audit, and routin
 ## Output
 Reply with exactly one JSON object and nothing else (no prose, no code fences):
 
-{"rfps": [{"title": "...", "agency": "...", "due_date": "YYYY-MM-DD", "summary": "...", "source_url": "https://...", "service_lines": ["..."]}]}
+{"rfps": [{"title": "...", "agency": "...", "due_date": "YYYY-MM-DD", "summary": "...", "source_url": "https://...", "service_lines": ["..."]}], "notes": "..."}
 
-If nothing qualifies: {"rfps": []}
+`notes` is one short sentence on what you saw, for the person reading the log: for example "search results were mostly news pages, no procurement listings", "found listings but all were construction or supply bids", or "found 3 open solicitations". Always include it.
+
+If nothing qualifies: {"rfps": [], "notes": "..."}
