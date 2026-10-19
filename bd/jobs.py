@@ -23,8 +23,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
-PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "rfps", "ask", "card"})
-SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials", "sec_events")
+PAID_STEPS = frozenset({"enrich", "discover", "scan", "compare", "pe-portfolio", "pe-signals", "rfps", "ask", "card"})
+SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials", "sec_events", "sweep")
 FREE_SCANNERS = frozenset({"ats", "financials", "sec_events"})     # no model call: never counted against, or stopped by, the spending limit
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
@@ -57,6 +57,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "sec_fill": ("Fill facts from SEC filings (free)", False, False),
     "lookup": ("Research and scan one company", True, False),
     "find": ("Scan one company for signals (leadership, hiring, press)", True, False),
+    "compare": ("Test the combined scan on the cheaper model (saves nothing)", True, False),
     "enrich": ("Enrich accounts (propose missing facts)", True, False),
     "scan": ("Scan for signals", True, False),
     "score": ("Score accounts", False, False),
@@ -123,6 +124,9 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return ["lookup", "--only", company_name(form, required=True), "--budget", str(LOOKUP_BUDGET)]
     if kind == "find":
         return ["find", "--only", company_name(form, required=True), "--budget", str(FIND_BUDGET)]
+    if kind == "compare":
+        only = company_name(form)
+        return ["compare", "--count", str(num("limit", 1, 8, required=True)), "--budget", str(COMPARE_BUDGET)] + (["--only", only] if only else [])
     if kind == "ask":
         return ["ask", "--id", str(num("id", 1, 10**9, required=True))]
     if kind == "rfps":
@@ -165,8 +169,14 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 
 
 LOOKUP_BUDGET = 3        # dollars: the most one "research and scan this company" may spend, whatever the company
+COMPARE_BUDGET = 3       # dollars: the most one side-by-side test of the combined scan may spend (about 4 companies cost $0.5 to $1.5)
 FIND_BUDGET = 1          # dollars: the most one signal scan of a single company, started from the viewer's Find page, may spend
-FIND_SCANNERS = "leadership,press,events,hiring,tech_procurement"      # what a signal scan of one company looks for
+# What a scan looks for. Every company gets the core scanners; the extras run only for companies that already show a signal (that is where
+# they pay), and WARN notices are left to Advanced tools: on the first live run events, technology and WARN were about half the spend and
+# found one signal in four companies.
+CORE_SCANNERS = "leadership,press,hiring"
+EXTRA_SCANNERS = "events,tech_procurement"
+FIND_SCANNERS = "leadership,press,hiring"      # what a signal scan of one company looks for: about $0.2-0.5 a scanner on the first live run, so these three fit the $1 cap
 _NAME = re.compile(r"[A-Za-z0-9 .,&'()/-]+")
 
 
@@ -212,7 +222,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         # with whatever is left of the limit. Facts never delay or use up the money for signals.
         steps = [["check"], ["sec-fill", "--as-of", as_of],                  # free: gives public companies the SEC id that the filing scanners need
                  ["pe-sync"], ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
-                 ["scan", "--limit", a["--scan"], "--allow-empty", "--as-of", as_of]]
+                 ["scan", "--limit", a["--scan"], "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--allow-empty", "--as-of", as_of]]
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
         if int(a["--research"]):
@@ -226,17 +236,20 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         return [["sec-fill", *one, "--as-of", as_of], ["enrich", *one, "--limit", "1", "--allow-empty", "--as-of", as_of],
                 ["apply-proposals", "enrich_proposals.csv"], ["scan", *one, "--force", "--allow-empty", "--as-of", as_of],
                 ["score", "--allow-empty", "--as-of", as_of]]
-    if kind == "find":      # job boards first (free), then leadership, press, company events and hiring searches within the spending limit, then the score
+    if kind == "find":      # job boards first (free), then leadership, press and hiring searches within the spending limit, then the score
         name = args[args.index("--only") + 1]
         one = ["--only", name, "--exact"]
         return [["scan", *one, "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
                 ["scan", *one, "--scanners", FIND_SCANNERS, "--force", "--allow-empty", "--as-of", as_of],
                 ["score", "--allow-empty", "--as-of", as_of]]
+    if kind == "compare":      # nothing is stored, so no score step
+        a = dict(zip(args[1::2], args[2::2]))
+        return [["compare", "--count", a["--count"], *(["--only", a["--only"]] if "--only" in a else []), "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
-        return [["scan", "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
+        return [["scan", "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
     return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "rfps", "sec-fill") else [args]
 
@@ -364,7 +377,7 @@ class JobRunner:
         try:
             self._set(job_id, status="running", started=_now())
             as_of = chicago_today()
-            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind in ("update", "lookup", "find") else None
+            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind in ("update", "lookup", "find", "compare") else None
             start_id = self._max_run_id() if budget else 0
             skipped_for_budget = False
             with (self.log_dir / f"{job_id}.log").open("ab") as log:

@@ -16,7 +16,7 @@
 {% if job %}
 <div class="card">
 {% if running %}<h2>Scanning {{ name }}</h2>
-<p>Reading job boards, then searching for leadership changes, hiring, press and company news, then scoring. This takes a few minutes and spends at most ${{ find_budget }}. This page refreshes by itself and opens the brief when the scan is done.</p>
+<p>Reading job boards, then searching for leadership changes, hiring and press, then scoring. This takes a few minutes and spends at most ${{ find_budget }}. This page refreshes by itself and opens the brief when the scan is done.</p>
 {% else %}<h2>The scan did not finish</h2>
 <p>{{ name }} was added to the list, but the scan stopped early{% if job.note %} ({{ job.note }}){% endif %}. Try again in a minute, or ask an admin to look at the run history.</p>
 {% if company %}<div><a class="btn" href="/companies/{{ company.id }}">Open what we have</a></div>{% endif %}{% endif %}
@@ -40,7 +40,7 @@
 <div class="card">
 <h2>{% if hits %}Not the company you meant?{% else %}Not on the list: {{ q }}{% endif %}</h2>
 {% if can_run %}
-<p>A signal scan adds &ldquo;{{ q }}&rdquo; to the list, reads its job board if it has one (free), then searches for leadership changes, hiring, press and company news. It takes a few minutes and spends at most ${{ find_budget }}.</p>
+<p>A signal scan adds &ldquo;{{ q }}&rdquo; to the list, reads its job board if it has one (free), then searches for leadership changes, hiring and press. It takes a few minutes and spends at most ${{ find_budget }}.</p>
 {% if busy %}<div class="flash err">Another job is running. Wait for it to finish, then try again.</div>{% endif %}
 {{ scan_form(q, 'Add and scan for signals') }}
 {% else %}<p class="meta">This copy cannot look up new companies. Add it from the hosted app.</p>{% endif %}

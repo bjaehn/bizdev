@@ -38,15 +38,16 @@ from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply
                        mark_reviewed, reject_candidate, remove_exclusion, update_account)
 from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
-from bd.charts import priority_svg, trend_svg
+from bd.charts import priority_svg, spark_svg, trend_svg, weekly_svg
 from bd.priority import build_priority
 from bd.signal_coverage import signal_coverage
 from bd.feed import FEED_DAYS, GROUP_LABELS, GROUPS as FEED_GROUPS, load_items as load_feed_items
+from bd.trend import KIND_LABELS, TREND_KINDS
 from bd.week import build_week, signs_line
 from bd.profile import brief_text, build_profile
 from bd.health import build_health
 from bd.market import build_market
-from bd.jobs import FIND_BUDGET, KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
+from bd.jobs import COMPARE_BUDGET, FIND_BUDGET, KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.leadership import coverage
@@ -141,13 +142,16 @@ ADMIN_GROUPS = (
                    ("exclusions", "/exclusions", "Do-not-pursue list", "Clients and companies to skip", False),
                    ("clients", "/clients", "Existing clients", "SEI clients, kept apart from new business", False),
                    ("watchlist", "/watchlist", "Watchlist and pursuits", "Companies you follow, and where each pursuit stands", False))),
+    # The extra reports are not part of the everyday screens; the Admin list is where they live. They open in the analysis layout.
+    ("Reports", tuple((key, href, label, hint, False) for key, href, label, hint in REPORT_ITEMS)),
     ("System", (("health", "/health", "Data health", "What is producing, what it costs, what is missing", False),
                 ("runs", "/runs", "Run history and cost", "What ran and what it cost", False),
                 ("audit", "/audit", "Change log", "Who changed what, with sources", False),
                 ("settings", "/settings", "Settings", "Numbers behind the Update button", False))),
 )
+KIND_COLORS = {"leadership": "var(--k-lead)", "hiring": "var(--k-hire)", "press": "var(--k-press)", "events": "var(--k-event)"}
 SIGNALS_MAX = 200               # rows on the Signals page
-ADMIN_PAGES = frozenset(key for _, items in ADMIN_GROUPS for key, *_ in items) | {"admin", "jobs"}
+ADMIN_PAGES = frozenset(key for g, items in ADMIN_GROUPS if g != "Reports" for key, *_ in items) | {"admin", "jobs"}
 
 class App:
     def __init__(self, cfg: Config, db_path: str, token: str = "", root: Path | None = None,
@@ -164,7 +168,7 @@ class App:
                                trim_blocks=True, lstrip_blocks=True)
         self.env.filters.update(band_name=lambda b: {'Stored': 'Below Watch'}.get(b, b), status_label=lambda v: {'active': 'Scanned for signals', 'hold_review': 'Unverified', 'unverified': 'Unverified', 'excluded': 'Out of scope'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
-                                hosted=hosted is not None, operate=jobs is not None, signs_line=signs_line, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
+                                hosted=hosted is not None, operate=jobs is not None, signs_line=signs_line, spark=spark_svg, kind_colors=KIND_COLORS, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
                                 report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"}, find_budget=FIND_BUDGET)
         init_conn = connect(db_path)
         init_db(init_conn)
@@ -344,7 +348,7 @@ class App:
                  ("Teams webhook (TEAMS_WEBHOOK_URL), needed for the Monday post", bool(env.get("TEAMS_WEBHOOK_URL")))]
         last = self.jobs.last_scheduled()
         return self.render("operate.html", page="operate", ready=ready, kinds=KINDS, scanners=SCANNER_NAMES,
-                           jobs=self.jobs.recent(), busy=self.jobs.busy(), cap=self.cfg.llm.max_cost_per_run_usd,
+                           jobs=self.jobs.recent(), busy=self.jobs.busy(), cap=self.cfg.llm.max_cost_per_run_usd, compare_budget=COMPARE_BUDGET,
                            next_run=next_run(datetime.now(timezone.utc)),
                            posts=bool(env.get("TEAMS_WEBHOOK_URL")) and env.get("BD_DRY_RUN") != "1", last=last)
 
@@ -519,7 +523,7 @@ class App:
     def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = score_dates(conn)
         empty = dict(page="opportunities", dates=dates, run_date=None, items=[], total=0, error=None, q={}, families=[], lines=[], stale=[],
-                     prev_date=None, view="matrix", matrix=None, cov=None, priority=None, chart=None)
+                     prev_date=None, view="ranked", matrix=None, cov=None, priority=None, chart=None, ranked_tabs=[])
         if not dates:
             return self.render("opportunities.html", **empty)
         chosen = req.q("date") if req.q("date") in dates else dates[0]
@@ -531,7 +535,7 @@ class App:
         q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage", "client", "industry")}
         q["pe"] = req.q("pe") == "1"
         q["new"] = req.q("new") == "1"
-        view = req.q("view") if req.q("view") in ("list", "chart") else "matrix"
+        view = req.q("view") if req.q("view") in ("list", "chart", "matrix") else "ranked"          # the simple ranked list; the others stay reachable by address
         items = filter_opportunities(ol.items, band=q["band"], family=q["family"], service_line=q["service_line"], pe_only=q["pe"],
                                      q=q["q"], new_only=q["new"], status=q["status"], sort=(q["sort"] or "score") if view == "list" else "score",
                                      stage=q["stage"], client=q["client"], industry=q["industry"])
@@ -551,13 +555,18 @@ class App:
                                   ("family", q["family"]), ("service_line", q["service_line"]), ("status", q["status"]), ("stage", q["stage"]),
                                   ("client", q["client"]), ("pe", "1" if q["pe"] else ""), ("new", "1" if q["new"] else ""),
                                   ("tracked", q["tracked"])) if v}
-        link = lambda **over: "/opportunities?" + urlencode({k: v for k, v in {**keep, "view": "" if view == "matrix" else view, "sort": q["sort"], **over}.items() if v})  # noqa: E731
+        link = lambda **over: "/opportunities?" + urlencode({k: v for k, v in {**keep, "view": view, "sort": q["sort"], **over}.items() if v})  # noqa: E731
         families = sorted({r.kind for o in ol.items for r in o.reasons})
+        base = {"q": q["q"]} if q["q"] else {}
+        ranked_tabs = [(label, "/opportunities" + (("?" + urlencode({**base, **({"band": band} if band else {})})) if (base or band) else ""),
+                        q["band"] == band and q["tracked"] != "1")
+                       for label, band in (("All", ""), ("Hot", "Hot"), ("Warm", "Warm"), ("Watch", "Watch"))]
+        ranked_tabs.append(("Everything scanned", "/opportunities?" + urlencode({**base, "tracked": "1"}), q["tracked"] == "1"))
         return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=items, total=len(ol.items),
                            error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale, view=view, matrix=matrix, priority=priority, chart=chart,
                            prev_date=ol.prev_date.isoformat() if ol.prev_date else None, bands=["Hot", "Warm", "Watch", "Stored"],
                            statuses=["card", "over_cap", "held", "tracking"], stages=STAGES, stage_labels=STAGE_LABELS, cov=cov,
-                           link=link,
+                           link=link, ranked_tabs=ranked_tabs,
                            industries=sorted({o.account.industry for o in ol.items if o.account.industry}),
                            sort_keys=[("score", "Score"), ("types", "Signal types"), ("newest", "Newest signal"), ("change", "Biggest change")])
 
@@ -590,7 +599,9 @@ class App:
         return self.render("market.html", page="market", m=m, trend_chart=trend, run_label=label)
 
     def week_page(self, conn: sqlite3.Connection) -> Response:
-        return self.render("week.html", page="week", w=build_week(conn, self.cfg, date.today()), stage_labels=STAGE_LABELS)
+        w = build_week(conn, self.cfg, date.today())
+        return self.render("week.html", page="week", w=w, stage_labels=STAGE_LABELS, kinds=[(k, label) for k, _, label in TREND_KINDS],
+                           trend_chart=weekly_svg(w.trend.weeks, w.trend.series, KIND_LABELS))
 
     def signals_page(self, req: Request, conn: sqlite3.Connection) -> Response:
         """The whole signal feed: every stored signal in the window, newest first, filtered by kind and by how far back to look."""

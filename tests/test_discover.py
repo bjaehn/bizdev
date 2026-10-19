@@ -174,6 +174,44 @@ def test_budget_cap_stops_before_research(cfg, conn):
     assert s.budget_hit and s.researched == 0
 
 
+def _priced(cfg, per_call):
+    """Price the fake model so that each 100-input/50-output-token call costs about `per_call` dollars."""
+    cfg.pricing.models["m"] = type(cfg.pricing.models[next(iter(cfg.pricing.models))])(
+        input=per_call / 150 * 1e6, output=per_call / 150 * 1e6, cache_write_5m=0, cache_read=0)
+
+
+def test_segment_searches_stop_before_the_spending_limit_is_passed(cfg, conn):
+    _priced(cfg, 0.40)
+    llm = RoutingLLM([], {}, all_urls())
+    v = FakeVerifier()
+    s = run_discover(conn, cfg, Discoverer(cfg, llm, v), Enricher(cfg, llm, v, None), AS_OF, model="m",
+                     segments=["a", "b", "c"], workers=1, max_cost=0.5)
+    assert len(llm.calls) == 1 and s.segments_skipped == 2 and s.budget_hit        # one search ($0.40) fits; a second would pass $0.5
+    assert 0.40 <= s.est_cost < 0.5                                                  # the one search that ran, web-search fee included
+
+
+def test_running_searches_count_against_the_limit_even_when_they_start_together(cfg, conn):
+    _priced(cfg, 0.40)
+    llm = RoutingLLM([], {}, all_urls())
+    v = FakeVerifier()
+    s = run_discover(conn, cfg, Discoverer(cfg, llm, v), Enricher(cfg, llm, v, None), AS_OF, model="m",
+                     segments=["a", "b", "c", "d"], workers=4, max_cost=0.5)
+    assert len(llm.calls) == 1 and s.segments_skipped == 3                          # four workers must not launch four $0.40 searches at once
+
+
+def test_with_room_under_the_limit_every_segment_is_searched(cfg, conn):
+    _priced(cfg, 0.40)
+    llm = RoutingLLM([], {}, all_urls())
+    v = FakeVerifier()
+    s = run_discover(conn, cfg, Discoverer(cfg, llm, v), Enricher(cfg, llm, v, None), AS_OF, model="m",
+                     segments=["a", "b", "c"], workers=2, max_cost=10)
+    assert len(llm.calls) == 3 and s.segments_skipped == 0 and not s.budget_hit
+    llm2 = RoutingLLM([], {}, all_urls())
+    s = run_discover(conn, cfg, Discoverer(cfg, llm2, v), Enricher(cfg, llm2, v, None), AS_OF, model="m",
+                     segments=["a", "b"], workers=2, max_cost=None)             # no limit: nothing is held back
+    assert len(llm2.calls) == 2 and s.segments_skipped == 0
+
+
 # ---- review queue and scan gating ------------------------------------------------------------------------------------
 def test_accept_and_reject_queued_candidates(cfg, conn):
     f = county_facts("Mystery Co", "mystery.com", revenue=None, employees=None)

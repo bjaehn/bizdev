@@ -183,7 +183,7 @@ def run_sec_fill(conn: sqlite3.Connection, cfg: Config, edgar: EdgarClient, as_o
             summary.passed_gate += ready
             log(f"  {acc.name}: filled {', '.join(got.facts)}"
                 + (f" (CIK matched to SEC filer {got.cik_from})" if got.cik_from else "")
-                + (" - now passes the fit gate" if ready else "")
+                + (" - now on the scan list" if ready else "")
                 + (f" [{'; '.join(got.notes)}]" if got.notes else ""))
         elif got.notes:
             log(f"  {acc.name}: nothing filled [{'; '.join(got.notes)}]")

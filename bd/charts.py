@@ -160,3 +160,55 @@ def trend_svg(points: Sequence[tuple[str, int, int, int]], max_bars: int = 12) -
     out.append(f'<line x1="{TL}" x2="{TL + iw}" y1="{Y(0):.1f}" y2="{Y(0):.1f}" style="stroke:var(--muted)"/>')
     out.append("</svg>")
     return "".join(out)
+
+
+KIND_FILL = {"leadership": "var(--k-lead)", "hiring": "var(--k-hire)", "press": "var(--k-press)", "events": "var(--k-event)"}
+WW, WH, WPL, WPR, WPT, WPB = 520, 250, 30, 4, 10, 34       # weekly chart: size, then margins
+
+
+def weekly_svg(weeks: Sequence, series: dict[str, list[int]], labels: dict[str, str]) -> str:
+    """Signals found per week as stacked columns, one colour per kind (the kind tokens in design.css). `weeks` are the dates of each
+    week's last day, oldest first; `series` maps kind -> counts per week. Every segment has a hover title. '' when nothing was found."""
+    n = len(weeks)
+    totals = [sum(series[k][i] for k in series) for i in range(n)]
+    if not n or not any(totals):
+        return ""
+    top = max(totals)
+    step = 1 if top <= 6 else 5 if top <= 30 else 10
+    ymax = math.ceil(top / step) * step
+    iw, ih = WW - WPL - WPR, WH - WPT - WPB
+    bw = iw / n
+    out = [f'<svg viewBox="0 0 {WW} {WH}" width="100%" role="img" aria-label="Signals found per week, by kind, for the last {n} weeks" '
+           f'xmlns="http://www.w3.org/2000/svg">']
+    for g in range(0, ymax + 1, step):
+        y = WPT + ih * (1 - g / ymax)
+        out.append(f'<line x1="{WPL}" x2="{WW - WPR}" y1="{y:.1f}" y2="{y:.1f}" stroke="var(--line)"/>'
+                   f'<text x="{WPL - 6}" y="{y + 4:.1f}" font-size="11" text-anchor="end" style="fill:var(--muted)">{g}</text>')
+    for i, d in enumerate(weeks):
+        base = WH - WPB
+        for kind in series:
+            v = series[kind][i]
+            if not v:
+                continue
+            h = ih * v / ymax
+            base -= h
+            out.append(f'<rect x="{WPL + i * bw + 4:.1f}" y="{base:.1f}" width="{max(bw - 8, 2):.1f}" height="{h:.1f}" rx="3" fill="{KIND_FILL.get(kind, "var(--muted)")}">'
+                       f'<title>Week ending {d:%b} {d.day}: {v} {escape(labels.get(kind, kind).lower())}</title></rect>')
+        if (n - 1 - i) % 2 == 0:                                    # every other week, ending with the latest
+            out.append(f'<text x="{WPL + i * bw + bw / 2:.1f}" y="{WH - 12}" font-size="11" text-anchor="middle" style="fill:var(--muted)">{d:%b} {d.day}</text>')
+    out.append("</svg>")
+    return "".join(out)
+
+
+def spark_svg(values: Sequence[float], width: int = 120, height: int = 34, label: str = "Score over recent runs") -> str:
+    """A small trend line through the values (oldest first) with a dot on the latest. '' for fewer than two values."""
+    vals = list(values)
+    if len(vals) < 2:
+        return ""
+    hi, lo = max(max(vals), 1), min(min(vals), 0)
+    span = (hi - lo) or 1
+    pts = [(3 + i * (width - 6) / (len(vals) - 1), height - 4 - (v - lo) / span * (height - 10)) for i, v in enumerate(vals)]
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    return (f'<svg class="spark" viewBox="0 0 {width} {height}" width="{width}" height="{height}" role="img" aria-label="{escape(label)}" '
+            f'xmlns="http://www.w3.org/2000/svg"><polyline points="{line}" fill="none" stroke="var(--accent)" stroke-width="2.2" '
+            f'stroke-linejoin="round" stroke-linecap="round"/><circle cx="{pts[-1][0]:.1f}" cy="{pts[-1][1]:.1f}" r="3.6" fill="var(--accent)"/></svg>')

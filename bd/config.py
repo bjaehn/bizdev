@@ -151,6 +151,9 @@ class Scan(_Strict):
     cadence_grace_days: int
     status_type_age_days: dict[str, tuple[int, int]] = {}
     tiers: dict[str, Tier]
+    sweep_searches: int = 6              # web searches the combined sweep may use per company (one call)
+    quiet_days: int = 60                 # a scanned company with no signal dated this recently is "quiet"...
+    quiet_every_weeks: int = 4           # ...and is scanned this often instead of its tier's cadence (0 turns this off)
 
 
 class Llm(_Strict):
@@ -169,6 +172,12 @@ class ModelPrice(_Strict):
     output: float
     cache_write_5m: float
     cache_read: float
+    # Some models charge more for a request whose prompt is longer than long_over_tokens (each request is priced on its own).
+    long_over_tokens: int | None = None
+    long_input: float | None = None
+    long_output: float | None = None
+    long_cache_write_5m: float | None = None
+    long_cache_read: float | None = None
 
 
 class Pricing(_Strict):
@@ -362,6 +371,7 @@ class Settings:
     db_path: str
     user_agent: str
     user_agent_configured: bool = False
+    anthropic_scan_model: str | None = None       # optional: the model the sweep scanner runs on (else ANTHROPIC_MODEL)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -373,6 +383,7 @@ class Settings:
             db_path=e.get("BD_DB_PATH", "bd.sqlite"),
             user_agent=clean_user_agent(e.get("BD_USER_AGENT")),
             user_agent_configured=bool((e.get("BD_USER_AGENT") or "").strip()),
+            anthropic_scan_model=e.get("ANTHROPIC_SCAN_MODEL") or None,
         )
 
     def require_llm(self) -> tuple[str, str]:

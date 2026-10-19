@@ -92,6 +92,7 @@ class Scanner:
 
     def __init__(self, cfg: Config, llm: LLM | None, verifier: UrlVerifier | None) -> None:
         self.cfg, self.llm, self.verifier = cfg, llm, verifier
+        self.model_name: str | None = None        # set when this scanner's calls run on a model other than the run's main one (pricing follows it)
 
     @classmethod
     def create(cls, cfg: Config, web: LLM | None, text: LLM | None, verifier: UrlVerifier | None, edgar: object | None,

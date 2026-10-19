@@ -50,12 +50,45 @@ class RunSummary:
     errors: int = 0
 
 
-def is_due(acc: Account, as_of: date, cfg: Config, force: bool = False) -> bool:
+def accounts_with_signals(conn: sqlite3.Connection, accounts: list[Account], as_of: date, days: int) -> list[Account]:
+    """The accounts among `accounts` that already have a stored signal (not a Low-confidence rumour) dated in the last `days` days."""
+    if not accounts:
+        return []
+    ids = [a.id for a in accounts]
+    since = (as_of - timedelta(days=days)).isoformat()
+    have = {r[0] for r in conn.execute(
+        f"SELECT DISTINCT account_id FROM signals WHERE confidence != 'Low' AND event_date >= ? AND account_id IN ({','.join('?' * len(ids))})",
+        (since, *ids))}
+    return [a for a in accounts if a.id in have]
+
+
+def is_due(acc: Account, as_of: date, cfg: Config, force: bool = False, quiet: bool = False) -> bool:
+    """Is the account due for a scan? `quiet` (scanned before, no recent signal) stretches the wait to scan.quiet_every_weeks, never shortens it."""
     if force or not acc.last_scanned:
         return True
     weeks = cfg.scan.tiers[acc.tier].every_weeks
+    if quiet and cfg.scan.quiet_every_weeks:
+        weeks = max(weeks, cfg.scan.quiet_every_weeks)
     age = (as_of - date.fromisoformat(acc.last_scanned)).days
     return age >= weeks * 7 - cfg.scan.cadence_grace_days
+
+
+def quiet_accounts(conn: sqlite3.Connection, accounts: list[Account], as_of: date, cfg: Config) -> set[int]:
+    """Accounts scanned before that show no signal in the last scan.quiet_days days: they are checked less often."""
+    if not cfg.scan.quiet_every_weeks:
+        return set()
+    scanned = [a for a in accounts if a.last_scanned]
+    loud = {a.id for a in accounts_with_signals(conn, scanned, as_of, cfg.scan.quiet_days)}
+    return {a.id for a in scanned if a.id not in loud}
+
+
+def split_due(conn: sqlite3.Connection, accounts: list[Account], as_of: date, cfg: Config, force: bool = False) -> tuple[list[Account], list[Account]]:
+    """(due, not due), by tier cadence and the quiet-company wait."""
+    quiet = set() if force else quiet_accounts(conn, accounts, as_of, cfg)
+    due, later = [], []
+    for acc in accounts:
+        (due if is_due(acc, as_of, cfg, force, acc.id in quiet) else later).append(acc)
+    return due, later
 
 
 def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], accounts: list[Account],
@@ -66,9 +99,7 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
     cap = cfg.llm.max_cost_per_run_usd if max_cost is None else max_cost
     summary = RunSummary(run_date=as_of)
 
-    due = []
-    for acc in accounts:
-        (due if is_due(acc, as_of, cfg, force) else summary.skipped_not_due).append(acc)
+    due, summary.skipped_not_due = split_due(conn, accounts, as_of, cfg, force)
 
     # Free scans (no model call) go first and are never held back by the spending limit; paid calls follow in account order.
     queue: deque[tuple[Account, Scanner]] = deque(sorted(((a, s) for a in due for s in scanners if s.applies_to(a)), key=lambda p: not p[1].free))
@@ -92,7 +123,7 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
             if out.learned_board and not out.error:
                 learn_board(conn, acc.id, out.learned_board)
             record_filings(conn, acc.id, sc.name, out.read_filings, as_of)
-        cost = estimate_cost(out.usage, model, cfg)
+        cost = estimate_cost(out.usage, sc.model_name or model, cfg)
         reserve.note(cost, out.usage.web_searches > 0)
         if cost is None:
             run.est_cost = None

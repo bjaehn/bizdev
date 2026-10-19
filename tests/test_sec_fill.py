@@ -130,7 +130,7 @@ def test_a_listed_company_gets_its_cik_then_revenue_ownership_and_city_and_passe
     assert (a.cik, a.revenue, a.ownership, a.hq_city, a.status) == ("0000001234", 1_200_000_000, "public", "Chicago, IL", "active")
     assert s.read == 1 and s.passed_gate == 1 and len(s.filled) == 1 and s.errors == 0
     assert set(s.filled[0].facts) == {"cik", "revenue", "ownership", "hq_city"}
-    assert "CIK matched to SEC filer ACME CORP (ACME)" in logs[0] and "now passes the fit gate" in logs[0]
+    assert "CIK matched to SEC filer ACME CORP (ACME)" in logs[0] and "now on the scan list" in logs[0]
     rows = audit(conn, aid)
     assert all(r[0] == "sec" for r in rows if r[1] in ("update", "evidence"))
     ev = {r[2]: r[3] for r in rows if r[1] == "evidence"}

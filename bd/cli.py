@@ -43,6 +43,7 @@ def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
 
     implemented = [n for n, c in SCANNERS.items() if c.implemented]
     if opt == "all":
+        implemented = [n for n in implemented if n != "sweep"]       # the sweep duplicates leadership, press, events and technology: only when named
         if not settings.user_agent_configured:
             skipped = [n for n in SEC_SCANNERS if n in implemented]
             for n in skipped:
@@ -78,7 +79,14 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     verifier = UrlVerifier(cfg, settings.user_agent)
     edgar = EdgarClient(cfg, settings.user_agent) if any(n in names for n in SEC_SCANNERS) else None
     ats = AtsClient(cfg, settings.user_agent) if "ats" in names else None
-    return [SCANNERS[n].create(cfg, web, text, verifier, edgar, ats=ats) for n in names]
+    built = [SCANNERS[n].create(cfg, web, text, verifier, edgar, ats=ats) for n in names]
+    scan_model = settings.anthropic_scan_model
+    if scan_model and scan_model != model:        # the sweep may run on a cheaper model; its cost is priced by that model
+        cheap = AnthropicWebSearchClient(cfg, model=scan_model, api_key=key)
+        for sc in built:
+            if sc.name == "sweep":
+                sc.llm, sc.model_name = cheap, scan_model
+    return built
 
 
 @app.command()
@@ -140,6 +148,8 @@ def scan(
     limit: Optional[int] = typer.Option(None, help="Scan at most N accounts"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
     scanners: str = typer.Option("all", help="Comma list of scanner names, or all implemented"),
+    extras: str = typer.Option("", help="Comma list of extra scanners, run afterwards only for scanned companies that already show a signal "
+                                         "(a deeper look where it is most likely to pay)"),
     workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
     force: bool = typer.Option(False, help="Ignore tier cadence"),
     dry_run: bool = typer.Option(False, help="Apply the fit gate and show what would be scanned; no API calls"),
@@ -150,7 +160,7 @@ def scan(
     from bd.accounts import list_accounts
     from bd.db import connect, init_db
     from bd.fit_gate import apply_fit_gate
-    from bd.runner import is_due, run_scans
+    from bd.runner import accounts_with_signals, quiet_accounts, run_scans, split_due
     from bd.scanners import SCANNERS
 
     if tier not in ("A", "B", "all"):
@@ -158,6 +168,7 @@ def scan(
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
     names = _resolve_scanner_names(scanners, settings)
+    extra_names = [n for n in _resolve_scanner_names(extras, settings) if n not in names] if extras else []
     conn = connect(settings.db_path)
     init_db(conn)
     from bd.settings_store import apply_overrides
@@ -177,7 +188,12 @@ def scan(
                        if only else "No companies to scan: the list is empty or every company is known to be out of scope.")
             return
         _fail("No accounts to scan. Add companies with `bd seed accounts.csv`.")
-    due = sorted((a for a in accounts if is_due(a, run_date, cfg, force)), key=lambda a: (a.last_scanned or "", a.id))
+    due, later = split_due(conn, accounts, run_date, cfg, force)
+    due.sort(key=lambda a: (a.last_scanned or "", a.id))
+    waiting = len(quiet_accounts(conn, later, run_date, cfg))
+    if waiting:
+        typer.echo(f"{waiting} compan{'y is' if waiting == 1 else 'ies are'} quiet (no signal in {cfg.scan.quiet_days} days) and checked every "
+                   f"{cfg.scan.quiet_every_weeks} weeks, not yet due again.")
     if limit:
         due = due[:limit]                           # --limit counts accounts that are due; never-scanned ones go first
     probes = [SCANNERS[n].create(cfg, None, None, None, None) for n in names]
@@ -186,6 +202,8 @@ def scan(
     if dry_run:
         for a in due:
             typer.echo(f"  would scan: {a.name} (tier {a.tier})")
+        if extra_names:
+            typer.echo(f"  then {extra_names} for the ones that show a signal")
         return
     if not due:
         return
@@ -203,9 +221,62 @@ def scan(
     if summary.budget_hit:
         typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): {summary.skipped_budget} calls not started. "
                    "Raise llm.max_cost_per_run_usd in config.yaml and re-run to finish.", err=True)
+    elif extra_names and summary.accounts:
+        scanned = [r.account for r in summary.accounts.values()]
+        deep = accounts_with_signals(conn, scanned, run_date, cfg.scan.window_days)
+        cap = cfg.llm.max_cost_per_run_usd
+        left = None if cap is None else max(cap - summary.est_cost, 0.0)
+        typer.echo(f"\nExtra scanners {extra_names} for {len(deep)} of {len(scanned)} scanned compan{'y' if len(scanned) == 1 else 'ies'} "
+                   "that already show a signal.")
+        if deep and (left is None or left > 0):
+            more = run_scans(conn, cfg, _build_scanners(extra_names, cfg, settings), deep, run_date, model=settings.anthropic_model,
+                             workers=workers, force=True, max_cost=left, touch_last_scanned=False, log=typer.echo)
+            typer.echo(f"Extras total: {more.tokens:,} tokens, ${more.est_cost:.4f} estimated, {more.new_signals} new signals, {more.errors} call errors.")
+            summary.errors += more.errors
+            if more.budget_hit:
+                typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}): {more.skipped_budget} extra calls not started.", err=True)
     if summary.calls and summary.errors == summary.calls:
         typer.echo("Every scan call failed (bad API key or model, no network?). Exiting with an error so a scheduled "
                    "run stops before scoring and posting.", err=True)
+        raise typer.Exit(code=3)
+
+
+@app.command()
+def compare(
+    count: int = typer.Option(4, "--count", min=1, max=8, help="How many companies to test (those with the most stored signals)"),
+    only: Optional[str] = typer.Option(None, help="Test this one company instead (exact name)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+) -> None:
+    """Test the combined sweep scanner (on ANTHROPIC_SCAN_MODEL when set) against what the separate scanners already stored.
+    Stores nothing; costs a few cents a company."""
+    from bd.accounts import list_accounts
+    from bd.compare import pick_accounts, report, run_compare
+    from bd.db import connect, init_db
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    from bd.settings_store import apply_overrides
+    cfg = apply_overrides(cfg, conn)
+    accounts = list_accounts(conn)
+    if only:
+        accounts = [a for a in accounts if a.name.lower() == only.lower()]
+    else:
+        accounts = pick_accounts(conn, accounts, run_date, cfg.scan.window_days, count)
+    if not accounts:
+        _fail("No company to test: " + (f"{only!r} is not on your list." if only else
+                                          "none has a stored signal yet. Run an update first, so there is something to compare with."))
+    scanner = _build_scanners(["sweep"], cfg, settings)[0]
+    model = scanner.model_name or settings.anthropic_model
+    typer.echo(f"Testing the sweep on {len(accounts)} compan{'y' if len(accounts) == 1 else 'ies'} with {model} (nothing is stored): "
+               + ", ".join(a.name for a in accounts))
+    rows = run_compare(conn, cfg, scanner, accounts, run_date, settings.anthropic_model, max_cost=cfg.llm.max_cost_per_run_usd, log=typer.echo)
+    typer.echo("")
+    for line in report(rows, model):
+        typer.echo(line)
+    if rows and all(r.error for r in rows if not r.skipped):
+        typer.echo("Every sweep call failed (does this model support web search? is the key right?).", err=True)
         raise typer.Exit(code=3)
 
 
@@ -256,6 +327,8 @@ def discover(
     typer.echo(f"Total: {summary.tokens:,} tokens, ${summary.est_cost:.4f} estimated{note}, {summary.errors} call errors.")
     if summary.added:
         typer.echo("Auto-added (unreviewed, tier B): " + ", ".join(summary.added))
+    if summary.segments_skipped:
+        typer.echo(f"{summary.segments_skipped} of {summary.segments} segment search(es) not started: the spending limit would have been passed.")
     if summary.budget_hit:
         typer.echo(f"BUDGET CAP HIT (${cfg.llm.max_cost_per_run_usd}); some candidates were not researched.", err=True)
     if summary.segments and summary.errors >= summary.segments and not summary.researched:
@@ -629,7 +702,7 @@ def sec_fill(
         return
     facts = sum(len(f.facts) for f in s.filled)
     typer.echo(f"\nSEC fill: read {s.read} SEC record(s); filled {facts} fact(s) for {len(s.filled)} company(ies), "
-               f"{s.passed_gate} now ready for scanning; {len(s.unmatched)} with no unique SEC match"
+               f"{s.passed_gate} newly on the scan list; {len(s.unmatched)} with no unique SEC match"
                + (f"; {s.not_reached} left for the next run" if s.not_reached else "")
                + (f"; {s.errors} read problem(s)" if s.errors else "") + ". No cost.")
     if s.unmatched:

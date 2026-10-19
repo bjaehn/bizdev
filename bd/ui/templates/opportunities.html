@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% from "_cards.html" import opp_card %}
-{% from "_ui.html" import shade_legend %}
+{% from "_ui.html" import shade_legend, bar_rows %}
 {% block title %}Companies{% endblock %}
 
 {% block hero %}<h1>Companies</h1>
-<p class="sub">Every company the tool scores, side by side: find one by name, or compare which kinds of signs each has. The short list is on <a href="/week">This week</a>.</p>{% endblock %}
+<p class="sub">Every company that shows signals, strongest first. Open one to see what was found and where. The short list is on <a href="/week">This week</a>.</p>{% endblock %}
 {% block body %}
 
 {% if not dates %}
@@ -15,8 +15,14 @@
 <p class="meta"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> scanned · <b>{{ cov.with_signal_90d }}</b> with signals in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
 {% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err">These scores are {{ cov.score_age_days }} days old.</div>{% endif %}
 
+{% if view == 'ranked' %}
+<form method="get" action="/opportunities" class="search noprint"><input type="hidden" name="band" value="{{ q.band }}"><input type="hidden" name="tracked" value="{{ q.tracked }}">
+<input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name"><button type="submit">Search</button></form>
+<div class="tabs">{% for label, href, on in ranked_tabs %}<a href="{{ href }}" class="{{ 'on' if on else '' }}">{{ label }}</a>{% endfor %}<span class="meta">{{ items|length }} of {{ total }} compan{{ 'y' if total == 1 else 'ies' }}</span></div>
+{% if items %}<div class="card">{{ bar_rows(items) }}</div>{% else %}<div class="card empty">No companies match.</div>{% endif %}
+{% else %}
 <form method="get" action="/opportunities" class="filters">
-<input type="hidden" name="view" value="{{ '' if view == 'matrix' else view }}">
+<input type="hidden" name="view" value="{{ view }}">
 <input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name">
 <select name="band" aria-label="Band"><option value="">any band</option>{% for b in bands %}<option value="{{ b }}" {{ 'selected' if q.band == b else '' }}>{{ b|band_name }}</option>{% endfor %}</select>
 <select name="industry" aria-label="Industry"><option value="">any industry</option>{% for i in industries %}<option {{ 'selected' if q.industry == i else '' }}>{{ i }}</option>{% endfor %}</select>
@@ -37,7 +43,7 @@
 <label><input type="checkbox" name="tracked" value="1" {{ 'checked' if q.tracked == '1' else '' }}> include below Watch</label>
 </div></details></form>
 
-<div class="tabs"><a href="{{ link(view='') }}" class="{{ 'on' if view == 'matrix' else '' }}">Signal matrix</a><a href="{{ link(view='chart') }}" class="{{ 'on' if view == 'chart' else '' }}">Priority chart</a><a href="{{ link(view='list') }}" class="{{ 'on' if view == 'list' else '' }}">List</a>
+<div class="tabs"><a href="{{ link(view='matrix') }}" class="{{ 'on' if view == 'matrix' else '' }}">Signal matrix</a><a href="{{ link(view='chart') }}" class="{{ 'on' if view == 'chart' else '' }}">Priority chart</a><a href="{{ link(view='list') }}" class="{{ 'on' if view == 'list' else '' }}">List</a>
 <span class="meta">{{ items|length }} of {{ total }} compan{{ 'y' if total == 1 else 'ies' }}{% if prev_date %}; change is against the run on {{ prev_date }}{% endif %}</span></div>
 
 {% if view == 'matrix' %}
@@ -74,6 +80,7 @@ size = how many different signal types fired · dark outline = news in the last 
 {% else %}
 {% for o in items %}{{ opp_card(o, stage_labels, true) }}
 {% else %}<div class="card empty">No companies match.</div>{% endfor %}
+{% endif %}
 {% endif %}
 {% endif %}
 {% endblock %}

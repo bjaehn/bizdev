@@ -23,6 +23,7 @@ from importlib import resources
 from pydantic import BaseModel, field_validator
 
 from bd.accounts import Account, is_valid_domain, list_accounts, normalize_domain, parse_fields
+from bd.budget import Reserve
 from bd.config import Config
 from bd.cost import estimate_cost
 from bd.curate import create_account
@@ -81,6 +82,7 @@ class DiscoverSummary:
     est_cost: float = 0.0
     unpriced_calls: int = 0
     budget_hit: bool = False
+    segments_skipped: int = 0         # segment searches never started because the spending limit would have been passed
 
 
 def _norm_name(n: str) -> str:
@@ -161,10 +163,25 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
     names, domains = _known(conn)
     known_list = sorted({r["name"] for r in conn.execute("SELECT name FROM accounts")})
     new: list[Found] = []
+    # Each segment search is one paid call (about $0.35), so they start in small batches and only while the spending limit would hold with
+    # every running search finished; an update's last few dollars are no longer spent on searches that were never allowed.
+    reserve, pending = Reserve(), list(segs)
+    results: list = []
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        results = list(ex.map(lambda s: (s, discoverer.find(s, known_list)), segs))
-    for seg, (companies, retrieved, usage, err) in results:
-        cost = spend(usage)
+        while pending:
+            batch: list[str] = []
+            while pending and len(batch) < workers and reserve.allows(out.est_cost, len(batch), cap):
+                batch.append(pending.pop(0))
+            if not batch:
+                break
+            for seg, found in zip(batch, ex.map(lambda s: discoverer.find(s, known_list), batch)):
+                cost = spend(found[2])
+                reserve.note(cost)
+                results.append((seg, found, cost))
+    out.segments_skipped = len(pending)
+    if pending:
+        out.budget_hit = True
+    for seg, (companies, retrieved, usage, err), cost in results:
         _log(conn, as_of, "discover", None, usage.total_tokens, cost, err, len(companies))
         out.errors += bool(err)
         log(f"  segment '{seg}': {len(companies)} companies" + (f"  ERROR {err}" if err else ""))
@@ -183,7 +200,7 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
             if dom:
                 domains.add(dom)
             new.append(Found(c, seg))
-    if cap is not None and out.est_cost >= cap:
+    if out.budget_hit or (cap is not None and out.est_cost >= cap):
         out.budget_hit = True
         return out
 

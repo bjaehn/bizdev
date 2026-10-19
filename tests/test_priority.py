@@ -174,7 +174,9 @@ def test_when_no_company_has_a_revenue_the_page_says_so_instead_of_drawing_an_em
     assert "nothing to place on a size axis" in body and "<circle" not in body
 
 
-def test_the_matrix_and_the_list_still_work_and_unknown_views_fall_back_to_the_matrix(seeded):
+def test_the_matrix_and_the_list_stay_reachable_by_address_and_unknown_views_fall_back_to_the_simple_list(seeded):
     e, ids = seeded
-    assert 'class="matrix"' in e.get("/opportunities").body and 'class="matrix"' in e.get("/opportunities?view=bogus").body
+    assert 'class="matrix"' in e.get("/opportunities?view=matrix").body
+    assert 'class="matrix"' not in e.get("/opportunities").body and 'class="matrix"' not in e.get("/opportunities?view=bogus").body
+    assert 'class="bar-row"' in e.get("/opportunities?view=bogus").body
     assert 'class="matrix"' not in e.get("/opportunities?view=list").body

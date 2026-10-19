@@ -57,24 +57,23 @@ def test_the_login_page_is_a_centred_card_without_a_band(app_env):  # noqa: F811
     assert 'class="card card--narrow"' in body and "<h1" not in band(body) and "Sign in" in body
 
 
-def test_this_week_shows_four_signal_numbers_that_match_the_page(seeded):
+def test_this_week_shows_three_numbers_that_match_the_page(seeded):
     e, a = seeded
     body = e.get("/week").body
-    days = 30
-    assert f"<b>1</b><span>leadership changes, last {days} days</span>" in body and f"<b>1</b><span>hiring signals, last {days} days</span>" in body
-    assert "<b>1</b><span>Hot or Warm opportunities</span>" in body                              # the three signals made one company Hot
+    assert "<b>1</b><span>company worth a call</span>" in body                                    # the three signals made one company Hot
+    assert "<b>3</b><span>new signals found this week</span>" in body
+    assert "<span>signals in the last 4 weeks (the 4 weeks before: 0)</span>" in body and "&#9650;" not in body
     assert 'class="tile hot"' in body and 'class="tile good"' in body and 'class="tile accent"' in body
-    assert len(re.findall(r'class="tile[ "]', body)) == 4
+    assert len(re.findall(r'class="tile[ "]', body)) == 3
 
 
-def test_with_no_earlier_run_what_changed_says_so_instead_of_a_number(seeded):
+def test_a_call_card_shows_the_change_since_the_last_run_only_when_there_was_an_earlier_run(seeded):
     e, a = seeded
-    body = e.get("/week").body
-    assert "first scoring run, so there is nothing to compare it with yet" in body
+    assert "since last run" not in e.get("/week").body
     prev = (date.today() - timedelta(days=7)).isoformat()
     e.conn.execute("INSERT INTO scores(account_id, run_date, score, band, components_json, rationale) VALUES (?,?,?,?,'{}','x')", (a, prev, 10, "Stored"))
     e.conn.commit()
-    assert "1 company became Hot or Warm" in e.get("/week").body
+    assert "&#9650; +90 since last run" in e.get("/week").body or "▲ +90 since last run" in e.get("/week").body
 
 
 def test_the_stylesheet_has_light_dark_phone_and_print_rules_and_no_script(seeded):

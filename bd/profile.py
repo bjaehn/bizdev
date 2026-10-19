@@ -16,6 +16,7 @@ from bd.config import Config
 from bd.dossier import build_dossier
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date, money
 from bd.timeline import FAMILY_COLORS
+from bd.trend import score_history
 from bd.week import signs_line
 
 EVIDENCE_MAX = 12
@@ -81,6 +82,7 @@ def build_profile(conn: sqlite3.Connection, cfg: Config, a: Account, today: date
     d = build_dossier(conn, cfg, a, today)
     d["explain"] = explain(d["opp"], cfg) if d["opp"] else None
     d["signs"] = signs_line(d["opp"].result) if d["opp"] else ""
+    d["history"] = score_history(conn, [a.id]).get(a.id, [])
     d["unverified"] = d["fit"].unverified and a.status != "excluded"
     d["facts"] = facts_line(a)
     d["can_check"] = can_check_free(a)

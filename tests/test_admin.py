@@ -32,12 +32,12 @@ def test_the_analysis_side_has_four_links_and_no_admin_machinery(app_env):  # no
     for path in ANALYSIS_PAGES:
         body = e.get(path).body
         assert e.get(path).code == 200, path
-        assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/week", "/signals", "/opportunities", "/reports"], path
+        assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/week", "/opportunities"], path
         assert 'class="adminlink" href="/admin"' in body and 'class="adminnav"' not in body and "<header class=\"admin\">" not in body, path
         assert "Update my list" not in nav_of(body) and "Look up" not in nav_of(body)
     assert 'class="top on" href="/week"' in nav_of(e.get("/week").body) and 'class="top on" href="/week"' in nav_of(e.get("/help").body)
     assert 'class="top on" href="/opportunities"' in nav_of(e.get("/opportunities").body)
-    assert 'class="top on" href="/reports"' in nav_of(e.get("/market").body)               # a report keeps Reports lit
+    assert 'href="/reports"' not in nav_of(e.get("/market").body)                           # Reports is no longer a top-level screen
 
 
 def test_reports_lists_each_report_once_and_each_opens_on_the_analysis_side(app_env):  # noqa: F811
@@ -49,7 +49,8 @@ def test_reports_lists_each_report_once_and_each_opens_on_the_analysis_side(app_
 
 def test_admin_is_a_different_area_with_its_own_shell(app_env):  # noqa: F811
     e = app_env
-    pages = ["/admin"] + [i[1] for _, items in ADMIN_GROUPS for i in items]
+    admin_groups = [(g, items) for g, items in ADMIN_GROUPS if g != "Reports"]                  # the extra reports open in the analysis layout
+    pages = ["/admin"] + [i[1] for _, items in admin_groups for i in items]
     for path in pages:
         page = e.get(path)
         assert page.code == 200, path
@@ -57,7 +58,7 @@ def test_admin_is_a_different_area_with_its_own_shell(app_env):  # noqa: F811
         assert '<header class="admin">' in body and '<span class="area">Admin</span>' in body, path
         assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/week"] and "Back to analysis" in nav_of(body), path
         side = body.split('<aside class="adminnav">')[1].split("</aside>")[0]
-        for _, href, *_ in (i for _, items in ADMIN_GROUPS for i in items):
+        for _, href, *_ in (i for _, items in admin_groups for i in items):
             assert f'href="{href}"' in side, (path, href)                                  # every admin page is one click away
     assert 'href="/accounts" class="on"' in e.get("/accounts").body                       # and the sidebar marks the current page
 
@@ -121,7 +122,7 @@ def test_opportunities_keeps_every_filter_under_more_filters(app_env):  # noqa: 
     for t in ("leadership_change", "hiring_cluster"):
         add_signal(e.conn, e.cfg, a, t, 3, as_of=date.today())
     score_accounts(e.conn, e.cfg, date.today())
-    body = e.get("/opportunities").body
+    body = e.get("/opportunities?view=matrix").body
     form = body.split('<form method="get" action="/opportunities"')[1].split("</form>")[0]
     visible, hidden = form.split('<details class="more">')
     assert 'name="q"' in visible and 'name="band"' in visible and 'name="industry"' in visible and visible.count("<select") == 2

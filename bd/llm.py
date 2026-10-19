@@ -137,7 +137,10 @@ class AnthropicWebSearchClient:
                 )
             except anthropic.APIError as e:
                 raise LLMError(f"{type(e).__name__}: {e}", usage) from e
-            usage.add(_usage_from(resp.usage))
+            one = _usage_from(resp.usage)
+            price = self._cfg.pricing.models.get(self._model)
+            long_over = price.long_over_tokens if price else None
+            usage.add(one.as_long() if long_over and one.prompt_tokens > long_over else one)
             urls |= retrieved_urls_from(resp.content)
             if resp.stop_reason == "refusal":
                 cat = getattr(getattr(resp, "stop_details", None), "category", None)
