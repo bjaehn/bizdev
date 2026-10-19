@@ -15,11 +15,16 @@ def estimate_cost(usage: Usage, model: str | None, cfg: Config) -> float | None:
     if price is None:
         return None
     per_tok = 1 / 1_000_000
+    pick = lambda long, normal: normal if long is None else long    # noqa: E731  (a model with no long-prompt price charges one rate)
     return round(
         usage.input_tokens * price.input * per_tok
         + usage.output_tokens * price.output * per_tok
         + usage.cache_creation_tokens * price.cache_write_5m * per_tok
         + usage.cache_read_tokens * price.cache_read * per_tok
+        + usage.long_input_tokens * pick(price.long_input, price.input) * per_tok
+        + usage.long_output_tokens * pick(price.long_output, price.output) * per_tok
+        + usage.long_cache_creation_tokens * pick(price.long_cache_write_5m, price.cache_write_5m) * per_tok
+        + usage.long_cache_read_tokens * pick(price.long_cache_read, price.cache_read) * per_tok
         + usage.web_searches * cfg.pricing.web_search_per_1000 / 1000,
         6,
     )

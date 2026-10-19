@@ -43,6 +43,7 @@ def _resolve_scanner_names(opt: str, settings: Settings) -> list[str]:
 
     implemented = [n for n, c in SCANNERS.items() if c.implemented]
     if opt == "all":
+        implemented = [n for n in implemented if n != "sweep"]       # the sweep duplicates leadership, press, events and technology: only when named
         if not settings.user_agent_configured:
             skipped = [n for n in SEC_SCANNERS if n in implemented]
             for n in skipped:
@@ -78,7 +79,14 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     verifier = UrlVerifier(cfg, settings.user_agent)
     edgar = EdgarClient(cfg, settings.user_agent) if any(n in names for n in SEC_SCANNERS) else None
     ats = AtsClient(cfg, settings.user_agent) if "ats" in names else None
-    return [SCANNERS[n].create(cfg, web, text, verifier, edgar, ats=ats) for n in names]
+    built = [SCANNERS[n].create(cfg, web, text, verifier, edgar, ats=ats) for n in names]
+    scan_model = settings.anthropic_scan_model
+    if scan_model and scan_model != model:        # the sweep may run on a cheaper model; its cost is priced by that model
+        cheap = AnthropicWebSearchClient(cfg, model=scan_model, api_key=key)
+        for sc in built:
+            if sc.name == "sweep":
+                sc.llm, sc.model_name = cheap, scan_model
+    return built
 
 
 @app.command()

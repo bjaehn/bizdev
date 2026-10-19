@@ -104,7 +104,7 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
             if out.learned_board and not out.error:
                 learn_board(conn, acc.id, out.learned_board)
             record_filings(conn, acc.id, sc.name, out.read_filings, as_of)
-        cost = estimate_cost(out.usage, model, cfg)
+        cost = estimate_cost(out.usage, sc.model_name or model, cfg)
         reserve.note(cost, out.usage.web_searches > 0)
         if cost is None:
             run.est_cost = None

@@ -199,7 +199,10 @@ def test_error_explanations_and_static_problems(cfg):
     assert explain_error("weird thing").startswith("unexpected error")
     assert len(static_problems(cfg, {})) == 3
     assert static_problems(cfg, {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_MODEL": "claude-sonnet-5-5", "BD_USER_AGENT": "x y@z.com"}) == []
-    assert "no price" in static_problems(cfg, {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_MODEL": "claude-haiku-5-5", "BD_USER_AGENT": "u"})[0]
+    assert "no price" in static_problems(cfg, {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_MODEL": "claude-haiku-4-5", "BD_USER_AGENT": "u"})[0]
+    ok = {"ANTHROPIC_API_KEY": "k", "ANTHROPIC_MODEL": "claude-sonnet-5-5", "BD_USER_AGENT": "x y@z.com"}
+    assert static_problems(cfg, {**ok, "ANTHROPIC_SCAN_MODEL": "claude-haiku-5-5"}) == []                 # priced, including its long-prompt rate
+    assert "scan model" in static_problems(cfg, {**ok, "ANTHROPIC_SCAN_MODEL": "claude-haiku-4-5"})[0]
 
 
 def test_budget_env_overrides_the_config_cap(monkeypatch):

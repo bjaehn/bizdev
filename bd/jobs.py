@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
 PAID_STEPS = frozenset({"enrich", "discover", "scan", "pe-portfolio", "pe-signals", "rfps", "ask", "card"})
-SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials", "sec_events")
+SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials", "sec_events", "sweep")
 FREE_SCANNERS = frozenset({"ats", "financials", "sec_events"})     # no model call: never counted against, or stopped by, the spending limit
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600

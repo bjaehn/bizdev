@@ -150,3 +150,20 @@ def test_workspace_header_is_sent_only_when_configured(cfg, monkeypatch):
     assert seen["default_headers"] == {"anthropic-workspace-id": "wrkspc_123"}
     AnthropicWebSearchClient(cfg, model="m", api_key="k", workspace_id="wrkspc_explicit")
     assert seen["default_headers"] == {"anthropic-workspace-id": "wrkspc_explicit"}
+
+
+def test_a_request_over_the_models_long_prompt_threshold_is_counted_in_the_long_buckets(cfg):
+    big = SimpleNamespace(input_tokens=150_000, output_tokens=40, cache_read_input_tokens=0, cache_creation_input_tokens=0,
+                          server_tool_use=SimpleNamespace(web_search_requests=3))
+    small = resp([block(type="text", text=GOOD, citations=None)], out=7)
+    first = SimpleNamespace(content=[block(type="server_tool_use", name="web_search", input={})], stop_reason="pause_turn", usage=big, stop_details=None)
+    msgs = FakeMessages([first, small])
+    c = AnthropicWebSearchClient(cfg, model="claude-haiku-5-5", client=SimpleNamespace(messages=msgs))
+    r = c.run("S", [{"role": "user", "content": "go"}])
+    assert (r.usage.long_input_tokens, r.usage.long_output_tokens, r.usage.input_tokens, r.usage.output_tokens) == (150_000, 40, 100, 7)
+    from bd.cost import estimate_cost
+    assert estimate_cost(r.usage, "claude-haiku-5-5", cfg) == pytest.approx(150_000 * 0.50e-6 + 40 * 2.50e-6 + 100 * 0.10e-6 + 7 * 0.50e-6 + 4 * 0.01, abs=1e-5)
+    # the same big request on a model with one rate stays in the normal buckets
+    msgs = FakeMessages([first, small])
+    c = AnthropicWebSearchClient(cfg, model="claude-sonnet-5-5", client=SimpleNamespace(messages=msgs))
+    assert c.run("S", [{"role": "user", "content": "go"}]).usage.long_input_tokens == 0
