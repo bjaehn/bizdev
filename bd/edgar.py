@@ -23,6 +23,7 @@ from html.parser import HTMLParser
 import httpx2 as httpx
 
 from bd.config import Config
+from bd.sec_ids import TICKERS_URL
 
 API_HOST = "https://data.sec.gov"
 ARCHIVE_HOST = "https://www.sec.gov"
@@ -154,6 +155,17 @@ class EdgarClient:
             raise EdgarError("response was not JSON") from e
         if not isinstance(data, dict) or not isinstance(data.get("facts"), dict):
             raise EdgarError("unexpected company-facts layout (no facts)")
+        return data
+
+    def company_tickers(self) -> object:
+        """The SEC's list of every listed company (www.sec.gov/files/company_tickers.json; parsed by bd.sec_ids). One request, about a
+        megabyte; callers fetch it once per run."""
+        try:
+            data = self._get(TICKERS_URL).json()
+        except ValueError as e:
+            raise EdgarError("response was not JSON") from e
+        if not isinstance(data, (dict, list)):
+            raise EdgarError("unexpected company list layout")
         return data
 
     def company(self, cik: str) -> tuple[str, list[str]]:

@@ -238,6 +238,10 @@ class Ask(_Strict):
     max_cost_usd: float               # per question (the two model calls together)
 
 
+class SecFill(_Strict):
+    max_accounts_per_run: int         # companies whose SEC record is read per `bd sec-fill` (about two requests each)
+
+
 class Config(_Strict):
     scoring: Scoring
     post_gate: PostGate
@@ -251,6 +255,7 @@ class Config(_Strict):
     hiring: Hiring
     edgar: Edgar
     financials: Financials
+    sec_fill: SecFill
     rfps: Rfps
     ask: Ask
     briefer: Briefer
