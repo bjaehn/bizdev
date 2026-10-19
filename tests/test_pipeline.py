@@ -81,7 +81,7 @@ def test_pages_and_forms(app_env):  # noqa: F811
     e = app_env
     a = add_account(e.conn, "Acme")
     page = e.get(f"/accounts/{a}").body
-    assert "Your pipeline" in page and "Watch this company" in page
+    assert "Stage" in page and "Watch this company" in page and "<summary>Notes</summary>" in page
     r = e.post(f"/accounts/{a}/stage", {"stage": "pursuing", "note": "Met their CFO"})
     assert r.code == 303 and r.h["Location"] == f"/accounts/{a}"
     assert "Met their CFO" in e.get(f"/accounts/{a}").body and "moved to" in e.get(f"/accounts/{a}").body

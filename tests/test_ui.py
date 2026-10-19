@@ -286,7 +286,7 @@ def test_accounts_list_filters_and_explains_holds(world):
 def test_account_page_shows_facts_signals_scores_and_history(world):
     update_account(world.conn, world.cfg, world.hot, {"hq_city": "Chicago", "chicagoland": "yes", "revenue": "600000000", "ownership": "pe-backed", "tier": "A"})
     b = world.c.get(f"/accounts/{world.hot}").body
-    assert "Fit gate:" in b and 'value="600000000"' in b
+    assert "Ready to scan" in b and 'value="600000000"' in b and "Edit facts" in b
     assert "stored, never scored" in b and "gossip.example" in b          # the Low-confidence signal is visible but marked
     assert "Hot" in b and "stacking bonus 20" in b                        # score history with the calculation
     assert "revenue" in b and "600000000.0" in b                          # audit trail
@@ -297,7 +297,7 @@ def test_editing_an_account_saves_audits_and_shows_the_new_fit_verdict(world):
     r = world.c.post(f"/accounts/{world.held}", {"chicagoland": "yes", "revenue": "800,000,000", "ownership": "private", "tier": "B", "domain": "https://www.heldco.com"})
     assert r.code == 303 and r.location == f"/accounts/{world.held}"
     page = world.c.get(r.location).body
-    assert "Saved (4 changes)" in page and "Fit gate: pass" in page and "status active" in page
+    assert "Saved (4 changes)" in page and "Ready to scan" in page and "Not scanned" not in page
     a = world.conn.execute("SELECT * FROM accounts WHERE id=?", (world.held,)).fetchone()
     assert (a["status"], a["domain"], a["revenue"], a["tier"]) == ("active", "heldco.com", 8e8, "B")
     assert "Saved" not in world.c.get(r.location).body                    # the flash shows once

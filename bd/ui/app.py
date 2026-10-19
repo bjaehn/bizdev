@@ -125,6 +125,29 @@ def safe_url(u: object) -> str:
     return u if urlparse(u).scheme in ("http", "https") and urlparse(u).netloc else ""
 
 
+# The Admin page: everything that is not for a leadership walk-through, grouped. (page key, href, label, hint, hosted only)
+ADMIN_GROUPS = (
+    ("Update", (("home", "/", "Update my list", "One press fills in facts, scans, scores and ranks", True),
+                ("operate", "/operate", "Advanced tools", "Run one step at a time", True))),
+    ("Companies", (("accounts", "/accounts", "All companies", "Every company on your list and its facts", False),
+                   ("watchlist", "/watchlist", "Watchlist", "Companies you follow and what is new", False),
+                   ("hiring", "/hiring", "Hiring", "Open senior roles at your companies", False),
+                   ("candidates", "/candidates", "New companies to review", "Found by research; add or reject", False),
+                   ("enrich", "/enrich", "Researched facts to review", "Check facts before applying them", False),
+                   ("exclusions", "/exclusions", "Do-not-pursue list", "Clients and companies to skip", False))),
+    ("Reports", (("market", "/market", "Market view", "Where signals are appearing across industries", False),
+                 ("rfps", "/rfps", "Open RFPs", "Public solicitations from Chicago-area agencies", False),
+                 ("card", "/monday", "Monday card", "What the weekly post would contain", False),
+                 ("firms", "/firms", "Private equity firms", "Owners and their portfolio companies", False),
+                 ("ask", "/ask", "Ask your data", "Plain-English questions about your own data", False))),
+    ("System", (("health", "/health", "Data health", "What is producing, what it costs, what is missing", False),
+                ("runs", "/runs", "Run history and cost", "What ran and what it cost", False),
+                ("audit", "/audit", "Change log", "Who changed what, with sources", False),
+                ("settings", "/settings", "Settings", "Numbers behind the Update button", False))),
+)
+ADMIN_PAGES = frozenset(key for _, items in ADMIN_GROUPS for key, *_ in items) | {"jobs"}
+
+
 class App:
     def __init__(self, cfg: Config, db_path: str, token: str = "", root: Path | None = None,
                  hosted: Hosted | None = None, jobs: JobRunner | None = None,
@@ -140,7 +163,7 @@ class App:
                                trim_blocks=True, lstrip_blocks=True)
         self.env.filters.update(status_label=lambda v: {'active': 'Ready to scan', 'hold_review': 'Needs facts', 'excluded': 'Excluded'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
-                                hosted=hosted is not None, operate=jobs is not None)
+                                hosted=hosted is not None, operate=jobs is not None, admin_pages=ADMIN_PAGES)
         init_conn = connect(db_path)
         init_db(init_conn)
         init_conn.close()
@@ -269,7 +292,7 @@ class App:
         signed_in = self.hosted.session_ok(req.cookies.get("bd_session", ""))
         if req.path == "/login":
             if req.method == "GET":
-                return self.redirect("/") if signed_in else self.login_page()
+                return self.redirect("/leadership") if signed_in else self.login_page()
             return self.login(req)
         if not signed_in:
             if req.method == "GET":
@@ -301,7 +324,7 @@ class App:
             return self.login_page(f"Too many attempts. Try again in {wait} seconds.", "429 Too Many Requests")
         if self.hosted.check_password(req.f("password")):
             self.throttle.succeeded(client)
-            return self.redirect("/", [("Set-Cookie", self._cookie(req, self.hosted.make_session(),
+            return self.redirect("/leadership", [("Set-Cookie", self._cookie(req, self.hosted.make_session(),
                                                                    self.hosted.session_hours * 3600))])
         self.throttle.failed(client)
         import time
@@ -366,6 +389,7 @@ class App:
             ("POST", "/settings/update"): lambda: self.settings_update(req, conn),
             ("GET", "/monday"): lambda: self.leads(req, conn),
             ("GET", "/watchlist"): lambda: self.watchlist(req, conn),
+            ("GET", "/admin"): lambda: self.admin_page(),
             ("GET", "/leadership"): lambda: self.leadership_page(conn),
             ("GET", "/lookup"): lambda: self.lookup_page(req, conn),
             ("GET", "/clients"): lambda: self.clients_page(conn),
@@ -515,6 +539,10 @@ class App:
             self.say("ok" if ok else "err", ("Added to" if on else "Removed from") + " your watchlist." if ok else "No such account.")
         back = req.f("back")
         return self.redirect(back if back.startswith("/") and not back.startswith("//") else f"/accounts/{account_id}")
+
+    def admin_page(self) -> Response:
+        groups = [(name, [i for i in items if not i[4] or self.jobs is not None]) for name, items in ADMIN_GROUPS]
+        return self.render("admin.html", page="admin", groups=[g for g in groups if g[1]])
 
     def leadership_page(self, conn: sqlite3.Connection) -> Response:
         v = build_leadership(conn, self.cfg, date.today())
@@ -673,8 +701,10 @@ class App:
         postings = conn.execute("SELECT * FROM postings WHERE account_id = ? AND open = 1 ORDER BY posted_date DESC LIMIT 40", (a.id,)).fetchall()
         brief = conn.execute("SELECT why_now, best_service_line, run_date FROM briefs WHERE account_id = ? ORDER BY run_date DESC LIMIT 1",
                              (a.id,)).fetchone()
-        return dict(state=get_state(conn, a.id), notes=notes_for(conn, a.id), stages=STAGES, stage_labels=STAGE_LABELS, brief=brief,
-                    page="accounts", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
+        top = next((x for x in signals if x["confidence"] in ("High", "Medium")), None)       # newest signal that counts toward the score
+        headline = brief["why_now"] if brief else (f"{top['summary']} ({fmt_date(date.fromisoformat(top['event_date']))})" if top else None)
+        return dict(headline=headline, state=get_state(conn, a.id), notes=notes_for(conn, a.id), stages=STAGES, stage_labels=STAGE_LABELS, brief=brief,
+                    page="company", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
                     conf_scored={"High", "Medium"}, firms=firms, postings=postings, lead=set(self.cfg.hiring.leadership_levels))
 
     def account_page(self, req: Request, conn: sqlite3.Connection, account_id: int) -> Response:

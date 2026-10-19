@@ -17,10 +17,11 @@ from bd.opportunities import Opportunity, build_opportunities, score_dates
 from bd.pipeline import STAGES, ClientRow, client_rows, stage_counts
 from bd.shortlist import ShortlistError
 
-ACT_COUNT = 8                  # companies in "Act on this week"
+ACT_COUNT = 5                  # companies in "Act on this week"
+LIST_MAX = 3                   # items in each short list on the page (what changed, clients, industries)
 MIN_RISE = 5                   # points a score must gain to count as a riser
 NEW_SIGNAL_DAYS = 7
-MAX_NEW_SIGNALS = 10
+MAX_NEW_SIGNALS = LIST_MAX
 STALE_SCORE_DAYS = 8
 
 
@@ -94,7 +95,7 @@ def _coverage(conn: sqlite3.Connection, today: date) -> Coverage:
 
 def _pulse(m: Market) -> Pulse:
     p = Pulse(quiet_total=m.quiet_total, sponsors=[s for s in m.sponsors if s.signals_90d or s.firm_signals_180d][:3])
-    p.segments = [s for s in m.segments if s.signals_30d or s.hot or s.warm][:5]
+    p.segments = [s for s in m.segments if s.signals_30d or s.hot or s.warm][:LIST_MAX]
     for s in p.segments:
         bits = [f"{s.signals_30d} signal{'' if s.signals_30d == 1 else 's'} in the last 30 days"]
         if s.signals_30d != s.signals_prior_30d:
@@ -113,7 +114,7 @@ def build_leadership(conn: sqlite3.Connection, cfg: Config, today: date) -> Lead
     out = Leadership(today, _coverage(conn, today))
     cov = out.coverage
     dates = score_dates(conn)
-    out.clients = [c for c in client_rows(conn, today) if c.signals_90d][:5]
+    out.clients = [c for c in client_rows(conn, today) if c.signals_90d][:LIST_MAX]
     out.pulse = _pulse(build_market(conn, today))
     if not dates:
         out.problem = ("Nothing has been scored yet. Press Update my list on Home: it fills in company facts from the SEC, "
@@ -133,9 +134,9 @@ def build_leadership(conn: sqlite3.Connection, cfg: Config, today: date) -> Lead
     ch = out.changes
     ch.prev_date = ol.prev_date.isoformat() if ol.prev_date else None
     if ol.prev_date:
-        ch.new_leads = [o for o in ol.items if o.is_new and o.result.band in ("Hot", "Warm")][:5]
+        ch.new_leads = [o for o in ol.items if o.is_new and o.result.band in ("Hot", "Warm")][:LIST_MAX]
         ch.risers = sorted((o for o in ol.items if o.delta is not None and o.delta >= MIN_RISE and o not in ch.new_leads),
-                           key=lambda o: (-o.delta, o.rank))[:5]
+                           key=lambda o: (-o.delta, o.rank))[:LIST_MAX]
     since = (today - timedelta(days=NEW_SIGNAL_DAYS)).isoformat()
     rows = conn.execute("SELECT s.account_id, a.name, s.type, s.event_date, s.summary, s.source_url FROM signals s "
                         "JOIN accounts a ON a.id = s.account_id WHERE a.status = 'active' AND s.detected_date >= ? "

@@ -15,13 +15,12 @@
 </div>
 {% endif %}
 
-<div class="card">
-<h2 style="margin-top:0">Paste your client list</h2>
-<form method="post" action="/clients/mark"><input type="hidden" name="csrf" value="{{ csrf }}">
+<details class="card" {{ 'open' if (not rows or result) else '' }}><summary>Add or update clients</summary>
+<form method="post" action="/clients/mark" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf }}">
 <label for="names">One company name per line (up to {{ max_names }}). A line matches a company on your list when the names are the same apart from Inc, Corp, punctuation and capitals. Nothing is created or guessed.</label>
 <textarea id="names" name="names" rows="6" style="width:100%" maxlength="60000"></textarea>
 <p><button type="submit">Mark as clients</button></p></form>
-</div>
+</details>
 
 {% for c in rows %}
 <div class="card"><div class="row"><div><a class="name" href="/accounts/{{ c.account_id }}">{{ c.name }}</a>

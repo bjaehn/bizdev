@@ -156,7 +156,7 @@ def test_page_renders_filters_and_escapes(tmp_path, cfg):
     r = call(app, "GET", "/opportunities", cookie=ck)
     assert r.code == 200 and "Opportunities" in r.body and "Sponsor" not in r.body.split("<main>")[0]
     assert "<script>alert(1)" not in r.body and "&lt;script&gt;" in r.body
-    assert "Leadership +" in r.body and "Signals and sources" in r.body and "on the Monday card" in r.body
+    assert "Leadership +" in r.body and "Why this score" in r.body and "on the Monday card" in r.body
     assert "No opportunities match" in call(app, "GET", "/opportunities?q=zzzz", cookie=ck).body
     assert "Hotco" in call(app, "GET", "/opportunities?pe=1&band=Hot", cookie=ck).body
     assert call(app, "GET", f"/opportunities?date={AS_OF.isoformat()}&sort=change&family=leadership", cookie=ck).code == 200
