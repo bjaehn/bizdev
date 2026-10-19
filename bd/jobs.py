@@ -166,7 +166,7 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 
 LOOKUP_BUDGET = 3        # dollars: the most one "research and scan this company" may spend, whatever the company
 FIND_BUDGET = 1          # dollars: the most one signal scan of a single company, started from the viewer's Find page, may spend
-FIND_SCANNERS = "leadership,press,events,hiring,tech_procurement"      # what a signal scan of one company looks for
+FIND_SCANNERS = "leadership,press,hiring"      # what a signal scan of one company looks for: about $0.2-0.5 a scanner on the first live run, so these three fit the $1 cap
 _NAME = re.compile(r"[A-Za-z0-9 .,&'()/-]+")
 
 
@@ -226,7 +226,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         return [["sec-fill", *one, "--as-of", as_of], ["enrich", *one, "--limit", "1", "--allow-empty", "--as-of", as_of],
                 ["apply-proposals", "enrich_proposals.csv"], ["scan", *one, "--force", "--allow-empty", "--as-of", as_of],
                 ["score", "--allow-empty", "--as-of", as_of]]
-    if kind == "find":      # job boards first (free), then leadership, press, company events and hiring searches within the spending limit, then the score
+    if kind == "find":      # job boards first (free), then leadership, press and hiring searches within the spending limit, then the score
         name = args[args.index("--only") + 1]
         one = ["--only", name, "--exact"]
         return [["scan", *one, "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],

@@ -629,7 +629,7 @@ def sec_fill(
         return
     facts = sum(len(f.facts) for f in s.filled)
     typer.echo(f"\nSEC fill: read {s.read} SEC record(s); filled {facts} fact(s) for {len(s.filled)} company(ies), "
-               f"{s.passed_gate} now ready for scanning; {len(s.unmatched)} with no unique SEC match"
+               f"{s.passed_gate} newly on the scan list; {len(s.unmatched)} with no unique SEC match"
                + (f"; {s.not_reached} left for the next run" if s.not_reached else "")
                + (f"; {s.errors} read problem(s)" if s.errors else "") + ". No cost.")
     if s.unmatched:
