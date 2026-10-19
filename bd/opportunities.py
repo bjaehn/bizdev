@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from bd.accounts import Account, list_accounts
 from bd.brief_core import fallback_brief
 from bd.config import Config
+from bd.insights import Insight, evidence_from_scored, insights_for
 from bd.labels import FAMILY_LABELS, FIRM_TYPE_LABELS, TYPE_LABELS, fmt_date
 from bd.pipeline import OPEN_STAGES, all_states
 from bd.score_store import score_one
@@ -54,6 +55,11 @@ class Opportunity:
     stage: str = "new"                         # where you have taken it (bd.pipeline)
     watching: bool = False
     client: bool = False                       # an existing SEI client (expansion), not a new logo
+    themes: list[Insight] = field(default_factory=list)    # what the signals add up to (bd.insights), strongest first
+
+    @property
+    def theme(self) -> Insight | None:
+        return self.themes[0] if self.themes else None
 
     @property
     def delta(self) -> int | None:
@@ -142,7 +148,8 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
         if res.score < floor or not res.signals:
             continue
         sigs = lead_signals(sa, keep)
-        o = Opportunity(acc, res, prev_score=prev.get(acc.id), signals=sigs, reasons=_reasons(res), posted=bool(row["posted"]))
+        o = Opportunity(acc, res, prev_score=prev.get(acc.id), signals=sigs, reasons=_reasons(res), posted=bool(row["posted"]),
+                        themes=insights_for(evidence_from_scored(res, sa.rows), cfg.service_lines))
         o.is_new = bool(prev_date) and (acc.id not in prev or prev[acc.id] < cfg.scoring.bands.watch)
         if sigs:
             b = briefs.get(acc.id)
