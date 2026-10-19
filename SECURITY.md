@@ -145,7 +145,7 @@ as `python -m bd.cli` subprocesses with validated argv (no shell), one at a time
 redacted from displayed logs, paid-call confirmation, and **no job or button that posts to Teams** - only the
 scheduled Monday run can, and only when `TEAMS_WEBHOOK_URL` is set and `BD_DRY_RUN` is not 1. The **Look up a company**
 page can add a company and start two one-company jobs (`sec_fill`, free; `lookup`, paid and hard-capped at $3 whatever the
-company); the Find page's `find` job is paid and hard-capped at $1; the name is limited to letters, digits and basic punctuation (60 characters, never starting with a dash) before it
+company); the Find page's `find` job is paid and hard-capped at $1; the Operate page's `compare` job (a stores-nothing test of the combined scan) is paid, hard-capped at $3, takes a count from 1 to 8 and optionally one company name under the same rules; the name is limited to letters, digits and basic punctuation (60 characters, never starting with a dash) before it
 becomes an argv element, a name that matches two companies is refused rather than guessed, and the paid job still needs the
 confirmation tick. The **Existing clients** flag is pipeline bookkeeping (audited as `client`); it never changes a score or
 removes a company from scanning. The Operate page
