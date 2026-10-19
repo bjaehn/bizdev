@@ -34,7 +34,8 @@ def test_the_brief_leads_with_what_the_signals_add_up_to_then_what_happened_and_
     short = body.split("What this adds up to")[1].split("What happened")[0]
     assert "3 kinds of signs agree: leadership, hiring, company events" in short and "Research only" in short and "Why now" not in body
     assert "Shown when a" in short and "Names a new chief operating officer." in short and 'href="https://www.sec.gov/Archives/briefco/coo.htm"' in short
-    assert "Also showing" in short                                                       # more than one theme matches this company
+    assert "Also showing" not in body and "Other themes that also match" not in short        # the other themes are in the fold, not in the lead
+    assert "Other themes that also match" in body.split("How the score is built")[1]         # more than one theme matches this company
     assert "Healthcare · Chicago" in body.split("Background")[1] and "$3.4B revenue" in body and "9,000 employees" in body
     assert "Healthcare · Chicago" not in body.split("Background")[0]                      # company facts are background, not the lead
     assert "Briefco &lt;i&gt;" in body and "Briefco <i>" not in body

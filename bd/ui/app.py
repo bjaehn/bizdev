@@ -555,7 +555,7 @@ class App:
                                   ("family", q["family"]), ("service_line", q["service_line"]), ("status", q["status"]), ("stage", q["stage"]),
                                   ("client", q["client"]), ("pe", "1" if q["pe"] else ""), ("new", "1" if q["new"] else ""),
                                   ("tracked", q["tracked"])) if v}
-        link = lambda **over: "/opportunities?" + urlencode({k: v for k, v in {**keep, "view": "" if view == "matrix" else view, "sort": q["sort"], **over}.items() if v})  # noqa: E731
+        link = lambda **over: "/opportunities?" + urlencode({k: v for k, v in {**keep, "view": view, "sort": q["sort"], **over}.items() if v})  # noqa: E731
         families = sorted({r.kind for o in ol.items for r in o.reasons})
         base = {"q": q["q"]} if q["q"] else {}
         ranked_tabs = [(label, "/opportunities" + (("?" + urlencode({**base, **({"band": band} if band else {})})) if (base or band) else ""),

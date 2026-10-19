@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 import pytest
@@ -159,6 +160,11 @@ def test_page_renders_filters_and_escapes(tmp_path, cfg):
     assert '<table class="matrix">' in call(app, "GET", "/opportunities?view=matrix", cookie=ck).body
     lst = call(app, "GET", "/opportunities?view=list", cookie=ck).body
     assert "Leadership +" in lst and "Why this score" in lst and "on the Monday card" in lst and "&lt;script&gt;" in lst
+    for view in ("matrix", "chart", "list"):        # the tabs and the filter form keep the view you are on, so none of them drops back to the ranked list
+        body = call(app, "GET", f"/opportunities?view={view}&band=Hot", cookie=ck).body
+        tab = re.search(r'<a href="([^"]*)"[^>]*>Signal matrix</a>', body).group(1)
+        assert "view=matrix" in tab and "band=Hot" in tab
+        assert f'<input type="hidden" name="view" value="{view}">' in body
     assert "No companies match" in call(app, "GET", "/opportunities?q=zzzz", cookie=ck).body
     assert "No companies match" in call(app, "GET", "/opportunities?view=list&q=zzzz", cookie=ck).body
     assert "Hotco" in call(app, "GET", "/opportunities?pe=1&band=Hot", cookie=ck).body

@@ -210,8 +210,8 @@ def test_this_week_charts_the_trend_with_a_plain_takeaway_and_a_legend(seeded):
 def test_everything_found_this_week_is_one_collapsed_list_that_links_to_the_full_page(seeded):
     e, ids = seeded
     body = e.get("/week").body
-    assert '<details class="card"><summary>Everything found this week (' in body and 'href="/signals"' in body
-    assert "Trackco" in body.split("Everything found this week")[1]
+    assert '<details class="card"><summary>Signals dated in the last 7 days (' in body and 'href="/signals"' in body
+    assert "Trackco" in body.split("Signals dated in the last 7 days")[1]
     assert "<h2>What changed</h2>" not in body and "The market this week" not in body and "Look deeper" not in body       # the old sections are gone
 
 

@@ -22,7 +22,7 @@
 {% if items %}<div class="card">{{ bar_rows(items) }}</div>{% else %}<div class="card empty">No companies match.</div>{% endif %}
 {% else %}
 <form method="get" action="/opportunities" class="filters">
-<input type="hidden" name="view" value="{{ '' if view == 'matrix' else view }}">
+<input type="hidden" name="view" value="{{ view }}">
 <input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name">
 <select name="band" aria-label="Band"><option value="">any band</option>{% for b in bands %}<option value="{{ b }}" {{ 'selected' if q.band == b else '' }}>{{ b|band_name }}</option>{% endfor %}</select>
 <select name="industry" aria-label="Industry"><option value="">any industry</option>{% for i in industries %}<option {{ 'selected' if q.industry == i else '' }}>{{ i }}</option>{% endfor %}</select>
@@ -43,7 +43,7 @@
 <label><input type="checkbox" name="tracked" value="1" {{ 'checked' if q.tracked == '1' else '' }}> include below Watch</label>
 </div></details></form>
 
-<div class="tabs"><a href="{{ link(view='') }}" class="{{ 'on' if view == 'matrix' else '' }}">Signal matrix</a><a href="{{ link(view='chart') }}" class="{{ 'on' if view == 'chart' else '' }}">Priority chart</a><a href="{{ link(view='list') }}" class="{{ 'on' if view == 'list' else '' }}">List</a>
+<div class="tabs"><a href="{{ link(view='matrix') }}" class="{{ 'on' if view == 'matrix' else '' }}">Signal matrix</a><a href="{{ link(view='chart') }}" class="{{ 'on' if view == 'chart' else '' }}">Priority chart</a><a href="{{ link(view='list') }}" class="{{ 'on' if view == 'list' else '' }}">List</a>
 <span class="meta">{{ items|length }} of {{ total }} compan{{ 'y' if total == 1 else 'ies' }}{% if prev_date %}; change is against the run on {{ prev_date }}{% endif %}</span></div>
 
 {% if view == 'matrix' %}

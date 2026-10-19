@@ -21,8 +21,6 @@
 <div class="score-line"><div><span class="bignum">{{ d.opp.result.score }}</span>{% if d.opp.delta is not none and d.opp.delta != 0 %} <span class="{{ 'up' if d.opp.delta > 0 else 'down' }}">{{ '▲ +' if d.opp.delta > 0 else '▼ ' }}{{ d.opp.delta }} since last run</span>{% endif %}</div>{{ spark(d.history)|safe }}</div>
 {{ evidence_list(t.evidence, 6) }}
 {% if t.more %}<p class="meta">{{ t.more }} more signal{{ '' if t.more == 1 else 's' }} of the same kind below.</p>{% endif %}
-{% if d.opp.themes|length > 1 %}<h3>Also showing</h3>
-<ul class="plain">{% for x in d.opp.themes[1:] %}<li><b>{{ x.name }}</b> <span class="meta">· {{ x.rule }}: {{ x.evidence|map(attribute='label')|join(', ') }}</span></li>{% endfor %}</ul>{% endif %}
 {% elif d.signals %}<p>Signals were found, but none has scored yet: only High and Medium confidence signals from recent months count. They are listed below.</p>
 {% elif d.a.last_scanned %}<p>Scanned {{ d.a.last_scanned|fdate }}: no leadership, hiring, press or company-event signals found. Quiet can mean nothing is happening, or that the sources do not cover this company.</p>
 {% else %}<p>Not scanned yet. The next update looks for leadership changes, hiring and press at this company.</p>{% endif %}
@@ -40,7 +38,7 @@
 </ul>{% if d.signals|length > 12 %}<p class="meta">Showing the 12 most recent of {{ d.signals|length }}.</p>{% endif %}</div>
 {% else %}<div class="card empty">Nothing found yet. Quiet can mean nothing is happening, or that the sources do not cover this company.</div>{% endif %}
 
-<details class="card"><summary><b>More detail</b> <span class="meta">(timeline, background, how the score is built)</span></summary>
+<details class="card"><summary><b>More detail</b> <span class="meta">(timeline, background, how the score is built, other themes)</span></summary>
 <h3>The last 180 days</h3>
 {% if d.timeline %}{{ d.timeline|safe }}
 <p class="meta">{% for label, color in d.legend %}<span class="dot" style="--c:{{ color }}">●</span> {{ label }}{{ '  ' if not loop.last }} {% endfor %}· paler dots are Medium confidence{% if d.outside_window %} · {{ d.outside_window }} older signal{{ '' if d.outside_window == 1 else 's' }} not shown{% endif %}</p>
@@ -61,6 +59,8 @@
 </tbody></table>
 <p>{{ d.explain.sentence }}</p>
 <p class="meta">Each signal earns points by its type, how recent it is and how trustworthy its source is; further signals of the same type count half. Computed by plain code from the stored signals; no model is involved.{% if d.run_date %} Scored {{ d.run_date|fdate }}.{% endif %}</p>{% endif %}
+{% if d.opp and d.opp.themes|length > 1 %}<h3>Other themes that also match</h3>
+<ul class="plain">{% for x in d.opp.themes[1:] %}<li><b>{{ x.name }}</b> <span class="meta">· {{ x.rule }}: {{ x.evidence|map(attribute='label')|join(', ') }}</span></li>{% endfor %}</ul>{% endif %}
 </details>
 
 <h2 class="noprint">Track this company</h2>
