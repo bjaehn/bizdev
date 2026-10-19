@@ -38,6 +38,8 @@ from bd.curate import (EXCLUSION_REASONS, accept_candidate, add_exclusion, apply
                        mark_reviewed, reject_candidate, remove_exclusion, update_account)
 from bd.db import connect, init_db
 from bd.fit_gate import check_fit, load_exclusions
+from bd.charts import priority_svg, trend_svg
+from bd.priority import build_priority
 from bd.profile import build_profile
 from bd.health import build_health
 from bd.market import build_market
@@ -406,7 +408,7 @@ class App:
             ("GET", "/ask"): lambda: self.ask_page(conn),
             ("POST", "/ask"): lambda: self.ask_start(req, conn),
             ("GET", "/health"): lambda: self.health_page(req, conn),
-            ("GET", "/market"): lambda: self.render("market.html", page="market", m=build_market(conn, date.today())),
+            ("GET", "/market"): lambda: self.market_page(conn),
             ("GET", "/accounts"): lambda: self.accounts(req, conn),
             ("GET", "/accounts/new"): lambda: self.render("account_new.html", page="accounts", form={}, errors=[]),
             ("POST", "/accounts/new"): lambda: self.account_create(req, conn),
@@ -514,7 +516,7 @@ class App:
     def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
         dates = score_dates(conn)
         empty = dict(page="opportunities", dates=dates, run_date=None, items=[], total=0, error=None, q={}, families=[], lines=[], stale=[],
-                     prev_date=None, view="matrix", matrix=None, cov=None, changes=None)
+                     prev_date=None, view="matrix", matrix=None, cov=None, changes=None, priority=None, chart=None)
         if not dates:
             return self.render("opportunities.html", **empty)
         chosen = req.q("date") if req.q("date") in dates else dates[0]
@@ -526,14 +528,19 @@ class App:
         q = {k: req.q(k) for k in ("band", "family", "service_line", "q", "status", "sort", "tracked", "stage", "client", "industry")}
         q["pe"] = req.q("pe") == "1"
         q["new"] = req.q("new") == "1"
-        view = "list" if req.q("view") == "list" else "matrix"
+        view = req.q("view") if req.q("view") in ("list", "chart") else "matrix"
         items = filter_opportunities(ol.items, band=q["band"], family=q["family"], service_line=q["service_line"], pe_only=q["pe"],
-                                     q=q["q"], new_only=q["new"], status=q["status"], sort=q["sort"] or "score" if view == "list" else "score",
+                                     q=q["q"], new_only=q["new"], status=q["status"], sort=(q["sort"] or "score") if view == "list" else "score",
                                      stage=q["stage"], client=q["client"], industry=q["industry"])
         matrix = None
         if view == "matrix":
             matrix = build_matrix(items, self.cfg, today)
             matrix.rows = sort_rows(matrix.rows, q["sort"] if q["sort"] in SORTS else "score")
+        priority = chart = None
+        if view == "chart":
+            priority = build_priority(items, today)
+            b = self.cfg.scoring.bands
+            chart = priority_svg(priority.dots, [("Hot", b.hot), ("Warm", b.warm), ("Watch", b.watch)], self.cfg.scoring.score_max)
         cov = coverage(conn, today)
         cov.scored, cov.hot, cov.warm = len(ol.items), sum(o.result.band == "Hot" for o in ol.items), sum(o.result.band == "Warm" for o in ol.items)
         cov.score_date, cov.score_age_days = chosen, (today - date.fromisoformat(chosen)).days
@@ -541,10 +548,10 @@ class App:
                                   ("family", q["family"]), ("service_line", q["service_line"]), ("status", q["status"]), ("stage", q["stage"]),
                                   ("client", q["client"]), ("pe", "1" if q["pe"] else ""), ("new", "1" if q["new"] else ""),
                                   ("tracked", q["tracked"])) if v}
-        link = lambda **over: "/opportunities?" + urlencode({k: v for k, v in {**keep, "view": "" if view == "matrix" else "list", "sort": q["sort"], **over}.items() if v})  # noqa: E731
+        link = lambda **over: "/opportunities?" + urlencode({k: v for k, v in {**keep, "view": "" if view == "matrix" else view, "sort": q["sort"], **over}.items() if v})  # noqa: E731
         families = sorted({r.kind for o in ol.items for r in o.reasons})
         return self.render("opportunities.html", page="opportunities", dates=dates, run_date=chosen, items=items, total=len(ol.items),
-                           error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale, view=view, matrix=matrix,
+                           error=None, q=q, families=families, lines=self.cfg.service_lines, stale=ol.stale, view=view, matrix=matrix, priority=priority, chart=chart,
                            prev_date=ol.prev_date.isoformat() if ol.prev_date else None, bands=["Hot", "Warm", "Watch", "Stored"],
                            statuses=["card", "over_cap", "held", "tracking"], stages=STAGES, stage_labels=STAGE_LABELS, cov=cov,
                            changes=build_changes(conn, ol, today), link=link,
@@ -572,6 +579,12 @@ class App:
     def admin_page(self) -> Response:
         groups = [(name, [i for i in items if not i[4] or self.jobs is not None]) for name, items in ADMIN_GROUPS]
         return self.render("admin.html", page="admin", groups=[g for g in groups if g[1]])
+
+    def market_page(self, conn: sqlite3.Connection) -> Response:
+        m = build_market(conn, date.today(), families=self.cfg.scoring.families)
+        label = lambda d: f"{date.fromisoformat(d):%b} {date.fromisoformat(d).day}"  # noqa: E731
+        trend = trend_svg([(label(p.run_date), p.hot, p.warm, p.watch) for p in m.trend])
+        return self.render("market.html", page="market", m=m, trend_chart=trend, run_label=label)
 
     def reports_page(self) -> Response:
         return self.render("reports.html", page="reports", items=REPORT_ITEMS)

@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
+from collections.abc import Sequence
 from datetime import date, timedelta
 
 UNKNOWN_INDUSTRY = "Industry not recorded"
@@ -55,9 +56,32 @@ class QuietRow:
 
 
 @dataclass
+class Heat:
+    signals: int = 0                  # signals of this type in the last 90 days, across the industry's ready companies
+    companies: int = 0                # how many companies they belong to
+
+
+@dataclass
+class TrendPoint:
+    run_date: str
+    hot: int = 0
+    warm: int = 0
+    watch: int = 0
+    other: int = 0                    # scored, but below Watch
+
+    @property
+    def hot_warm(self) -> int:
+        return self.hot + self.warm
+
+
+@dataclass
 class Market:
     as_of: date
     score_date: str | None
+    families: list[str] = field(default_factory=list)                   # heatmap columns
+    heat: dict[str, dict[str, Heat]] = field(default_factory=dict)      # industry -> signal type -> counts, last 90 days
+    heat_max: int = 0
+    trend: list[TrendPoint] = field(default_factory=list)               # one point per scoring run, oldest first
     segments: list[SegmentRow] = field(default_factory=list)
     months: list[str] = field(default_factory=list)                     # 'YYYY-MM', oldest first
     family_by_month: dict[str, list[int]] = field(default_factory=dict)  # family -> counts per month
@@ -77,7 +101,8 @@ def _months_back(as_of: date, n: int) -> list[str]:
     return out[::-1]
 
 
-def build_market(conn: sqlite3.Connection, as_of: date, months: int = 6, quiet_limit: int = 25) -> Market:
+def build_market(conn: sqlite3.Connection, as_of: date, months: int = 6, quiet_limit: int = 25, families: Sequence[str] | None = None,
+                 runs: int = 12) -> Market:
     d30, d60, d90, d180 = (as_of - timedelta(days=n) for n in (30, 60, 90, 180))
     score_date = conn.execute("SELECT MAX(run_date) FROM scores").fetchone()[0]
     out = Market(as_of, score_date)
@@ -115,6 +140,32 @@ def build_market(conn: sqlite3.Connection, as_of: date, months: int = 6, quiet_l
         if totals[name]:
             s.avg_score = sum(totals[name]) / len(totals[name])
     out.segments = sorted(segs.values(), key=lambda s: (-(s.hot * 3 + s.warm * 2 + s.watch), -s.signals_30d, -s.companies, s.industry))
+
+    seen = sorted({f for events in sig.values() for _, f in events})
+    out.families = list(families) if families is not None else sorted(seen)
+    owner = {a["id"]: (a["industry"] or "").strip() or UNKNOWN_INDUSTRY for a in accounts}
+    heat: dict[str, dict[str, Heat]] = {}
+    for acc_id, events in sig.items():
+        recent = [f for e, f in events if d90.isoformat() <= e <= as_of.isoformat()]
+        for f in set(recent):
+            h = heat.setdefault(owner[acc_id], {}).setdefault(f, Heat())
+            h.signals += recent.count(f)
+            h.companies += 1
+    out.heat = {s.industry: heat.get(s.industry, {}) for s in out.segments}                 # same order as the industry table
+    out.heat_max = max((h.signals for row in out.heat.values() for h in row.values()), default=0)
+
+    by_run: dict[str, TrendPoint] = {}
+    for r in conn.execute("SELECT run_date, band, COUNT(*) AS n FROM scores WHERE run_date <= ? GROUP BY run_date, band", (as_of.isoformat(),)):
+        p = by_run.setdefault(r["run_date"], TrendPoint(r["run_date"]))
+        if r["band"] == "Hot":
+            p.hot += r["n"]
+        elif r["band"] == "Warm":
+            p.warm += r["n"]
+        elif r["band"] == "Watch":
+            p.watch += r["n"]
+        else:
+            p.other += r["n"]
+    out.trend = [by_run[d] for d in sorted(by_run)[-runs:]]
 
     out.months = _months_back(as_of, months)
     idx = {m: i for i, m in enumerate(out.months)}
