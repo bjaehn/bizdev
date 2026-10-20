@@ -22,6 +22,7 @@ from bd.htmltext import links, ld_objects, node_text, parse_html
 from bd.pe_listing import HQ_WORDS, PLACE, Collected, Entry, collect_listing
 from bd.pe_ownership import (AmbiguousCompany, add_evidence, company_geography, ensure_ownership, recompute, record_location, resolve_company,
                              source_is_stale)  # noqa: F401  (re-exported: the stale check lives where the UI can import it without the page reader)
+from bd.pe_sites import find_portfolio_by_path
 from bd.pe_store import norm_name
 from bd.sources import FetchError, Fetcher, now_iso, recently_read, store_snapshot
 from bd.urls import host_in, hostname
@@ -102,7 +103,13 @@ def discover_portfolio_pages(conn: sqlite3.Connection, fetcher: Fetcher, cfg: Co
                 log(f"  {f['name']}: portfolio page found at {href}")
                 break
         else:
-            log(f"  {f['name']}: no portfolio link on the home page")
+            found = find_portfolio_by_path(fetcher, f["domain"])
+            if found:
+                with conn:
+                    n += conn.execute("INSERT OR IGNORE INTO pe_sources(firm_id, kind, url, origin) VALUES (?,?,?, 'discovered')", (f["id"], "portfolio_page", found)).rowcount
+                log(f"  {f['name']}: no portfolio link on the home page; a listing of companies was found at {found}")
+            else:
+                log(f"  {f['name']}: no portfolio link on the home page and no listing at the usual paths; add the page under Firm details")
     return n
 
 

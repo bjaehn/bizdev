@@ -10,6 +10,17 @@
 {% else %}<input type="hidden" name="status" value="active"><button type="submit">Make active</button>{% endif %}</form></div>
 {% if d.firm['status'] == 'excluded' %}<div class="flash err">An excluded firm is not read or scanned and its news no longer lifts any score.</div>{% endif %}
 
+<h2>Firm details</h2>
+<div class="card"><p class="meta">What the product knows about the firm itself. A blank is "not known", not a guess. The website domain lets <b>Read PE portfolio pages</b> look for a Portfolio link on the firm's own home page; a portfolio page URL is read directly. The headquarters is the firm's, as entered: it is never used as a portfolio company's location.</p>
+{% if ' and ' in d.firm['name']|lower or ';' in d.firm['name'] %}<p class="meta">This name may be more than one firm. It is kept as one sponsor, because the product does not split names by guessing. To follow them separately, list the name and the firms it stands for under <code>pe_portfolio.sponsor_splits</code> in <code>config.yaml</code>, or add each firm on the <a href="/firms">directory</a> and exclude this one.</p>{% endif %}
+<form method="post" action="/firms/{{ d.firm['id'] }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="grid">
+<div><label for="domain">Website domain</label><input id="domain" type="text" name="domain" value="{{ d.firm['domain'] or '' }}" placeholder="examplecapital.com"></div>
+<div><label for="portfolio_url">Portfolio page URL</label><input id="portfolio_url" type="text" name="portfolio_url" value="{{ d.firm['portfolio_url'] or '' }}"></div>
+<div><label for="hq_city">Headquarters city</label><input id="hq_city" type="text" name="hq_city" value="{{ d.firm['hq_city'] or '' }}"></div>
+<div><label for="hq_state">Headquarters state</label><input id="hq_state" type="text" name="hq_state" value="{{ d.firm['hq_state'] or '' }}"></div>
+</div><p><button type="submit">Save details</button></p></form></div>
+
 <h2>How complete is this portfolio?</h2>
 <div class="card"><p><span class="badge {{ d.reading_class }}">{{ 'problem' if d.reading_class == 'bad' else ('ok' if d.reading_class == 'good' else 'check') }}</span> {{ d.reading|capitalize }}.</p>
 <p>{{ d.summary.coverage_note }}</p>

@@ -41,6 +41,9 @@ class FinancialsScanner(Scanner):
         try:
             facts = self.edgar.company_facts(account.cik)
         except EdgarError as e:
+            if str(e) == "HTTP 404":      # the SEC answered: it holds no structured data under this CIK (a subsidiary that reports inside its parent's filing). Not a failure to retry every week.
+                out.rejections.append(Rejection("no_company_facts", None, facts_url(account.cik), "the SEC has no structured financial data under this CIK; check the CIK"))
+                return out
             out.error = f"EdgarError: {e}"
             return out
         a = assess(facts, self.cfg)

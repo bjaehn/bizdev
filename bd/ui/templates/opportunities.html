@@ -26,7 +26,7 @@
 <div class="callgrid">
 {% for c in w.calls %}{% set o = c.opp %}
 <div class="card call">
-<div class="call-head"><h3><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a></h3><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }}</span></div>
+<div class="call-head"><h3><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a></h3><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }}</span>{% if o.unverified %}<span class="badge warm" title="{{ o.unverified|join('; ') }}">unverified</span>{% endif %}</div>
 <p class="why"><b>{{ o.theme.name if o.theme else signs_line(o.result) }}</b>{% if o.theme and o.theme.service_line %} <span class="meta">· points to {{ o.theme.service_line }}</span>{% endif %}</p>
 <div class="score-line"><div><span class="bignum">{{ o.result.score }}</span>{% if o.delta is not none and o.delta != 0 %} <span class="{{ 'up' if o.delta > 0 else 'down' }}">{{ '▲ +' if o.delta > 0 else '▼ ' }}{{ o.delta }} since last run</span>{% endif %}</div>{{ spark(c.history)|safe }}</div>
 <p class="meta">Rank {{ o.rank }}{% if c.newest %} · newest signal {{ c.newest|fdate }}{% endif %}</p>
@@ -70,7 +70,7 @@
 <h2>Companies you track</h2>
 {% for t in w.tracked %}{% set o = t.opp %}
 <div class="entry entry--compact"><div class="entry-head"><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }} {{ o.result.score }}</span>
-{% if o.stage in ('reviewing', 'pursuing') %}<span class="badge">{{ stage_labels[o.stage] }}</span>{% endif %}</div>
+{% if o.stage in ('reviewing', 'pursuing') %}<span class="badge">{{ stage_labels[o.stage] }}</span>{% endif %}{% if o.unverified %}<span class="badge warm" title="{{ o.unverified|join('; ') }}">unverified</span>{% endif %}</div>
 {% if t.new %}<p><b>New:</b> {{ t.new[0].summary }} <span class="meta">({{ t.new[0].event_date|fdate }}{% if t.new|length > 1 %}; {{ t.new|length - 1 }} more{% endif %})</span></p>
 {% else %}<p class="meta">Nothing new in the last 14 days.</p>{% endif %}</div>
 {% endfor %}

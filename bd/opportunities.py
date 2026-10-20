@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from bd.accounts import Account, list_accounts
 from bd.brief_core import fallback_brief
 from bd.config import Config
+from bd.fit_gate import check_fit, load_exclusions
 from bd.insights import Insight, evidence_from_scored, insights_for
 from bd.labels import FAMILY_LABELS, FIRM_TYPE_LABELS, TYPE_LABELS, fmt_date
 from bd.pipeline import OPEN_STAGES, all_states
@@ -56,6 +57,7 @@ class Opportunity:
     watching: bool = False
     client: bool = False                       # an existing SEI client (expansion), not a new logo
     themes: list[Insight] = field(default_factory=list)    # what the signals add up to (bd.insights), strongest first
+    unverified: list[str] = field(default_factory=list)    # why its location or size is not confirmed (bd.fit_gate); empty = confirmed. It is scanned and ranked either way
 
     @property
     def theme(self) -> Insight | None:
@@ -137,6 +139,7 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
     except ShortlistError:
         on_card, over, skipped, gated = set(), set(), {}, False
 
+    exclusions = load_exclusions(conn)
     for acc in list_accounts(conn, status="active"):
         row = stored.get(acc.id)
         if row is None:
@@ -151,6 +154,8 @@ def build_opportunities(conn: sqlite3.Connection, cfg: Config, run_date: date, i
         o = Opportunity(acc, res, prev_score=prev.get(acc.id), signals=sigs, reasons=_reasons(res), posted=bool(row["posted"]),
                         themes=insights_for(evidence_from_scored(res, sa.rows), cfg.service_lines))
         o.is_new = bool(prev_date) and (acc.id not in prev or prev[acc.id] < cfg.scoring.bands.watch)
+        fit = check_fit(acc, exclusions, cfg)
+        o.unverified = list(fit.reasons) if fit.unverified else []
         if sigs:
             b = briefs.get(acc.id)
             fb = fallback_brief(Lead(acc, res, sigs), cfg=cfg)

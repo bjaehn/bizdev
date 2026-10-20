@@ -121,6 +121,9 @@ scan:
   # (most companies are quiet most weeks, and each check costs real money). A company that shows a signal goes back to its tier's cadence; 0 turns this off.
   quiet_days: 60
   quiet_every_weeks: 4
+  # The deep technology and procurement scan (the "extras") runs where a signal shows, AND for any scanned company that has not had a successful deep scan
+  # in this many weeks, so every company is looked at deeply on a cycle. Added cost is about $0.12 a company per cycle. 0 = only where a signal shows.
+  deep_every_weeks: 4
   tiers:
     A: {every_weeks: 1, max_searches: 6}     # deeper search for the accounts that matter most
     B: {every_weeks: 2, max_searches: 3}
@@ -129,6 +132,7 @@ llm:
   max_tokens: 16000
   web_search_max_uses: 4          # web searches per model call (a scan tier can override: scan.tiers.*.max_searches)
   web_search_tool_type: web_search_20260209   # check Anthropic docs if the model changes
+  web_search_fallback_tool_type: web_search_20250305   # a call whose searches ALL failed with invalid_tool_input (nothing came back) is tried once with this basic search tool; null = never
   max_continuations: 5            # pause_turn resumes per call
   json_retries: 1                 # one retry on invalid JSON
   concurrency: 4                  # max simultaneous scanner calls
@@ -192,6 +196,8 @@ hiring:
   cluster_min: 3                # hiring_cluster = this many related postings
   senior_levels: [c_suite, svp_vp, director]
   leadership_levels: [c_suite, svp_vp]   # a posting at these levels is a hiring_leadership signal
+  ats_find_every_weeks: 8       # `bd ats-find` reads a company's own careers page for a link to its Greenhouse, Lever or Ashby board, then at most this often again
+  ats_find_per_run: 25
   # Posting theme -> service lines (code, not the model, assigns these).
   theme_service_lines:
     ai_technology: [AI & Technology]
@@ -323,6 +329,10 @@ pe_portfolio:
   deal_window_days: 730                  # transaction research (paid): deals dated this far back
   deals_max_per_firm: 10
   research_unresolved: 0                 # paid fact research of portfolio companies whose HQ the listing does not show (0 = off; set a cap to enable)
+  # An account stores its sponsor as one string. When that string is really several firms, list them here (the string exactly as the account has it).
+  # The product never splits a name by guessing: "Hellman & Friedman" is one firm, and so is any name not listed here.
+  sponsor_splits:
+    "Charlesbank Capital Partners and Partners Group": ["Charlesbank Capital Partners", "Partners Group"]
 
 # Evidence-based priority (bd/opportunity_model.py). Deterministic: structured evidence in, a breakdown out. Priority is NOT the Hot/Warm/Watch score above
 # and is NOT a probability of purchase or win. Confidence (how well the hypothesis is supported) is reported separately.

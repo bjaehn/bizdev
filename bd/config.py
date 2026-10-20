@@ -154,12 +154,14 @@ class Scan(_Strict):
     sweep_searches: int = 6              # web searches the combined sweep may use per company (one call)
     quiet_days: int = 60                 # a scanned company with no signal dated this recently is "quiet"...
     quiet_every_weeks: int = 4           # ...and is scanned this often instead of its tier's cadence (0 turns this off)
+    deep_every_weeks: int = 4            # the extra (deep) scanners also run for a scanned company with no successful deep scan this recently, signal or not (0 = only where a signal shows)
 
 
 class Llm(_Strict):
     max_tokens: int
     web_search_max_uses: int
     web_search_tool_type: str
+    web_search_fallback_tool_type: str | None = None   # tried once, for a call whose every search failed with invalid_tool_input
     max_continuations: int
     json_retries: int
     concurrency: int
@@ -218,6 +220,8 @@ class Hiring(_Strict):
     theme_keywords: dict[str, list[str]]
     theme_title_gates: dict[str, list[str]] = {}
     interim_words: list[str]
+    ats_find_every_weeks: int = 8        # a company whose careers page was looked at for a job board is not looked at again for this long (0 = never look)
+    ats_find_per_run: int = 25           # companies whose careers page is read per run (free, polite)
 
 
 class Edgar(_Strict):
@@ -276,6 +280,7 @@ class PePortfolio(_Strict):
     deal_window_days: int                 # transactions dated within this many days are looked for
     deals_max_per_firm: int
     research_unresolved: int              # per run, portfolio companies whose location the listing does not show that are sent to the existing fact research (paid); 0 = none
+    sponsor_splits: dict[str, list[str]] = {}   # a sponsor name an account stores as one string that is really several firms -> those firms. Explicit: names are never split by guessing
 
 
 class OppWeights(_Strict):

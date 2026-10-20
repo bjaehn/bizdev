@@ -295,3 +295,48 @@ def test_every_link_on_the_pe_pages_resolves(world):
                 bad.append((path, h, r.code))
     assert not bad, bad
     assert any(h.startswith("/ownership/") for h in seen) and any(h.startswith("/firms/runs/") for h in seen)   # the crawl reached the evidence pages
+
+
+# ---- a firm that already exists can be given a domain and a portfolio page ------------------------------------------------------------------------
+def test_a_firm_derived_from_a_sponsor_can_be_given_a_domain_and_a_portfolio_page_and_is_then_read(app_env):  # noqa: F811
+    e = app_env
+    fid = add_firm(e.conn, "Beta Holdings", url=None, domain=None)
+    import html as _h
+    page_ = _h.unescape(show(e.get(f"/firms/{fid}").body))
+    assert "Firm details" in page_ and "Add the firm's website domain or its portfolio page URL" in page_
+    bad = e.post(f"/firms/{fid}/edit", {"domain": "not a host!", "portfolio_url": "javascript:alert(1)"})
+    assert bad.code == 303 and e.conn.execute("SELECT domain, portfolio_url FROM pe_firms WHERE id = ?", (fid,)).fetchone()[:] == (None, None)
+    ok = e.post(f"/firms/{fid}/edit", {"domain": "https://www.betaholdings.example/", "portfolio_url": A, "hq_city": "Chicago", "hq_state": "IL"})
+    assert ok.code == 303
+    row = e.conn.execute("SELECT domain, portfolio_url, hq_city, hq_state FROM pe_firms WHERE id = ?", (fid,)).fetchone()
+    assert tuple(row) == ("betaholdings.example", A, "Chicago", "IL")
+    assert e.conn.execute("SELECT COUNT(*) FROM pe_sources WHERE firm_id = ? AND url = ?", (fid, A)).fetchone()[0] == 1
+    assert e.conn.execute("SELECT COUNT(*) FROM audit_log WHERE field = 'pe_firm' AND action = 'update'").fetchone()[0] == 1
+    assert "betaholdings.example" in show(e.get(f"/firms/{fid}").body) and "registered, not read yet" in show(e.get("/firms").body)
+    res, *_ = collect(e, {A: page(doc("<h2>Current Investments</h2>" + grid(card("Strongco"), card("Texasco"), card("Quietco"))))})
+    assert res.ok == 1 and "Strongco" in show(e.get(f"/firms/{fid}").body)
+
+
+def test_changing_a_firms_page_keeps_one_that_was_read_and_drops_one_that_never_was(app_env):  # noqa: F811
+    from bd.pe_store import update_firm
+    e = app_env
+    fid = add_firm(e.conn)
+    register_sources(e.conn)
+    errs, notes = update_firm(e.conn, fid, "alphacap.example", "Chicago", "", B)                      # never read: replaced
+    assert errs == [] and e.conn.execute("SELECT url FROM pe_sources WHERE firm_id = ?", (fid,)).fetchall()[0][0] == B
+    assert e.conn.execute("SELECT COUNT(*) FROM pe_sources WHERE firm_id = ?", (fid,)).fetchone()[0] == 1
+    collect(e, {B: page(doc("<h2>Current Investments</h2>" + grid(card("Strongco"), card("Texasco"), card("Quietco"))))})
+    errs, notes = update_firm(e.conn, fid, "alphacap.example", "Chicago", "", A)                      # read before: kept with its history
+    assert errs == [] and any("stays registered" in n for n in notes)
+    assert {r[0] for r in e.conn.execute("SELECT url FROM pe_sources WHERE firm_id = ?", (fid,))} == {A, B}
+    assert update_firm(e.conn, fid, "alphacap.example", "Chicago", "", A)[1] == ["Nothing changed."]
+    assert update_firm(e.conn, 9999)[0] == ["no such firm"]
+
+
+def test_a_firm_name_that_reads_like_two_firms_is_flagged_not_split(app_env):  # noqa: F811
+    e = app_env
+    fid = add_firm(e.conn, "Charlesbank Capital Partners and Partners Group", url=None, domain=None)
+    t = show(e.get(f"/firms/{fid}").body)
+    assert "may be more than one firm" in t and "does not split names by guessing" in t
+    other = add_firm(e.conn, "Hellman & Friedman", url=None, domain=None)
+    assert "may be more than one firm" not in show(e.get(f"/firms/{other}").body)

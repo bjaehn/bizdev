@@ -78,6 +78,55 @@ def add_firm(conn: sqlite3.Connection, name: str, domain: str = "", hq_city: str
     return []
 
 
+def update_firm(conn: sqlite3.Connection, firm_id: int, domain: str = "", hq_city: str = "", hq_state: str = "", portfolio_url: str = "",
+                actor: str = "ui") -> tuple[list[str], list[str]]:
+    """Set the details of a firm that already exists (one derived from an account's sponsor has no domain or portfolio page). A blank value means
+    "not known": it clears the field, it is never guessed. Returns (errors, notes). The firm's name is not editable here: a name is what the
+    relationships and their evidence were recorded under.
+
+    Changing the portfolio page registers the new page; the old one is dropped only when it was never read, because a page that has been read has
+    evidence and history behind it, so it stays registered and the notes say so."""
+    row = conn.execute("SELECT * FROM pe_firms WHERE id = ?", (firm_id,)).fetchone()
+    if row is None:
+        return ["no such firm"], []
+    errs: list[str] = []
+    dom = normalize_domain(domain) if (domain or "").strip() else None
+    if dom is not None and not is_valid_domain(dom):
+        errs.append("domain is not a valid host name")
+    url = (portfolio_url or "").strip()
+    if url and not re.match(r"^https?://[^\s]+$", url):
+        errs.append("portfolio URL must start with http:// or https://")
+    city, state = " ".join((hq_city or "").split()), " ".join((hq_state or "").split())
+    if len(city) > 80 or len(state) > 40:
+        errs.append("city or state is too long")
+    if errs:
+        return errs, []
+    notes: list[str] = []
+    old_url = (row["portfolio_url"] or "").strip()
+    changed = [f"{k}: {a or 'none'} -> {b or 'none'}" for k, a, b in
+               (("domain", row["domain"], dom), ("hq_city", row["hq_city"], city or None), ("hq_state", row["hq_state"], state or None),
+                ("portfolio_url", old_url or None, url or None)) if (a or None) != (b or None)]
+    if not changed:
+        return [], ["Nothing changed."]
+    with conn:
+        conn.execute("UPDATE pe_firms SET domain = ?, hq_city = ?, hq_state = ?, portfolio_url = ? WHERE id = ?", (dom, city or None, state or None, url or None, firm_id))
+        if url != old_url:
+            if url:
+                conn.execute("INSERT OR IGNORE INTO pe_sources(firm_id, kind, url, origin) VALUES (?,?,?, 'firm_config')", (firm_id, "portfolio_page", url))
+            if old_url:
+                src = conn.execute("SELECT id, status FROM pe_sources WHERE firm_id = ? AND kind = 'portfolio_page' AND url = ?", (firm_id, old_url)).fetchone()
+                if src is not None:
+                    read = conn.execute("SELECT (SELECT COUNT(*) FROM pe_snapshots WHERE source_id = ?) + (SELECT COUNT(*) FROM pe_listing_entries WHERE source_id = ?)",
+                                        (src["id"], src["id"])).fetchone()[0]
+                    if src["status"] == "never" and not read:
+                        conn.execute("DELETE FROM pe_sources WHERE id = ?", (src["id"],))
+                    else:
+                        notes.append(f"The earlier page {old_url} was read before, so it stays registered with its history and will still be read.")
+        log_audit(conn, actor, "update", None, "pe_firm", f"#{firm_id} {row['name']}", "; ".join(changed))
+    notes.insert(0, "Saved." + (" Run \"Read PE portfolio pages\" from Operate to read it." if url or dom else ""))
+    return [], notes
+
+
 def set_firm_status(conn: sqlite3.Connection, firm_id: int, status: str, actor: str = "ui") -> bool:
     if status not in ("active", "excluded"):
         return False
@@ -97,9 +146,58 @@ class SyncResult:
     links_exited: int = 0
 
 
-def sync_from_accounts(conn: sqlite3.Connection, actor: str = "sync", today: date | None = None) -> SyncResult:
+def split_sponsor(sponsor: str, splits: dict[str, list[str]]) -> list[str]:
+    """The firms a sponsor string stands for: the listed firms when the string is in `pe_portfolio.sponsor_splits`, else the string itself."""
+    key = norm_name(sponsor)
+    for k, names in splits.items():
+        if norm_name(k) == key and any(n.strip() for n in names):
+            return [" ".join(n.split()) for n in names if n.strip()]
+    return [" ".join((sponsor or "").split())]
+
+
+def retire_split_firm(conn: sqlite3.Connection, combined: str, actor: str = "sync") -> str | None:
+    """After a combined sponsor name has been split, take the combined firm out of the way. Its relationships are removed only when every one of them was
+    only ever mirrored from an account's sponsor field (nothing was read from a page); the firm is then deleted if nothing else refers to it, else
+    excluded. A firm with anything read or researched behind it is only excluded. Returns what was done, or None when there is no such firm."""
+    f = find_firm(conn, combined)
+    if f is None:
+        return None
+    fid = f["id"]
+    owns = conn.execute("SELECT id, basis FROM pe_ownership WHERE firm_id = ?", (fid,)).fetchall()
+    verified = conn.execute("SELECT COUNT(*) FROM pe_evidence e JOIN pe_ownership o ON o.id = e.subject_id WHERE e.subject_type = 'ownership' AND o.firm_id = ? "
+                            "AND e.verification = 'page_verified'", (fid,)).fetchone()[0]
+    legacy_only = all(o["basis"] == "legacy_unverified" for o in owns) and not verified
+    with conn:
+        if not legacy_only:
+            conn.execute("UPDATE pe_firms SET status = 'excluded' WHERE id = ?", (fid,))
+            log_audit(conn, actor, "update", None, "pe_firm", f"#{fid} {f['name']}", "excluded: split into the firms in pe_portfolio.sponsor_splits (it has evidence behind it, so it is kept)")
+            return "excluded"
+        ids = [o["id"] for o in owns]
+        if ids:
+            marks = ",".join("?" * len(ids))
+            conn.execute(f"DELETE FROM pe_evidence WHERE subject_type = 'ownership' AND subject_id IN ({marks})", ids)
+            conn.execute(f"DELETE FROM pe_ownership_log WHERE ownership_id IN ({marks})", ids)
+        conn.execute("DELETE FROM pe_ownership WHERE firm_id = ?", (fid,))
+        conn.execute("DELETE FROM portfolio_links WHERE firm_id = ? AND origin = 'account'", (fid,))
+        refs = sum(conn.execute(q, (fid,)).fetchone()[0] for q in (
+            "SELECT COUNT(*) FROM portfolio_links WHERE firm_id = ?", "SELECT COUNT(*) FROM firm_signals WHERE firm_id = ?",
+            "SELECT COUNT(*) FROM pe_funds WHERE firm_id = ?", "SELECT COUNT(*) FROM pe_sources WHERE firm_id = ?"))
+        if refs:
+            conn.execute("UPDATE pe_firms SET status = 'excluded' WHERE id = ?", (fid,))
+            log_audit(conn, actor, "update", None, "pe_firm", f"#{fid} {f['name']}", "excluded: split into the firms in pe_portfolio.sponsor_splits")
+            return "excluded"
+        conn.execute("DELETE FROM pe_firms WHERE id = ?", (fid,))
+        log_audit(conn, actor, "delete", None, "pe_firm", f"#{fid} {f['name']}", "removed: split into the firms in pe_portfolio.sponsor_splits (it held only unverified links from an account's sponsor field)")
+        return "removed"
+
+
+def sync_from_accounts(conn: sqlite3.Connection, actor: str = "sync", today: date | None = None, splits: dict[str, list[str]] | None = None) -> SyncResult:
     """Make the firm table and the `account` links match the accounts: every pe-backed account with a sponsor gets a
-    firm and a current link; a link whose account no longer names that firm as sponsor is marked exited."""
+    firm and a current link; a link whose account no longer names that firm as sponsor is marked exited. A sponsor string listed in
+    `pe_portfolio.sponsor_splits` stands for each of the firms listed there (a company with two sponsors has two relationships)."""
+    if splits is None:
+        from bd.config import load_config
+        splits = load_config().pe_portfolio.sponsor_splits
     out = SyncResult()
     day = (today or datetime.now(timezone.utc).date()).isoformat()
     links_before = conn.execute("SELECT COUNT(*) FROM portfolio_links").fetchone()[0]
@@ -108,21 +206,25 @@ def sync_from_accounts(conn: sqlite3.Connection, actor: str = "sync", today: dat
     with conn:
         wanted: set[tuple[int, int]] = set()
         for a in accts:
-            fid, created = ensure_firm(conn, a["sponsor"], "derived", actor)
-            out.firms_added += created
-            wanted.add((fid, a["id"]))
-            conn.execute(
-                "INSERT INTO portfolio_links(firm_id, account_id, company_name, company_domain, status, origin, found_date) "
-                "VALUES (?,?,?,?,'current','account',?) "
-                "ON CONFLICT(firm_id, lower(company_name)) DO UPDATE SET account_id = excluded.account_id, "
-                "status = CASE WHEN portfolio_links.status = 'exited' AND portfolio_links.origin = 'account' "
-                "THEN 'current' ELSE portfolio_links.status END",
-                (fid, a["id"], a["name"], a["domain"], day))
+            for firm_name in split_sponsor(a["sponsor"], splits):
+                fid, created = ensure_firm(conn, firm_name, "derived", actor)
+                out.firms_added += created
+                wanted.add((fid, a["id"]))
+                conn.execute(
+                    "INSERT INTO portfolio_links(firm_id, account_id, company_name, company_domain, status, origin, found_date) "
+                    "VALUES (?,?,?,?,'current','account',?) "
+                    "ON CONFLICT(firm_id, lower(company_name)) DO UPDATE SET account_id = excluded.account_id, "
+                    "status = CASE WHEN portfolio_links.status = 'exited' AND portfolio_links.origin = 'account' "
+                    "THEN 'current' ELSE portfolio_links.status END",
+                    (fid, a["id"], a["name"], a["domain"], day))
         for l in conn.execute("SELECT id, firm_id, account_id FROM portfolio_links WHERE origin = 'account' AND status = 'current'").fetchall():
             if (l["firm_id"], l["account_id"]) not in wanted:
                 conn.execute("UPDATE portfolio_links SET status = 'exited' WHERE id = ?", (l["id"],))
                 log_audit(conn, actor, "update", l["account_id"], "portfolio_link", "current", "exited")
                 out.links_exited += 1
+    for combined, names in splits.items():
+        if len([n for n in names if n.strip()]) > 1 and norm_name(combined) not in {norm_name(n) for n in names}:
+            retire_split_firm(conn, combined, actor)
     out.links_added = conn.execute("SELECT COUNT(*) FROM portfolio_links").fetchone()[0] - links_before
     from bd.pe_ownership import mirror_legacy          # the ledger lists these too, as unverified (imported here: bd.pe_ownership imports this module)
     with conn:

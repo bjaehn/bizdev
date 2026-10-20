@@ -148,8 +148,8 @@ def scan(
     limit: Optional[int] = typer.Option(None, help="Scan at most N accounts"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
     scanners: str = typer.Option("all", help="Comma list of scanner names, or all implemented"),
-    extras: str = typer.Option("", help="Comma list of extra scanners, run afterwards only for scanned companies that already show a signal "
-                                         "(a deeper look where it is most likely to pay)"),
+    extras: str = typer.Option("", help="Comma list of extra scanners, run afterwards for scanned companies that already show a signal, and for any "
+                                         "scanned company not deeply looked at in scan.deep_every_weeks (a deeper look where it is most likely to pay)"),
     workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
     force: bool = typer.Option(False, help="Ignore tier cadence"),
     dry_run: bool = typer.Option(False, help="Apply the fit gate and show what would be scanned; no API calls"),
@@ -160,7 +160,7 @@ def scan(
     from bd.accounts import list_accounts
     from bd.db import connect, init_db
     from bd.fit_gate import apply_fit_gate
-    from bd.runner import accounts_with_signals, quiet_accounts, run_scans, split_due
+    from bd.runner import accounts_with_signals, deep_due, quiet_accounts, run_scans, split_due
     from bd.scanners import SCANNERS
 
     if tier not in ("A", "B", "all"):
@@ -203,7 +203,7 @@ def scan(
         for a in due:
             typer.echo(f"  would scan: {a.name} (tier {a.tier})")
         if extra_names:
-            typer.echo(f"  then {extra_names} for the ones that show a signal")
+            typer.echo(f"  then {extra_names} for the ones that show a signal" + (f" or have not had a deep look in {cfg.scan.deep_every_weeks} weeks" if cfg.scan.deep_every_weeks else ""))
         return
     if not due:
         return
@@ -223,11 +223,14 @@ def scan(
                    "Raise llm.max_cost_per_run_usd in config.yaml and re-run to finish.", err=True)
     elif extra_names and summary.accounts:
         scanned = [r.account for r in summary.accounts.values()]
-        deep = accounts_with_signals(conn, scanned, run_date, cfg.scan.window_days)
+        loud = accounts_with_signals(conn, scanned, run_date, cfg.scan.window_days)
+        loud_ids = {a.id for a in loud}
+        rotating = [a for a in deep_due(conn, scanned, run_date, cfg, extra_names) if a.id not in loud_ids]
+        deep = loud + rotating                      # a company with a signal first: if the spending limit runs out, those are the ones that matter most
         cap = cfg.llm.max_cost_per_run_usd
         left = None if cap is None else max(cap - summary.est_cost, 0.0)
-        typer.echo(f"\nExtra scanners {extra_names} for {len(deep)} of {len(scanned)} scanned compan{'y' if len(scanned) == 1 else 'ies'} "
-                   "that already show a signal.")
+        typer.echo(f"\nExtra scanners {extra_names} for {len(deep)} of {len(scanned)} scanned compan{'y' if len(scanned) == 1 else 'ies'}: "
+                   f"{len(loud)} already show a signal, {len(rotating)} are due their periodic deep look.")
         if deep and (left is None or left > 0):
             more = run_scans(conn, cfg, _build_scanners(extra_names, cfg, settings), deep, run_date, model=settings.anthropic_model,
                              workers=workers, force=True, max_cost=left, touch_last_scanned=False, log=typer.echo)
@@ -357,6 +360,44 @@ def _pe_deps(settings, cfg):
     return web, verifier, Enricher(cfg, web, verifier, edgar), model
 
 
+@app.command(name="ats-find")
+def ats_find(
+    limit: Optional[int] = typer.Option(None, help="Companies whose careers page is read (default hiring.ats_find_per_run)"),
+    only: Optional[str] = typer.Option(None, help="Only companies whose name contains this text"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    soft: bool = typer.Option(False, "--soft", help="Never fail the caller (used inside Update): a missing setting or an error is reported and the exit code stays 0"),
+) -> None:
+    """Find each company's own job board (Greenhouse, Lever, Ashby) by reading its careers page (free, no model). A board found on the company's own
+    site, whose public feed answers, is saved; the company then gets the free complete feed instead of a model search for postings."""
+    from bd.ats import AtsClient
+    from bd.ats_find import run_find
+    from bd.db import connect, init_db
+    from bd.settings_store import apply_overrides
+    from bd.sources import Fetcher
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    if not settings.user_agent_configured:
+        if soft:
+            typer.echo("Job boards were not looked for: set BD_USER_AGENT (your company name and a contact email) so the sites are told who is reading them.")
+            return
+        _fail("Set BD_USER_AGENT (your company name and a contact email): the sites are told who is reading them.")
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    fetcher = Fetcher(cfg, settings.user_agent)
+    try:
+        looked, saved = run_find(conn, cfg, fetcher, AtsClient(cfg, settings.user_agent), run_date, limit=limit, only=only, log=typer.echo)
+    except Exception as e:      # noqa: BLE001
+        if not soft:
+            raise
+        typer.echo(f"Job board search stopped: {type(e).__name__}: {e}.")
+        return
+    finally:
+        fetcher.close()
+    typer.echo(f"{looked} compan{'y' if looked == 1 else 'ies'} looked at; {saved} job board(s) saved. Companies with a board are read for free by the ats scanner from now on.")
+
+
 @app.command(name="pe-sync")
 def pe_sync() -> None:
     """Derive PE firms and portfolio links from accounts that have a sponsor (no API calls)."""
@@ -413,6 +454,7 @@ def pe_collect(
     force: bool = typer.Option(False, help="Read pages again even if they were read recently"),
     locate: Optional[int] = typer.Option(None, help="Companies whose own site is read for an address (default pe_portfolio.locate_per_run)"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    soft: bool = typer.Option(False, "--soft", help="Never fail the caller: a missing setting or a failed read is reported and the exit code stays 0 (used inside Update)"),
 ) -> None:
     """Read each PE firm's own portfolio page (free, no model) and record every relationship with its evidence.
 
@@ -420,6 +462,7 @@ def pe_collect(
     derives current / pending / historical / unclear by code, and reports per-source success, coverage and what changed since the last reading."""
     from bd.db import connect, init_db
     from bd.pe_collect import discover_portfolio_pages, locate_companies, register_sources, run_collect
+    from bd.pe_sites import locate_firm_sites
     from bd.pe_ownership import mirror_legacy
     from bd.pe_store import sync_from_accounts
     from bd.settings_store import apply_overrides
@@ -428,6 +471,9 @@ def pe_collect(
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
     if not settings.user_agent_configured:
+        if soft:
+            typer.echo("PE portfolio pages were not read: set BD_USER_AGENT (your company name and a contact email) so the firms' sites are told who is reading them.")
+            return
         _fail("Set BD_USER_AGENT (your company name and a contact email): the firms' sites are told who is reading them.")
     conn = connect(settings.db_path)
     init_db(conn)
@@ -437,18 +483,24 @@ def pe_collect(
     conn.commit()
     fetcher = Fetcher(cfg, settings.user_agent)
     try:
+        sites = locate_firm_sites(conn, fetcher, log=typer.echo, only=firm)
         added = register_sources(conn)
         have = conn.execute("SELECT COUNT(*) FROM pe_sources").fetchone()[0]
         discovered = discover_portfolio_pages(conn, fetcher, cfg, log=typer.echo)
         total = conn.execute("SELECT COUNT(*) FROM pe_sources").fetchone()[0]
         firms = conn.execute("SELECT COUNT(*) FROM pe_firms WHERE status = 'active'").fetchone()[0]
-        typer.echo(f"{firms} active PE firm(s); {total} portfolio source(s) ({added} newly registered from firm settings, {discovered} found on home pages).")
+        typer.echo(f"{firms} active PE firm(s); {total} portfolio source(s) ({sites} firm website(s) confirmed, {added} newly registered from firm settings, {discovered} found on the firms' own sites).")
         if not total:
             typer.echo("No portfolio pages are configured. Add a firm with its portfolio URL on the Private equity firms page (or set a firm's website "
                        "so its home page can be searched for the link). Nothing was invented.")
             return
         res = run_collect(conn, cfg, fetcher, run_date, firm=firm, force=force, log=typer.echo)
         located = locate_companies(conn, cfg, fetcher, run_date, limit=locate, log=typer.echo)
+    except Exception as e:      # noqa: BLE001  (inside Update a PE reading must never stop the signal scan that follows)
+        if not soft:
+            raise
+        typer.echo(f"PE portfolio reading stopped: {type(e).__name__}: {e}. Evidence read earlier is unchanged.")
+        return
     finally:
         fetcher.close()
     typer.echo(f"\n{res.line()}. {located} company(ies) with a place found on their own site.")
@@ -457,7 +509,7 @@ def pe_collect(
             typer.echo(f"  FAILED  {o.firm}: {o.error} ({o.url}). Earlier evidence is kept and shown as stale.", err=True)
         if o.unresolved:
             typer.echo(f"  {o.firm}: {len(o.unresolved)} entr(ies) left unresolved: {', '.join(o.unresolved[:5])}")
-    if res.sources and res.failed == res.sources:
+    if res.sources and res.failed == res.sources and not soft:
         raise typer.Exit(code=3)
 
 

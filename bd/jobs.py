@@ -187,7 +187,7 @@ COMPARE_SCANNERS = ("sweep", "tech_procurement")      # the scanners `bd compare
 COMPARE_BUDGET = 3       # dollars: the most one side-by-side test of the combined scan may spend (about 4 companies cost $0.5 to $1.5)
 FIND_BUDGET = 1          # dollars: the most one signal scan of a single company, started from the viewer's Find page, may spend
 # What a scan looks for. Every company gets the core scanners: the combined sweep (leadership, press, company events and technology in one call, on
-# ANTHROPIC_SCAN_MODEL when set) and hiring. The technology scanner runs only for companies that already show a signal, because it alone finds RFP
+# ANTHROPIC_SCAN_MODEL when set) and hiring. The technology scanner runs for companies that already show a signal and, on a cycle (scan.deep_every_weeks), for every other scanned company, because it alone finds RFP
 # matches and filing risk factors. WARN notices are left to Advanced tools. On a side-by-side test of four companies the sweep on Haiku cost about
 # $0.08 a company against $0.79-1.28 for the four separate scanners it replaces, and found more signals than they had stored (missing two).
 CORE_SCANNERS = "sweep,hiring"
@@ -237,7 +237,9 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         # hiring, press and company events within the spending limit; only then the work that fills in company facts and finds new companies,
         # with whatever is left of the limit. Facts never delay or use up the money for signals.
         steps = [["check"], ["sec-fill", "--as-of", as_of],                  # free: gives public companies the SEC id that the filing scanners need
-                 ["pe-sync"], ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
+                 ["pe-sync"], ["pe-collect", "--soft", "--as-of", as_of],        # free: each firm's own portfolio page, read politely; never stops the Update
+                 ["ats-find", "--soft", "--as-of", as_of],           # free: a company's own job board, found on its careers page, so the free complete feed can read it
+                 ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
                  ["scan", "--limit", a["--scan"], "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--allow-empty", "--as-of", as_of]]
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
@@ -266,7 +268,8 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
-        return [["scan", "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
+        return [["pe-sync"], ["pe-collect", "--soft", "--as-of", as_of], ["ats-find", "--soft", "--as-of", as_of],   # free and soft: portfolios and job boards refresh every Monday
+                ["scan", "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
     return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "pe-collect", "pe-deals", "pe-promote", "rfps", "sec-fill") else [args]
 

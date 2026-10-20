@@ -206,3 +206,44 @@ def test_generate_validated_keeps_the_error_codes_from_the_first_call_and_the_re
     llm = Twice(["not json", GOOD])
     _, res = generate_validated(llm, "s", "u", ScanResponse, retries=1)
     assert res.search_errors == ["unavailable", "unavailable"]
+
+
+# ---- every search rejected as invalid_tool_input: one repeat with the basic search tool ------------------------------------------------------------
+def test_a_call_whose_searches_were_all_rejected_is_repeated_once_with_the_basic_tool(cfg):
+    c, msgs = client(cfg, [resp([_search_error("invalid_tool_input"), _search_error("invalid_tool_input"), block(type="text", text="nothing", citations=None)], out=7, searches=2),
+                           resp([block(type="web_search_tool_result", content=[{"type": "web_search_result", "url": "https://acme.com/news/cio", "title": "t"}]),
+                                 block(type="text", text=GOOD, citations=None)], out=11)])
+    r = c.run("S", [{"role": "user", "content": "go"}])
+    assert [m["tools"][0]["type"] for m in msgs.calls] == [cfg.llm.web_search_tool_type, "web_search_20250305"]
+    assert r.fallback_used and r.search_errors == [] and normalize_url("https://acme.com/news/cio") in r.retrieved_urls
+    assert r.usage.output_tokens == 7 + 11 and r.usage.web_searches == 2 + 1               # the first attempt's spend is still counted
+
+
+def test_no_repeat_when_something_came_back_when_the_error_is_another_kind_or_when_it_is_switched_off(cfg):
+    partial = [block(type="web_search_tool_result", content=[{"type": "web_search_result", "url": "https://acme.com/a", "title": "t"}]),
+               _search_error("invalid_tool_input"), block(type="text", text=GOOD, citations=None)]
+    c, msgs = client(cfg, [resp(partial)])
+    r = c.run("S", [{"role": "user", "content": "go"}])
+    assert len(msgs.calls) == 1 and not r.fallback_used and r.search_errors == ["invalid_tool_input"]
+    c, msgs = client(cfg, [resp([_search_error("too_many_requests"), block(type="text", text="x", citations=None)])])
+    assert not c.run("S", [{"role": "user", "content": "go"}]).fallback_used and len(msgs.calls) == 1
+    off = cfg.model_copy(deep=True)
+    off.llm.web_search_fallback_tool_type = None
+    c, msgs = client(off, [resp([_search_error("invalid_tool_input"), block(type="text", text="x", citations=None)])])
+    assert c.run("S", [{"role": "user", "content": "go"}]).search_errors == ["invalid_tool_input"] and len(msgs.calls) == 1
+
+
+def test_a_second_rejection_is_still_reported_as_a_failure_not_as_found_nothing(cfg):
+    from bd.llm import search_failure
+    c, msgs = client(cfg, [resp([_search_error("invalid_tool_input"), block(type="text", text="x", citations=None)]),
+                           resp([_search_error("invalid_tool_input"), block(type="text", text="x", citations=None)])])
+    r = c.run("S", [{"role": "user", "content": "go"}])
+    assert len(msgs.calls) == 2 and r.fallback_used and "invalid_tool_input" in search_failure(r)      # one repeat only, and the failure still shows
+
+
+def test_after_one_repeat_fails_too_no_more_repeats_are_made_in_that_run(cfg):
+    bad = lambda: resp([_search_error("invalid_tool_input"), block(type="text", text="x", citations=None)])      # noqa: E731
+    c, msgs = client(cfg, [bad(), bad(), bad()])
+    c.run("S", [{"role": "user", "content": "go"}])                       # primary rejected, the repeat rejected too: two calls
+    c.run("S", [{"role": "user", "content": "go"}])                       # the next call is not repeated: one call, so the spend is not doubled again
+    assert [m["tools"][0]["type"] for m in msgs.calls] == [cfg.llm.web_search_tool_type, "web_search_20250305", cfg.llm.web_search_tool_type]

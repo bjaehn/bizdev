@@ -21,6 +21,7 @@ from bd.cost import estimate_cost
 from bd.llm import Usage
 from bd.postings import known_accessions, learn_board, record_filings, store_postings
 from bd.scanners.base import ScanOutcome, Scanner, store_signals
+from bd.signal_coverage import SUCCESSFUL_RUN
 
 
 @dataclass
@@ -60,6 +61,24 @@ def accounts_with_signals(conn: sqlite3.Connection, accounts: list[Account], as_
         f"SELECT DISTINCT account_id FROM signals WHERE confidence != 'Low' AND event_date >= ? AND account_id IN ({','.join('?' * len(ids))})",
         (since, *ids))}
     return [a for a in accounts if a.id in have]
+
+
+def deep_due(conn: sqlite3.Connection, accounts: list[Account], as_of: date, cfg: Config, scanner_names: list[str]) -> list[Account]:
+    """The accounts among `accounts` that are due their periodic deep look: no successful run of at least one of the extra scanners within
+    scan.deep_every_weeks. A run that ended in an error (a failed search, a failed fetch) does not count as a look: it is tried again next time."""
+    weeks = cfg.scan.deep_every_weeks
+    if not weeks or not accounts or not scanner_names:
+        return []
+    since = (as_of - timedelta(days=weeks * 7 - cfg.scan.cadence_grace_days)).isoformat()
+    ids = [a.id for a in accounts]
+    marks = ",".join("?" * len(ids))
+    due: set[int] = set()
+    for name in scanner_names:
+        looked = {r[0] for r in conn.execute(
+            f"SELECT DISTINCT account_id FROM runs WHERE step = ? AND run_date >= ? AND {SUCCESSFUL_RUN} AND account_id IN ({marks})",
+            (f"scan:{name}", since, *ids))}
+        due |= {i for i in ids if i not in looked}
+    return [a for a in accounts if a.id in due]
 
 
 def is_due(acc: Account, as_of: date, cfg: Config, force: bool = False, quiet: bool = False) -> bool:
