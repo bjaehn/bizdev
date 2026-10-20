@@ -37,6 +37,17 @@ class DeepLooks:
 
 
 @dataclass
+class LeadershipLooks:
+    """Leadership signals stored in the window, by where they came from: SEC 8-K filings read by code (free, Item 5.02) or searches. Counts of what was stored."""
+    window_days: int = WINDOW_DAYS
+    from_filings: int = 0
+    from_search: int = 0
+    companies: int = 0                    # companies with at least one, from either
+    companies_from_filings: int = 0       # companies whose only leadership signals came from filings (a search had not found them)
+    filing_companies: int = 0             # companies on the list with a CIK: the ones 8-K filings can speak for
+
+
+@dataclass
 class SignalCoverage:
     on_list: int = 0                                          # companies scanned for signals (everything not known out of scope)
     out_of_scope: int = 0
@@ -49,6 +60,7 @@ class SignalCoverage:
     updates_needed: int = 0                                   # presses of Update my list to scan every company not yet scanned
     last_scanned: str | None = None
     deep: DeepLooks = field(default_factory=DeepLooks)
+    leadership: LeadershipLooks = field(default_factory=LeadershipLooks)
 
 
 def deep_looks(conn: sqlite3.Connection, cfg: Config, today: date, on_list_ids: list[int], scanners: tuple[str, ...]) -> DeepLooks:
@@ -75,6 +87,27 @@ def deep_looks(conn: sqlite3.Connection, cfg: Config, today: date, on_list_ids: 
     return d
 
 
+def leadership_looks(conn: sqlite3.Connection, cfg: Config, today: date) -> LeadershipLooks:
+    types = cfg.scoring.families.get("leadership", [])
+    out = LeadershipLooks()
+    out.filing_companies = conn.execute("SELECT COUNT(*) FROM accounts WHERE status != 'excluded' AND cik IS NOT NULL AND trim(cik) != ''").fetchone()[0]
+    if not types:
+        return out
+    since = (today - timedelta(days=WINDOW_DAYS)).isoformat()
+    marks = ",".join("?" * len(types))
+    rows = conn.execute(f"SELECT s.account_id, s.source_type FROM signals s JOIN accounts a ON a.id = s.account_id WHERE a.status != 'excluded' AND s.type IN ({marks}) "
+                        f"AND s.confidence != 'Low' AND s.event_date >= ?", (*types, since)).fetchall()
+    by: dict[int, set[bool]] = {}
+    for r in rows:
+        filing = r["source_type"] == "sec_filing"
+        out.from_filings += filing
+        out.from_search += not filing
+        by.setdefault(r["account_id"], set()).add(filing)
+    out.companies = len(by)
+    out.companies_from_filings = sum(v == {True} for v in by.values())
+    return out
+
+
 def signal_coverage(conn: sqlite3.Connection, cfg: Config, today: date, update: dict[str, int],
                     deep_scanners: tuple[str, ...] = ("tech_procurement",)) -> SignalCoverage:
     c = SignalCoverage(per_update=int(update.get("scan", 0)))
@@ -96,4 +129,5 @@ def signal_coverage(conn: sqlite3.Connection, cfg: Config, today: date, update: 
     c.by_group = [(label, sum(i.group == key for i in items)) for key, label in GROUPS]
     c.updates_needed = math.ceil(c.unscanned / c.per_update) if c.unscanned and c.per_update else 0
     c.deep = deep_looks(conn, cfg, today, ids, deep_scanners)
+    c.leadership = leadership_looks(conn, cfg, today)
     return c

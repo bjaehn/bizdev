@@ -354,15 +354,24 @@ class SecEventItem(_Strict):
     type: str                         # the signal type this 8-K item becomes
     label: str                        # the item's title, used in the summary
     service_lines: list[str]
+    officers: bool = False            # Item 5.02 also covers directors and pay: read the item's own text and report only an officer change (see SecEvents.officer_titles)
 
 
 class SecEvents(_Strict):
     """Signals read straight from SEC 8-K item codes, with no model call (bd.scanners.sec_events)."""
     max_filings_per_scan: int
     items: dict[str, SecEventItem]    # "2.05" -> what it means
+    officer_titles: dict[str, list[str]] = {}       # signal type -> officer titles that, next to a change word in the item's own text, make an officer change
+    officer_change_words: list[str] = []
+    officer_window_chars: int = 140                  # a title and a change word must be this close
+    officer_service_lines: dict[str, list[str]] = {}  # signal type -> service lines (default: the item's)
 
     def summary(self, item: str) -> str:
         return f"Filed an 8-K reporting {self.items[item].label} (Item {item})."
+
+    def officer_summary(self, item: str, title: str) -> str:
+        """Neutral on purpose: Item 5.02 covers appointments, departures and arrangements, and code does not decide which from the wording."""
+        return f"Filed an 8-K (Item {item}) that reports a change involving the {title}."
 
 
 class Config(_Strict):
