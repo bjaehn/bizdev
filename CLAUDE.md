@@ -47,9 +47,10 @@ To change the look of the whole app: edit the tokens or one component in `design
   of the list has been scanned (Admin Home); the viewer lookup is the capped (`$1`) `find` signal-scan job in `bd/jobs.py` + `/find` in `app.py`; `bd/matrix.py` the signal matrix; `bd/profile.py` the company brief and its plain-text copy;
   `bd/priority.py` the priority chart data; `bd/market.py` the Market view data; `bd/charts.py` SVG charts.
 - Analysis nav is This week and Companies (the Signals feed is reached from This week); Reports live under Admin. `ADMIN_GROUPS` in `app.py` lists the Admin pages.
+- A web search that errors (rate limit, unavailable) must never read as "found nothing": `bd/llm.py` records the codes (`search_failure`) and scanners, discovery and RFPs turn "nothing found and the tool failed" into an error, so the company is not marked scanned or taken for quiet.
 - Cost levers (the user finds the weekly scan too expensive): the core scan is the combined `sweep` (on `ANTHROPIC_SCAN_MODEL`, Haiku, set in Railway) plus `hiring`; `tech_procurement` is the extra that runs only where a signal shows
   (`CORE_SCANNERS` / `EXTRA_SCANNERS` in `bd/jobs.py`). Quiet companies wait `scan.quiet_every_weeks` (`bd/runner.py`); per-model pricing is in `bd/cost.py`. The switch rests on a four-company `bd compare` run (sweep $0.33 against $3.88; 13 found against 8 stored,
-  two real misses): watch signal counts after the first weekly run. Hiring is the largest remaining cost and has not been tried on the cheaper model. `scripts/weekly.sh` still runs the older `all` list.
+  two real misses): watch signal counts after the first weekly run. First live Update (10 companies): about $0.20 a company (sweep $0.99, technology extra $0.63, hiring $0.36 in total; web searches are most of the sweep's cost). The technology extra is the next thing to try on the cheaper model. `scripts/weekly.sh` still runs the older `all` list.
 
 ## Working agreements
 - Open pull requests as drafts and subscribe to their activity; the user merges. Never merge unless explicitly told to.

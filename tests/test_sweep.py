@@ -96,3 +96,28 @@ def test_the_runner_prices_each_scanner_with_its_own_model(cfg, tmp_path):
     from bd.accounts import list_accounts
     s = run_scans(conn, cfg, [main, cheap], list_accounts(conn), AS_OF, model="claude-sonnet-5-5", workers=1)
     assert s.est_cost == pytest.approx(2.0 + 0.10)                       # one million input tokens on each model
+
+
+# ---- a scan whose search tool failed is an error, not a quiet company ---------------------------------------------------------------------
+def test_nothing_found_while_the_search_tool_failed_is_an_error_but_a_finding_or_a_spent_search_budget_is_not(cfg):
+    def scan(signals, errors):
+        llm = FakeLLM([json.dumps({"signals": signals})], urls=(URL,), search_errors=errors)
+        return SweepScanner(cfg, llm, FakeVerifier()).scan(account(), AS_OF)
+    out = scan([], ["too_many_requests"] * 3)
+    assert out.error and out.error.startswith("search tool errors: too_many_requests x3") and out.signals == []
+    assert scan([sig()], ["too_many_requests"]).error is None                       # something was found: keep it
+    assert scan([], ["max_uses_exceeded"]).error is None                            # the model used every search it was allowed
+    assert scan([], []).error is None
+
+
+def test_a_company_whose_search_failed_is_not_marked_scanned_so_it_is_not_taken_for_quiet(cfg, tmp_path):
+    from bd.accounts import list_accounts
+    from bd.runner import run_scans
+    from tests.conftest import add_account, make_db
+    conn = make_db(tmp_path)
+    add_account(conn, "Acme Corp", domain="acme.com")
+    llm = FakeLLM([json.dumps({"signals": []})], urls=(), search_errors=["too_many_requests"])
+    s = run_scans(conn, cfg, [SweepScanner(cfg, llm, FakeVerifier())], list_accounts(conn), AS_OF, "claude-sonnet-5-5")
+    assert s.errors == 1 and "search tool errors" in s.accounts[1].errors[0]
+    assert conn.execute("SELECT last_scanned FROM accounts").fetchone()[0] is None                  # it is tried again next run
+    assert "search tool errors" in conn.execute("SELECT errors FROM runs WHERE step = 'scan:sweep'").fetchone()[0]

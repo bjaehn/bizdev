@@ -150,3 +150,11 @@ def test_the_model_note_explains_an_empty_list_and_reaches_the_log_and_runs_tabl
     assert "notes" in __import__("importlib.resources", fromlist=["files"]).files("bd.prompts").joinpath("rfps.md").read_text()
     llm2 = FakeLLM([json.dumps({"rfps": []})], urls=(URL,))                                           # the note is optional
     assert RfpFinder(cfg, llm2, FakeVerifier()).find(cfg.rfps.groups[0], AS_OF).note is None
+
+
+def test_a_group_the_search_tool_could_not_search_is_an_error_not_no_rfps(cfg, group):
+    llm = FakeLLM([json.dumps({"rfps": []})], urls=(), search_errors=["unavailable"])
+    out = RfpFinder(cfg, llm, FakeVerifier()).find(group, AS_OF)
+    assert out.error and "search tool errors: unavailable" in out.error and out.rfps == []
+    ok = RfpFinder(cfg, FakeLLM([json.dumps({"rfps": []})], urls=(), search_errors=["max_uses_exceeded"]), FakeVerifier()).find(group, AS_OF)
+    assert ok.error is None
