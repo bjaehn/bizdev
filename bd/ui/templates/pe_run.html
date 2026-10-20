@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Collection run #{{ d.run['id'] }}{% endblock %}
+{% block hero %}<p class="meta"><a href="/firms">← PE firms</a></p>
+<h1>Collection run #{{ d.run['id'] }}</h1>
+<p class="sub">Started {{ fmt_ts(d.run['started']) }}{% if d.run['finished'] %} · finished {{ fmt_ts(d.run['finished']) }}{% else %} · did not finish (it may still be running, or was interrupted){% endif %}</p>{% endblock %}
+{% block body %}
+{% if d.run['summary'] %}<div class="card"><p>{{ d.run['summary'] }}</p></div>{% endif %}
+<div class="wrap wide"><table><tr><th>Firm and source</th><th>Result</th><th>Coverage</th><th class="num">Pages</th><th class="num">Entries</th><th>Changes since the previous reading</th></tr>
+{% for o in d.outcomes %}<tr><td><b>{{ o.firm }}</b><br><span class="meta">{{ o.url }}</span></td>
+<td><span class="badge {{ 'good' if o.status == 'ok' else ('bad' if o.status in ('failed', 'blocked') else '') }}">{{ o.status }}</span>{% if o.error %}<br><span class="meta">{{ o.error }}. The last good evidence is kept.</span>{% endif %}{% if o.status == 'cached' %}<br><span class="meta">read recently, not read again</span>{% endif %}{% if o.via == 'wordpress_api' %}<br><span class="meta">read through the site's public API</span>{% endif %}</td>
+<td>{{ o.coverage }}{% if o.coverage_note %}<br><span class="meta">{{ o.coverage_note }}</span>{% endif %}</td><td class="num">{{ o.pages }}</td><td class="num">{{ o.entries }}</td>
+<td>{% if o.status != 'ok' %}<span class="meta">not applicable</span>{% elif o.added is none %}<span class="meta">first reading: no earlier reading to compare</span>{% else %}{{ o.added|length }} added{% if o.added %} ({{ o.added|join(', ') }}){% endif %}; {{ o.removed|length }} no longer listed{% if o.removed %} ({{ o.removed|join(', ') }}){% endif %}{% endif %}
+{% if o.unresolved %}<br><span class="meta">left unresolved: {{ o.unresolved|join('; ') }}</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="6" class="empty">No source was read in this run.</td></tr>{% endfor %}</table></div>
+{% endblock %}

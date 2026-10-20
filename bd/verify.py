@@ -65,6 +65,10 @@ class UrlVerifier:
                 return "private_address"
         return None
 
+    def host_problem(self, host: str) -> str | None:
+        """Why this host must not be fetched (private or unresolvable address), or None. Shared with the page reader in bd.sources."""
+        return self._address_problem(host)
+
     def verify(self, url: str) -> VerifyResult:
         current = url.strip()
         for _ in range(self._cfg.verify.max_redirects + 1):

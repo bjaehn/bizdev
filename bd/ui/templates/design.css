@@ -25,6 +25,9 @@
      .chart (.chart-inner)                            scrolls sideways on a phone; SVG charts use these tokens too
      .chart--wide / .chart--phone                     one chart drawn twice: full width, and the last 6 weeks for a phone (CSS shows one)
      .wrap.wide                                       a table with many columns: keeps its width and scrolls sideways on a phone
+     dl.kv                                            facts as label / value pairs (one column on a phone)
+     .dim-row (.unknown)                              one dimension of the evidence-based priority: label + anchor, a bar, and its points; unknown has no bar fill
+     .badge.accent                                    the strongest action category (Prospect now)
      .filters .check .input-lg .grid .row .cols       forms and layout rows/grids
      .flash .errors                                   notices;  .prose long-form text;  ul.plain / ul.signals lists
      .stack                                           vertical rhythm container (use instead of margins)
@@ -162,6 +165,9 @@ ul.evidence li{display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--lin
 .bar-track i{display:block;height:100%;width:var(--w,0%);background:var(--muted);border-radius:99px}
 .bar-track i.hot{background:var(--hotbg)}.bar-track i.warm{background:var(--warmbg)}
 .bar-row .meta{grid-column:1/-1}
+.dim-row{display:grid;grid-template-columns:minmax(11rem,19rem) minmax(0,1fr) 8rem;gap:var(--s3);align-items:center;padding:var(--s2) 0;border-top:1px solid var(--line)}
+.dim-row .bar-track{grid-column:auto}.dim-row .num{text-align:right}.dim-row.unknown .bar-track{background:transparent;border:1px dashed var(--line)}
+dl.kv{display:grid;grid-template-columns:minmax(9rem,15rem) minmax(0,1fr);gap:var(--s2) var(--s4)}dl.kv dt{color:var(--muted);font-weight:600}dl.kv dd{margin:0;min-width:0}
 .ranklist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .rank-row{display:grid;grid-template-columns:2.25rem minmax(0,1fr) minmax(8rem,22rem);gap:var(--s3);align-items:center;padding:var(--s3) 0;border-top:1px solid var(--line)}
 .rank-row:first-child{border-top:0}
@@ -173,7 +179,7 @@ ul.evidence li{display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--lin
 .rank-score .bar-track{grid-column:auto}
 .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:var(--fs-xs);font-weight:700;background:var(--soft);color:var(--muted);white-space:nowrap}
 .badge.hot{background:var(--hotbg);color:var(--hotfg)}.badge.warm{background:var(--warmbg);color:var(--warmfg)}
-.badge.good{background:var(--goodbg);color:var(--goodfg)}.badge.bad{background:var(--badbg);color:var(--badfg)}
+.badge.good{background:var(--goodbg);color:var(--goodfg)}.badge.bad{background:var(--badbg);color:var(--badfg)}.badge.accent{background:var(--accent);color:var(--on-accent)}
 .hot{color:var(--hot)}.warm{color:var(--warm)}.good{color:var(--good)}.bad{color:var(--bad)}
 .tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .pill-row{display:flex;gap:var(--s2);flex-wrap:wrap}
@@ -261,7 +267,7 @@ body.auth footer{color:var(--on-band-nav)}
 .full{width:100%}
 
 /* ---------- 6. phone ---------- */
-@media (max-width:640px){.chart--wide{display:none}.chart--phone{display:block;overflow:visible}.rank-row{grid-template-columns:1.75rem minmax(0,1fr)}.rank-score{grid-column:2}h1,.hero h1{font-size:28px}.hero{padding-top:var(--s4);padding-bottom:var(--s5)}.hero.tall{padding-bottom:64px}.tiles,.tiles--3{grid-template-columns:repeat(2,1fr);gap:10px;margin-top:-46px}.tile b{font-size:26px}
+@media (max-width:640px){.dim-row,dl.kv{grid-template-columns:1fr}.dim-row .num{text-align:left}.chart--wide{display:none}.chart--phone{display:block;overflow:visible}.rank-row{grid-template-columns:1.75rem minmax(0,1fr)}.rank-score{grid-column:2}h1,.hero h1{font-size:28px}.hero{padding-top:var(--s4);padding-bottom:var(--s5)}.hero.tall{padding-bottom:64px}.tiles,.tiles--3{grid-template-columns:repeat(2,1fr);gap:10px;margin-top:-46px}.tile b{font-size:26px}
 .brand{flex:1;padding:var(--s2) 0 0;margin:0}header .right{order:2;margin:var(--s1) 0 0}header .right button{padding:4px 10px;font-size:var(--fs-sm)}nav{order:3;width:100%;padding-bottom:var(--s1)}nav a.top{padding:6px 10px;font-size:var(--fs-sm)}
 body.admin .shell{display:block}.adminnav{width:auto;padding-top:var(--s4)}.cols--2{grid-template-columns:1fr}}
 
@@ -271,4 +277,4 @@ body.admin .shell{display:block}.adminnav{width:auto;padding-top:var(--s4)}.cols
 .card,table,.wrap,.entry{border:1px solid var(--print-line);background:var(--print-bg);box-shadow:none;break-inside:avoid;border-radius:0}.meta,.sub{color:var(--print-muted)}a{color:var(--print-ink)}
 .card{padding:var(--s2) var(--s3)}h1{font-size:19px}h2{font-size:14px}table{font-size:11px}th,td{padding:3px 6px}ul.signals li{padding:3px 0}
 .onepager a[href^=http]::after{content:" (" attr(href) ")";font-size:10px;color:var(--print-muted);overflow-wrap:anywhere}
-.badge,.badge.hot,.badge.warm,.badge.good,.badge.bad{border:1px solid var(--print-line);background:var(--print-bg);color:var(--print-ink)}}
+.badge,.badge.hot,.badge.warm,.badge.good,.badge.bad,.badge.accent{border:1px solid var(--print-line);background:var(--print-bg);color:var(--print-ink)}}

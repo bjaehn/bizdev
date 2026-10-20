@@ -252,6 +252,76 @@ class PeFirms(_Strict):
     portfolio_max_per_firm: int       # portfolio companies requested per firm
 
 
+class PeFetch(_Strict):
+    timeout_seconds: float
+    max_retries: int
+    retry_backoff_seconds: float
+    min_seconds_between_requests: float   # per host, so a firm's site is never hammered
+    max_bytes: int                        # a response larger than this is read up to the cap and marked truncated
+    max_pages_per_source: int             # pagination and API pages followed for one listing
+    respect_robots: bool
+    user_agent_suffix: str
+    cache_hours: float                    # a page read successfully this recently is not fetched again unless forced
+
+
+class PePortfolio(_Strict):
+    fetch: PeFetch
+    ownership_fresh_days: int             # ownership last verified longer ago than this is shown as stale (never changed by age alone)
+    listing_fresh_days: int               # a firm's portfolio page read longer ago than this is stale
+    pending_window_days: int              # an announced deal with no completion evidence stays "pending" this long, then becomes "unclear"
+    snapshot_keep: int                    # page snapshots kept per URL (for history and for diffs)
+    text_cap_bytes: int
+    scope_cities: list[str]               # optional: cities treated as inside the configured geography when a company's HQ is shown to be in fit_gate.state; empty = not configured
+    locate_per_run: int                   # companies per run whose own site is read (free) to find a headquarters the listing does not show
+    deal_window_days: int                 # transactions dated within this many days are looked for
+    deals_max_per_firm: int
+    research_unresolved: int              # per run, portfolio companies whose location the listing does not show that are sent to the existing fact research (paid); 0 = none
+
+
+class OppWeights(_Strict):
+    need: int
+    timing: int
+    investment: int
+    external_help: int
+    evidence_quality: int
+
+
+class OppConfidence(_Strict):
+    high: int
+    medium: int
+    corroboration_per_extra_event: int
+    specific_need_bonus: int
+    unknown_date_penalty: int
+    unverified_ownership_penalty: int
+
+
+class OpportunityModel(_Strict):
+    weights: OppWeights
+    second_event_credit: float
+    event_cluster_days: int
+    need: dict[str, int]
+    investment: dict[str, int]
+    external_help: dict[str, int]
+    recency: list[dict[str, int]]
+    milestone: list[dict[str, int]]
+    quality: dict[str, int]
+    unknown_date_quality_cap: int
+    corroboration_bonus: int
+    confidence: OppConfidence
+    categories: dict[str, dict[str, int | str]]
+    counter_kinds: list[str]
+    counter_need_factor: float
+    consulting_categories: dict[str, list[str]]
+    hiring_theme_categories: dict[str, str]
+    owner_function: dict[str, str]
+
+    @model_validator(mode="after")
+    def _weights_total(self) -> "OpportunityModel":
+        if sum(self.weights.model_dump().values()) != 100:
+            raise ValueError("opportunity_model.weights must total 100")
+        return self
+
+
 class RfpGroup(_Strict):
     name: str
     domains: list[str]
@@ -310,6 +380,8 @@ class Config(_Strict):
     card: Card
     discovery: Discovery
     pe_firms: PeFirms
+    pe_portfolio: PePortfolio
+    opportunity_model: OpportunityModel
 
     @model_validator(mode="after")
     def _sec_events(self) -> "Config":

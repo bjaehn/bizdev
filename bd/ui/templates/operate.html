@@ -48,6 +48,19 @@
 </div>
 
 <div class="card">
+<h2>PE portfolios</h2>
+<p class="meta"><b>Read portfolio pages</b> is free: it reads each firm's own portfolio page politely (timeouts, retries, robots.txt), keeps every relationship with the page as evidence, and reports per-source success, coverage and what changed. It needs BD_USER_AGENT. <b>Research transactions</b> asks a model to find acquisitions, add-ons and exits, then code retrieves each source page and keeps only what the page itself supports (paid). <b>Research portfolio companies</b> sends still-held companies through the existing fact research and fit gate so the ones that pass are scanned for signals (paid, capped). Review the results on <a href="/firms">Private equity firms</a>.</p>
+<form class="inline" method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="pe_collect">
+<label class="check"><input type="checkbox" name="force" value="1"> read pages again even if read recently</label>
+<button type="submit">Read PE portfolio pages (free)</button></form>
+<form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="grid"><div><label>How many firms or companies (1-50)</label><input type="number" name="limit" value="5" min="1" max="50" required></div>
+<div><label>What to run</label><select name="kind"><option value="pe_deals">Research transactions</option><option value="pe_promote">Research portfolio companies for the target list</option></select></div></div>
+<label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
+<p><button class="ghost" type="submit">Run</button></p></form>
+</div>
+
+<div class="card">
 <h2>Open public RFPs</h2>
 <p class="meta">Searches the websites of Chicago-area agencies (City, Cook County, State, schools, transit, federal) for open consulting-type solicitations and lists them on the Open RFPs page. One search per agency group; part of Update my list. Uses paid model calls.</p>
 <form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="rfps">

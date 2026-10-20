@@ -124,6 +124,9 @@ def sync_from_accounts(conn: sqlite3.Connection, actor: str = "sync", today: dat
                 log_audit(conn, actor, "update", l["account_id"], "portfolio_link", "current", "exited")
                 out.links_exited += 1
     out.links_added = conn.execute("SELECT COUNT(*) FROM portfolio_links").fetchone()[0] - links_before
+    from bd.pe_ownership import mirror_legacy          # the ledger lists these too, as unverified (imported here: bd.pe_ownership imports this module)
+    with conn:
+        mirror_legacy(conn, datetime.now(timezone.utc).date() if today is None else today)
     return out
 
 

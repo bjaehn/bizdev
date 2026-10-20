@@ -257,6 +257,183 @@ CREATE TABLE IF NOT EXISTS runs (
     est_cost         REAL,   -- NULL = not priced (pricing lands in Stage 3), never a fake 0
     errors           TEXT
 );
+
+
+-- ---- PE ownership ledger (bd/pe_ownership.py) -----------------------------------------------------------------------------------
+-- A portfolio company is its own entity: it may or may not be an account (account_id), and it may have several sponsors.
+CREATE TABLE IF NOT EXISTS pe_companies (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    name_key   TEXT NOT NULL,        -- bd.pe_store.norm_name(name)
+    domain     TEXT,                 -- official domain, only when a retrieved page shows it
+    account_id INTEGER REFERENCES accounts(id),
+    created    TEXT NOT NULL,
+    last_seen  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_pe_companies_domain ON pe_companies(domain) WHERE domain IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_pe_companies_key ON pe_companies(name_key);
+
+CREATE TABLE IF NOT EXISTS pe_aliases (
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('firm','company')),
+    entity_id   INTEGER NOT NULL,
+    alias       TEXT NOT NULL,
+    alias_key   TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'other_name' CHECK (kind IN ('legal_name','brand','former_name','other_name')),
+    source_url  TEXT,
+    PRIMARY KEY (entity_type, entity_id, alias_key)
+);
+
+-- Where a firm or company is, by what a retrieved page says: headquarters, an office or a facility. A firm's location is never a company's.
+CREATE TABLE IF NOT EXISTS pe_locations (
+    id          INTEGER PRIMARY KEY,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('firm','company')),
+    entity_id   INTEGER NOT NULL,
+    kind        TEXT NOT NULL CHECK (kind IN ('headquarters','office','facility')),
+    city        TEXT,
+    state       TEXT,
+    evidence_id INTEGER,
+    created     TEXT NOT NULL,
+    UNIQUE (entity_type, entity_id, kind, city, state)
+);
+
+CREATE TABLE IF NOT EXISTS pe_funds (
+    id         INTEGER PRIMARY KEY,
+    firm_id    INTEGER NOT NULL REFERENCES pe_firms(id),
+    name       TEXT NOT NULL,
+    name_key   TEXT NOT NULL,
+    vintage    INTEGER,
+    UNIQUE (firm_id, name_key)
+);
+
+-- One row per sponsor and company (the role is refined as evidence states it, never duplicated). Status is derived by code from the evidence (bd.pe_ownership.derive_status):
+-- current / pending / historical / unclear. Dates are only ever set from evidence that states them.
+CREATE TABLE IF NOT EXISTS pe_ownership (
+    id                  INTEGER PRIMARY KEY,
+    firm_id             INTEGER NOT NULL REFERENCES pe_firms(id),
+    fund_id             INTEGER REFERENCES pe_funds(id),
+    company_id          INTEGER NOT NULL REFERENCES pe_companies(id),
+    relationship        TEXT NOT NULL DEFAULT 'unspecified'
+                        CHECK (relationship IN ('platform','co_invest','continuation','unspecified')),
+    stake               TEXT NOT NULL DEFAULT 'unspecified' CHECK (stake IN ('majority','minority','unspecified')),
+    status              TEXT NOT NULL DEFAULT 'unclear' CHECK (status IN ('current','pending','historical','unclear')),
+    basis               TEXT NOT NULL DEFAULT 'none',
+    announced_date      TEXT,
+    closed_date         TEXT,
+    exit_date           TEXT,
+    expected_close      TEXT,        -- a stated expectation; never treated as a closing
+    as_of_date          TEXT,        -- the date the status statement is as of (source date, else the day the page was read)
+    first_seen          TEXT NOT NULL,
+    last_checked        TEXT NOT NULL,
+    last_verified       TEXT,
+    confidence          TEXT NOT NULL DEFAULT 'Low' CHECK (confidence IN ('High','Medium','Low')),
+    conflict_note       TEXT,
+    listing_absent_since TEXT,       -- the first successful full read of the firm's page that did not list it (an exit is NOT inferred)
+    origin              TEXT NOT NULL DEFAULT 'portfolio_page' CHECK (origin IN ('portfolio_page','announcement','legacy','manual')),
+    UNIQUE (firm_id, company_id)
+);
+CREATE INDEX IF NOT EXISTS ix_pe_ownership_company ON pe_ownership(company_id);
+
+CREATE TABLE IF NOT EXISTS pe_ownership_log (
+    id           INTEGER PRIMARY KEY,
+    ownership_id INTEGER NOT NULL REFERENCES pe_ownership(id),
+    at           TEXT NOT NULL,
+    from_status  TEXT,
+    to_status    TEXT NOT NULL,
+    reason       TEXT NOT NULL
+);
+
+-- A platform company acquiring another business (an add-on). The target stays one entity, whatever its history.
+CREATE TABLE IF NOT EXISTS pe_company_links (
+    id                 INTEGER PRIMARY KEY,
+    parent_company_id  INTEGER NOT NULL REFERENCES pe_companies(id),
+    child_company_id   INTEGER NOT NULL REFERENCES pe_companies(id),
+    kind               TEXT NOT NULL DEFAULT 'add_on' CHECK (kind IN ('add_on','merger')),
+    status             TEXT NOT NULL DEFAULT 'unclear' CHECK (status IN ('announced','completed','unclear')),
+    announced_date     TEXT,
+    closed_date        TEXT,
+    expected_close     TEXT,
+    last_checked       TEXT NOT NULL,
+    UNIQUE (parent_company_id, child_company_id, kind)
+);
+
+-- Every material claim about ownership, a deal or a place points at rows here. `verification`: page_verified = code retrieved the page and the
+-- excerpt is in it; snippet_only = a search result or a model's report that code could not check (never shown as a fact).
+CREATE TABLE IF NOT EXISTS pe_evidence (
+    id             INTEGER PRIMARY KEY,
+    subject_type   TEXT NOT NULL CHECK (subject_type IN ('ownership','link','company','firm','fund')),
+    subject_id     INTEGER NOT NULL,
+    claim          TEXT NOT NULL CHECK (claim IN ('listed','listed_current','listed_historical','announced','completed','exited','exit_announced','expected_close',
+                                                  'location','add_on','fund','name_change','stake')),
+    url            TEXT NOT NULL,
+    publisher      TEXT,
+    title          TEXT,
+    published_date TEXT,             -- NULL = unknown; retrieval time is never a publication date
+    event_date     TEXT,             -- the date of the event the source states, NULL = unknown
+    retrieved_at   TEXT NOT NULL,
+    excerpt        TEXT,
+    value          TEXT,             -- claim-specific: 'majority' / 'minority' for stake, the place for location
+    source_type    TEXT NOT NULL,
+    content_hash   TEXT NOT NULL DEFAULT '',
+    verification   TEXT NOT NULL CHECK (verification IN ('page_verified','snippet_only')),
+    UNIQUE (subject_type, subject_id, claim, url, content_hash)
+);
+CREATE INDEX IF NOT EXISTS ix_pe_evidence_subject ON pe_evidence(subject_type, subject_id);
+
+-- ---- sources, snapshots and runs (bd/sources.py, bd/pe_collect.py) ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS pe_sources (
+    id                INTEGER PRIMARY KEY,
+    firm_id           INTEGER NOT NULL REFERENCES pe_firms(id),
+    kind              TEXT NOT NULL CHECK (kind IN ('portfolio_page','newsroom')),
+    url               TEXT NOT NULL,
+    origin            TEXT NOT NULL DEFAULT 'firm_config' CHECK (origin IN ('firm_config','discovered','manual')),
+    status            TEXT NOT NULL DEFAULT 'never' CHECK (status IN ('never','ok','failed','blocked')),
+    last_attempt      TEXT,
+    last_success      TEXT,
+    last_error        TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    coverage          TEXT NOT NULL DEFAULT 'unknown' CHECK (coverage IN ('complete','partial','unknown')),
+    coverage_note     TEXT,
+    entries           INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (firm_id, kind, url)
+);
+
+CREATE TABLE IF NOT EXISTS pe_snapshots (
+    id           INTEGER PRIMARY KEY,
+    source_id    INTEGER REFERENCES pe_sources(id),
+    url          TEXT NOT NULL,
+    fetched_at   TEXT NOT NULL,
+    http_status  INTEGER,
+    content_type TEXT,
+    bytes        INTEGER,
+    content_hash TEXT NOT NULL,
+    title        TEXT,
+    text         TEXT NOT NULL,      -- visible text, capped; the excerpts of evidence are checked against it
+    truncated    INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (url, content_hash)
+);
+
+CREATE TABLE IF NOT EXISTS pe_listing_entries (
+    id          INTEGER PRIMARY KEY,
+    source_id   INTEGER NOT NULL REFERENCES pe_sources(id),
+    run_id      INTEGER NOT NULL,
+    name        TEXT NOT NULL,
+    href        TEXT,
+    domain      TEXT,
+    section     TEXT,                -- the heading the entry sat under, as written
+    state       TEXT NOT NULL CHECK (state IN ('current','historical','unlabeled')),
+    location    TEXT,                -- text such as "Chicago, IL" only when the listing shows it
+    excerpt     TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_pe_entries_source ON pe_listing_entries(source_id, run_id);
+
+CREATE TABLE IF NOT EXISTS pe_runs (
+    id        INTEGER PRIMARY KEY,
+    kind      TEXT NOT NULL,
+    started   TEXT NOT NULL,
+    finished  TEXT,
+    summary   TEXT,                  -- one line
+    detail    TEXT                   -- JSON: per-source results
+);
 """
 
 
@@ -277,6 +454,10 @@ def init_db(conn: sqlite3.Connection) -> None:
                      ("reviewed", "INTEGER NOT NULL DEFAULT 1"), ("discovered_at", "TEXT")):
         if col not in cols:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")
+    firm_cols = {r[1] for r in conn.execute("PRAGMA table_info(pe_firms)")}
+    for col in ("hq_state", "hq_source_url", "last_deals"):
+        if col not in firm_cols:
+            conn.execute(f"ALTER TABLE pe_firms ADD COLUMN {col} TEXT")
     if "client" not in {r[1] for r in conn.execute("PRAGMA table_info(lead_state)")}:
         conn.execute("ALTER TABLE lead_state ADD COLUMN client INTEGER NOT NULL DEFAULT 0")
     conn.commit()

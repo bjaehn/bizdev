@@ -38,6 +38,11 @@
 </ul>{% if d.signals|length > 12 %}<p class="meta">Showing the 12 most recent of {{ d.signals|length }}.</p>{% endif %}</div>
 {% else %}<div class="card empty">Nothing found yet. Quiet can mean nothing is happening, or that the sources do not cover this company.</div>{% endif %}
 
+<h2>Evidence-based priority</h2>
+{% with a = ap %}{% include "_assessment.html" %}{% endwith %}
+{% if pe and pe.relationships %}<h2>Private equity ownership</h2>
+{% include "_pe_ownership.html" %}{% endif %}
+
 <details class="card"><summary><b>More detail</b> <span class="meta">(timeline, background, how the score is built, other themes)</span></summary>
 <h3>The last 180 days</h3>
 {% if d.timeline %}{{ d.timeline|safe }}
@@ -65,7 +70,7 @@
 
 <h2 class="noprint">Track this company</h2>
 <div class="card noprint">
-<p class="meta">{% if d.state.watching %}You are tracking this company. It is listed on <a href="/opportunities">Analysis</a> with anything new found about it.{% else %}Track a company to see what is new about it on <a href="/week">This week</a>.{% endif %}</p>
+<p class="meta">{% if d.state.watching %}You are tracking this company. It is listed on <a href="/opportunities">Analysis</a> with anything new found about it.{% else %}Track a company to see what is new about it on <a href="/opportunities">Analysis</a>.{% endif %}</p>
 <div class="filters">
 <form method="post" action="/accounts/{{ d.a.id }}/watch"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
 <input type="hidden" name="on" value="{{ '0' if d.state.watching else '1' }}"><button type="submit" class="{{ 'ghost' if d.state.watching else '' }}">{{ 'Stop tracking' if d.state.watching else 'Track this company' }}</button></form>

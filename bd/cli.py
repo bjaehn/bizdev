@@ -407,6 +407,137 @@ def pe_portfolio(
         _fail("Every portfolio call failed (bad API key or model, no network?).")
 
 
+@app.command(name="pe-collect")
+def pe_collect(
+    firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
+    force: bool = typer.Option(False, help="Read pages again even if they were read recently"),
+    locate: Optional[int] = typer.Option(None, help="Companies whose own site is read for an address (default pe_portfolio.locate_per_run)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+) -> None:
+    """Read each PE firm's own portfolio page (free, no model) and record every relationship with its evidence.
+
+    Registers each firm's portfolio URL as a source, reads it politely (timeouts, retries, rate limit, robots.txt), keeps page-verified evidence,
+    derives current / pending / historical / unclear by code, and reports per-source success, coverage and what changed since the last reading."""
+    from bd.db import connect, init_db
+    from bd.pe_collect import discover_portfolio_pages, locate_companies, register_sources, run_collect
+    from bd.pe_ownership import mirror_legacy
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+    from bd.sources import Fetcher
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    if not settings.user_agent_configured:
+        _fail("Set BD_USER_AGENT (your company name and a contact email): the firms' sites are told who is reading them.")
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    sync_from_accounts(conn)
+    mirror_legacy(conn, run_date, cfg)
+    conn.commit()
+    fetcher = Fetcher(cfg, settings.user_agent)
+    try:
+        added = register_sources(conn)
+        have = conn.execute("SELECT COUNT(*) FROM pe_sources").fetchone()[0]
+        discovered = discover_portfolio_pages(conn, fetcher, cfg, log=typer.echo)
+        total = conn.execute("SELECT COUNT(*) FROM pe_sources").fetchone()[0]
+        firms = conn.execute("SELECT COUNT(*) FROM pe_firms WHERE status = 'active'").fetchone()[0]
+        typer.echo(f"{firms} active PE firm(s); {total} portfolio source(s) ({added} newly registered from firm settings, {discovered} found on home pages).")
+        if not total:
+            typer.echo("No portfolio pages are configured. Add a firm with its portfolio URL on the Private equity firms page (or set a firm's website "
+                       "so its home page can be searched for the link). Nothing was invented.")
+            return
+        res = run_collect(conn, cfg, fetcher, run_date, firm=firm, force=force, log=typer.echo)
+        located = locate_companies(conn, cfg, fetcher, run_date, limit=locate, log=typer.echo)
+    finally:
+        fetcher.close()
+    typer.echo(f"\n{res.line()}. {located} company(ies) with a place found on their own site.")
+    for o in res.outcomes:
+        if o.status in ("failed", "blocked"):
+            typer.echo(f"  FAILED  {o.firm}: {o.error} ({o.url}). Earlier evidence is kept and shown as stale.", err=True)
+        if o.unresolved:
+            typer.echo(f"  {o.firm}: {len(o.unresolved)} entr(ies) left unresolved: {', '.join(o.unresolved[:5])}")
+    if res.sources and res.failed == res.sources:
+        raise typer.Exit(code=3)
+
+
+@app.command(name="pe-deals")
+def pe_deals(
+    firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
+    limit: Optional[int] = typer.Option(None, help="At most N firms (least recently researched first)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List the firms that would be researched; no API calls"),
+) -> None:
+    """Research each PE firm's transactions (acquisitions, add-ons, exits). The model reports each with a quote; code retrieves the page, checks the
+    quote and the wording, and records announced and completed deals separately with the page as evidence."""
+    from bd.db import connect, init_db
+    from bd.pe_deals import DealResearcher, run_deals
+    from bd.pe_firms import select_firms
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+    from bd.sources import Fetcher
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    sync_from_accounts(conn)
+    firms = select_firms(conn, firm, limit or cfg.pe_firms.max_firms_per_run, "last_deals")
+    typer.echo(f"{len(firms)} PE firm(s) to research.")
+    if dry_run or not firms:
+        for f in firms:
+            typer.echo(f"  would research: {f['name']}")
+        return
+    if not settings.user_agent_configured:
+        _fail("Set BD_USER_AGENT (your company name and a contact email): the pages that support each deal are read by code.")
+    web, _verifier, _enricher, model = _pe_deps(settings, cfg)
+    fetcher = Fetcher(cfg, settings.user_agent)
+    try:
+        s = run_deals(conn, cfg, DealResearcher(cfg, web, fetcher), firms, run_date, model, workers, log=typer.echo)
+    finally:
+        fetcher.close()
+    rej = ", ".join(f"{k} {v}" for k, v in s.rejected.most_common()) or "none"
+    typer.echo(f"\n{s.found} deal(s) reported, {s.verified} verified and recorded; dropped: {rej}.")
+    for n in s.notes[:10]:
+        typer.echo(f"  not recorded: {n}")
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.errors} call errors.")
+    if s.firms and s.errors == s.firms:
+        typer.echo("Every firm call failed (bad API key or model, no network?).", err=True)
+        raise typer.Exit(code=3)
+
+
+@app.command(name="pe-promote")
+def pe_promote(
+    limit: int = typer.Option(..., help="At most N portfolio companies to research (paid)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List the companies that would be researched; no API calls"),
+) -> None:
+    """Send portfolio companies that are still held (or pending or unclear) and not shown to be outside the configured geography through the
+    existing fact research and fit gate. Only those that pass become accounts, and only then are they scanned for signals."""
+    from bd.db import connect, init_db
+    from bd.pe_promote import promotable, run_promote
+    from bd.settings_store import apply_overrides
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    rows = promotable(conn, cfg, limit)
+    typer.echo(f"{len(rows)} portfolio company(ies) eligible for fact research.")
+    if dry_run or not rows:
+        for c, f in rows:
+            typer.echo(f"  would research: {c['name']} (listed by {f})")
+        return
+    web, verifier, enricher, model = _pe_deps(settings, cfg)
+    s = run_promote(conn, cfg, verifier, enricher, run_date, model, limit, workers, log=typer.echo)
+    typer.echo(f"\nResearched {s.researched}: {len(s.added)} auto-added, {len(s.queued)} queued, {len(s.rejected)} rejected; {s.skipped_source} skipped (no retrievable page).")
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.errors} call errors.")
+
+
 @app.command(name="pe-signals")
 def pe_signals(
     firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),

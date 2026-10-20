@@ -1,30 +1,63 @@
 {% extends "base.html" %}
-{% block title %}{{ firm['name'] }}{% endblock %}
+{% from "_ui.html" import status_badge, cat_badge, src_link %}
+{% block title %}{{ d.firm['name'] }}{% endblock %}
 {% block hero %}<p class="meta"><a href="/firms">← PE firms</a></p>
-<h1>{{ firm['name'] }}</h1>
-<p class="sub">{{ firm['domain'] or 'website not found yet' }}{% if firm['hq_city'] %} · {{ firm['hq_city'] }}{% endif %} · <span class="badge {{ 'good' if firm['status'] == 'active' else 'bad' }}">{{ firm['status'] }}</span>
- · origin {{ firm['origin'] }}</p>{% endblock %}
+<h1>{{ d.firm['name'] }}</h1>
+<p class="sub">{{ d.firm['domain'] or 'website not recorded' }}{% if d.firm['hq_city'] %} · firm headquarters {{ d.firm['hq_city'] }}{% if d.firm['hq_state'] %}, {{ d.firm['hq_state'] }}{% endif %} (as entered; not a portfolio company's location){% endif %} · <span class="badge {{ 'good' if d.firm['status'] == 'active' else 'bad' }}">{{ d.firm['status'] }}</span></p>{% endblock %}
 {% block body %}
-<div class="row end"><form method="post" action="/firms/{{ firm['id'] }}/status"><input type="hidden" name="csrf" value="{{ csrf }}">
-{% if firm['status'] == 'active' %}<input type="hidden" name="status" value="excluded"><button class="danger" type="submit">Exclude firm</button>
+<div class="row end"><form method="post" action="/firms/{{ d.firm['id'] }}/status"><input type="hidden" name="csrf" value="{{ csrf }}">
+{% if d.firm['status'] == 'active' %}<input type="hidden" name="status" value="excluded"><button class="danger" type="submit">Exclude firm</button>
 {% else %}<input type="hidden" name="status" value="active"><button type="submit">Make active</button>{% endif %}</form></div>
-{% if firm['status'] == 'excluded' %}<div class="flash err">An excluded firm is not scanned and its news no longer lifts any score.</div>{% endif %}
+{% if d.firm['status'] == 'excluded' %}<div class="flash err">An excluded firm is not read or scanned and its news no longer lifts any score.</div>{% endif %}
 
-<h2>Portfolio ({{ links|length }})</h2>
-<div class="wrap"><table>
-<tr><th>Company</th><th>On your list</th><th>Ownership</th><th>Known from</th></tr>
-{% for l in links %}<tr><td>{{ l['company_name'] }}{% if l['company_domain'] %}<br><span class="meta">{{ l['company_domain'] }}</span>{% endif %}</td>
-<td>{% if l['account_id'] %}<a href="/companies/{{ l['account_id'] }}">account</a> <span class="meta">({{ l['account_status'] }})</span>{% else %}<span class="meta">not an account</span>{% endif %}</td>
-<td><span class="badge {{ 'good' if l['status'] == 'current' else '' }}">{{ l['status'] }}</span></td>
-<td class="meta">{{ {'account': 'account facts', 'portfolio': "firm's own site", 'manual': 'entered by hand'}[l['origin']] }}{% if l['source_url']|safe_url %} · <a href="{{ l['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ l['source_url']|host }}</a>{% endif %}</td></tr>
-{% else %}<tr><td colspan="4" class="empty">No portfolio companies recorded. Run PE portfolio research from Operate.</td></tr>{% endfor %}
+<h2>How complete is this portfolio?</h2>
+<div class="card"><p><span class="badge {{ d.reading_class }}">{{ 'problem' if d.reading_class == 'bad' else ('ok' if d.reading_class == 'good' else 'check') }}</span> {{ d.reading|capitalize }}.</p>
+<p>{{ d.summary.coverage_note }}</p>
+{% if d.sources %}<div class="wrap wide"><table><tr><th>Source</th><th>Status</th><th>Last read</th><th>Coverage</th><th class="num">Entries</th></tr>
+{% for s in d.sources %}<tr><td>{{ src_link(s['url']) }}<br><span class="meta">{{ s['kind']|replace('_', ' ') }} · {{ s['origin']|replace('_', ' ') }}</span></td>
+<td><span class="badge {{ 'good' if s['status'] == 'ok' else ('bad' if s['status'] in ('failed', 'blocked') else '') }}">{{ s['status'] }}</span>{% if s['stale'] and s['status'] != 'never' %} <span class="badge warm">stale</span>{% endif %}{% if s['last_error'] %}<br><span class="meta">{{ s['last_error'] }}{% if s['consecutive_failures'] > 1 %} (failed {{ s['consecutive_failures'] }} times in a row){% endif %}</span>{% endif %}</td>
+<td>{{ fmt_ts(s['last_success']) or 'never' }}{% if s['last_attempt'] and s['last_attempt'] != s['last_success'] %}<br><span class="meta">last attempt {{ fmt_ts(s['last_attempt']) }}</span>{% endif %}</td>
+<td>{{ s['coverage'] }}{% if s['coverage_note'] %}<br><span class="meta">{{ s['coverage_note'] }}</span>{% endif %}</td><td class="num">{{ s['entries'] }}</td></tr>{% endfor %}</table></div>
+<p class="meta">A failed or blocked reading changes nothing: the evidence from the last good reading stays and is marked stale as it ages. "Complete" means every page of the listing was read and nothing suggested more; it is the firm's page as of that day, not proof it lists every holding.</p>{% endif %}</div>
+
+<h2>Changes since the previous reading</h2>
+{% if d.history_note %}<div class="card">{{ d.history_note }}</div>{% endif %}
+{% for c in d.changes %}<div class="card"><p class="meta">Run <a href="/firms/runs/{{ c.run_id }}">#{{ c.run_id }}</a>, {{ fmt_ts(c.when) }}</p>
+{% if c.added is none %}<p>First reading: {{ c.entries }} entries recorded; there was nothing earlier to compare.</p>
+{% else %}<p>{{ c.added|length }} added{% if c.added %}: {{ c.added|join(', ') }}{% endif %}; {{ c.removed|length }} no longer listed{% if c.removed %}: {{ c.removed|join(', ') }}{% endif %}.{% if c.removed %} A company that disappears from a page is marked <b>unclear</b>, never as an exit.{% endif %}</p>{% endif %}</div>{% endfor %}
+
+<h2>Portfolio</h2>
+<p class="meta">{{ d.scope_note }}</p>
+<div class="tabs">{% for key, label in geo_tabs %}<a href="/firms/{{ d.firm['id'] }}{{ '?geo=' ~ key if key }}" class="{{ 'on' if key == geo else '' }}">{{ label }}{% if key %} ({{ d.geo_counts[key] }}){% endif %}</a>{% endfor %}</div>
+{% if d.hidden_out_of_scope %}<p class="meta">{{ d.hidden_out_of_scope }} holding{{ '' if d.hidden_out_of_scope == 1 else 's' }} shown by their own page to be outside the configured geography {{ 'is' if d.hidden_out_of_scope == 1 else 'are' }} hidden. <a href="/firms/{{ d.firm['id'] }}?geo=out_of_scope">Show them</a>.</p>{% endif %}
+{% for key, title, blurb, hs in d.sections %}
+<h3 id="{{ key }}">{{ title }} ({{ hs|length }})</h3><p class="meta">{{ blurb }}</p>
+<div class="wrap wide"><table><tr><th>Company</th><th>Ownership</th><th>Geography</th><th>Priority</th><th>Strongest hypothesis</th></tr>
+{% for r in hs %}{% set h = r.holding %}{% set a = h.assessment %}<tr>
+<td>{% if h.company['account_id'] %}<a href="/companies/{{ h.company['account_id'] }}">{{ h.company['name'] }}</a>{% else %}<a href="/portfolio/{{ h.company['id'] }}">{{ h.company['name'] }}</a>{% endif %}{% if h.company['domain'] %}<br><span class="meta">{{ h.company['domain'] }}</span>{% endif %}{% if r.other_sponsors %}<br><span class="meta">also: {{ r.other_sponsors|join(', ') }}</span>{% endif %}</td>
+<td>{{ status_badge(h.ownership['status']) }}{% if r.stale %} <span class="badge warm">stale</span>{% endif %}<br><span class="meta">{{ h.ownership['basis']|replace('_', ' ') }} · {{ h.ownership['confidence'] }} · as of {{ h.ownership['as_of_date']|fdate if h.ownership['as_of_date'] else 'unstated' }}</span><br><a href="/ownership/{{ h.ownership['id'] }}">{{ r.verified_count }} verified source{{ '' if r.verified_count == 1 else 's' }}</a>{% if r.evidence_count > r.verified_count %} <span class="meta">+{{ r.evidence_count - r.verified_count }} unchecked</span>{% endif %}</td>
+<td><span class="meta">{{ {'in_scope': 'inside', 'out_of_scope': 'outside', 'unknown': 'not verified'}[h.geography] }}</span><br><span class="meta">{{ h.geography_reason }}</span></td>
+<td>{% if key == 'historical' %}<span class="meta">not assessed: no longer held</span>{% else %}{{ cat_badge(a.category) }} <b>{{ a.score }}</b><br><span class="meta">confidence {{ a.confidence }} · {{ a.known_dimensions }}/5 dimensions</span>{% endif %}</td>
+<td>{% if key == 'historical' %}<span class="meta">—</span>{% elif a.hypotheses %}{{ a.hypotheses[0].category }}<br><span class="meta">{{ a.facts[0].event_date|fdate if a.facts and a.facts[0].event_date else 'date not stated' }}: {{ a.facts[0].summary if a.facts }}</span>{% else %}<span class="meta">none supported</span>{% endif %}</td></tr>{% endfor %}
 </table></div>
+{% else %}<div class="card empty">No holdings are recorded{% if geo %} in this view{% endif %}. {% if not d.sources %}No portfolio page is registered for this firm.{% else %}Run the collection from Admin, Operate, or <code>bd pe-collect --firm "{{ d.firm['name'] }}"</code>.{% endif %}</div>{% endfor %}
 
-<h2>Firm signals ({{ sigs|length }})</h2>
-{% if sigs %}<div class="wrap"><table>
+{% if d.patterns %}<h2>Patterns across holdings <span class="meta">(hypotheses)</span></h2>
+{% for p in d.patterns %}<div class="card"><p><b>{{ p.category }}</b></p><p>{{ p.text }}</p><ul class="plain">{% for name, cid, fact, url in p.holdings %}<li><b>{{ name }}</b>: {{ fact }} {{ src_link(url) }}</li>{% endfor %}</ul></div>{% endfor %}
+{% else %}<p class="meta">No cross-portfolio pattern is named: that needs at least two holdings that each have their own sourced evidence in the same consulting category. Sharing a sponsor is not evidence of shared systems, problems or programs.</p>{% endif %}
+
+{% if d.add_ons %}<h2>Acquisitions and add-ons</h2>
+<div class="wrap wide"><table><tr><th>Platform</th><th>Acquired</th><th>Status</th><th>Dates stated by a source</th><th>Source</th></tr>
+{% for x in d.add_ons %}{% set l = x.link %}<tr><td>{{ l['parent'] }}</td><td>{{ l['child'] }}</td><td><span class="badge {{ 'good' if l['status'] == 'completed' else 'warm' }}">{{ l['status'] }}</span></td>
+<td>{% if l['announced_date'] %}announced {{ l['announced_date']|fdate }}{% endif %}{% if l['closed_date'] %}{{ '; ' if l['announced_date'] }}closed {{ l['closed_date']|fdate }}{% endif %}{% if not l['announced_date'] and not l['closed_date'] %}<span class="meta">no date stated</span>{% endif %}{% if l['expected_close'] %}<br><span class="meta">expected close {{ l['expected_close']|fdate }}</span>{% endif %}</td>
+<td>{% if x.evidence %}{{ src_link(x.evidence['url']) }}<br><span class="meta">{{ x.evidence['source_type']|replace('_', ' ') }}</span>{% endif %}</td></tr>
+{% if x.hypothesis %}<tr><td colspan="5" class="meta">{{ x.hypothesis }}</td></tr>{% endif %}{% endfor %}</table></div>{% endif %}
+
+<h2>Firm signals ({{ d.firm_signals|length }})</h2>
+{% if d.firm_signals %}<div class="wrap"><table>
 <tr><th>Event date</th><th>Signal</th><th>Confidence</th><th>Summary</th><th>Source</th></tr>
-{% for s in sigs %}<tr><td>{{ s['event_date']|fdate }}</td><td>{{ s['type']|replace('firm_', '')|replace('_', ' ') }}</td>
+{% for s in d.firm_signals %}<tr><td>{{ s['event_date']|fdate }}</td><td>{{ s['type']|replace('firm_', '')|replace('_', ' ') }}</td>
 <td>{{ s['confidence'] }}{% if s['confidence'] not in conf_scored %}<br><span class="meta">stored, never scored</span>{% endif %}</td><td>{{ s['summary'] }}</td>
-<td>{% if s['source_url']|safe_url %}<a href="{{ s['source_url']|safe_url }}" target="_blank" rel="noopener noreferrer">{{ s['source_url']|host }}</a>{% endif %}<br><span class="meta">{{ s['source_type'] }} · found {{ s['detected_date'] }}</span></td></tr>{% endfor %}
+<td>{{ src_link(s['source_url']) }}<br><span class="meta">{{ s['source_type'] }} · found {{ s['detected_date'] }}</span></td></tr>{% endfor %}
 </table></div>{% else %}<div class="card empty">No firm signals stored yet.</div>{% endif %}
 {% endblock %}
