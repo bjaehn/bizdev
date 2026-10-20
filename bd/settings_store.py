@@ -126,7 +126,7 @@ UPDATE_FIELDS = {  # name -> (label, min, max)
     "segments": ("Industry segments to search for new companies", 0, 30),
     "scan": ("Companies to scan for signals per update", 1, 100),
     "budget": ("Spending limit per update (US dollars)", 1, 100),
-    "rfps": ("Search agency sites for open RFPs (1 = yes, 0 = no; about $0.90 a run; has found nothing so far)", 0, 1),
+    "rfps": ("Search agency sites for open RFPs (1 = yes, 0 = no; about $0.30 a run in the last two Updates)", 0, 1),
 }
 
 
