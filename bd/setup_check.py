@@ -41,7 +41,7 @@ def static_problems(cfg: Config, env: Mapping[str, str]) -> list[str]:
                    "Use a priced model such as claude-sonnet-5-5.")
     scan_model = env.get("ANTHROPIC_SCAN_MODEL", "")
     if scan_model and scan_model not in cfg.pricing.models:
-        out.append(f"The scan model {scan_model!r} (ANTHROPIC_SCAN_MODEL) has no price in config.yaml, so the sweep's cost would show as unpriced. "
+        out.append(f"The scan model {scan_model!r} (ANTHROPIC_SCAN_MODEL) has no price in config.yaml, so the cost of the sweep and technology scans would show as unpriced. "
                    "Use a priced model such as claude-haiku-5-5.")
     ua = env.get("BD_USER_AGENT", "")
     if not ua.strip():

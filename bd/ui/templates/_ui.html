@@ -9,12 +9,15 @@
 </ul>{% endmacro %}
 
 {# Ranked bars: a company, its score as a bar coloured by band, and its theme. #}
-{% macro bar_rows(items) %}
-<div class="bars">{% for o in items %}
-<div class="bar-row"><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a><b>{{ o.result.score }}</b>
-<span class="bar-track"><i class="{{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}" style="--w:{{ o.result.score }}%"></i></span>
-<span class="meta">{{ o.theme.name if o.theme else signs_line(o.result) }}{% if o.client %} · client{% endif %}</span></div>{% endfor %}
-</div>{% endmacro %}
+{# The numbered ranking: rank, company with its band, theme and newest signal, score with a bar. Client rows are tagged. #}
+{% macro rank_rows(items) %}
+<ol class="ranklist">{% for o in items %}{% set newest = newest_signal(o) %}
+<li class="rank-row"><span class="rank-no">{{ o.rank }}</span>
+<div class="rank-main"><span class="rank-title"><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>
+<span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }}</span>{% if o.client %}<span class="badge good">client</span>{% endif %}{% if o.delta is not none and o.delta != 0 %}<span class="{{ 'up' if o.delta > 0 else 'down' }}">{{ '▲ +' if o.delta > 0 else '▼ ' }}{{ o.delta }}</span>{% endif %}</span>
+<span class="meta">{{ o.theme.name if o.theme else signs_line(o.result) }}{% if newest %} · newest signal {{ newest|fdate }}{% endif %}</span></div>
+<div class="rank-score"><b>{{ o.result.score }}</b><span class="bar-track"><i class="{{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}" style="--w:{{ o.result.score }}%"></i></span></div></li>{% endfor %}
+</ol>{% endmacro %}
 
 {# One row of the signal feed. #}
 {% macro feed_row(i) %}

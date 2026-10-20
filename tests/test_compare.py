@@ -4,10 +4,11 @@ from datetime import timedelta
 import pytest
 
 from bd.accounts import list_accounts
-from bd.compare import REPLACED_STEPS, pick_accounts, prior_cost, report, run_compare, stored_signals
-from bd.jobs import COMPARE_BUDGET, KINDS, PAID_STEPS, JobError, is_paid, sequence_for, validate
+from bd.compare import BASELINES, REPLACED_STEPS, pick_accounts, prior_cost, report, run_compare, stored_signals
+from bd.jobs import COMPARE_BUDGET, COMPARE_SCANNERS, KINDS, PAID_STEPS, JobError, is_paid, sequence_for, validate
 from bd.llm import Usage
 from bd.scanners import SweepScanner
+from bd.scanners.tech_procurement import TechProcurementScanner
 from tests.conftest import AS_OF, FakeLLM, FakeVerifier, add_account, add_signal, make_db
 
 MODEL = "claude-sonnet-5-5"
@@ -169,3 +170,51 @@ def test_the_test_runs_one_paid_step_and_does_not_score_because_nothing_was_stor
     assert steps == [["compare", "--count", "4", "--as-of", "2026-10-19"]] and is_paid(steps[0])
     one = sequence_for("compare", ["compare", "--count", "2", "--budget", "3", "--only", "Acme Corp"], "2026-10-19")
     assert one == [["compare", "--count", "2", "--only", "Acme Corp", "--as-of", "2026-10-19"]]
+
+
+# ---- the technology scanner can be tested against its own earlier results -----------------------------------------------------------------
+def tech(cfg, replies, urls):
+    return TechProcurementScanner(cfg, FakeLLM([json.dumps({"signals": r}) for r in replies], urls=urls,
+                                               usage=Usage(input_tokens=2000, output_tokens=300, web_searches=3)), FakeVerifier())
+
+
+def test_every_scanner_the_job_offers_has_a_baseline_and_the_technology_one_uses_its_own_types_and_past_runs():
+    assert COMPARE_SCANNERS == tuple(BASELINES)
+    b = BASELINES["tech_procurement"]
+    assert b.types == TechProcurementScanner.allowed_types and b.steps == ("scan:tech_procurement",)
+    assert "vendor_deal" in b.types and "leadership_change" not in b.types
+
+
+def test_the_technology_test_is_measured_against_stored_technology_signals_and_the_scanners_own_past_cost(db, cfg):
+    conn, acme, zed, quiet = db
+    b = BASELINES["tech_procurement"]
+    since = (AS_OF - timedelta(days=cfg.scan.window_days)).isoformat()
+    assert [s.type for s in stored_signals(conn, acme, since, b.types)] == ["vendor_deal"]               # only the technology kinds
+    assert [a.name for a in pick_accounts(conn, list_accounts(conn), AS_OF, cfg.scan.window_days, 4, b.types)] == ["Acme Corp"]
+    for step, cost in (("scan:tech_procurement", 0.40), ("scan:leadership", 9.0)):
+        conn.execute("INSERT INTO runs(run_date,step,account_id,est_cost) VALUES ('2026-10-08',?,?,?)", (step, acme, cost))
+    assert prior_cost(conn, acme, b.steps) == pytest.approx(0.40)
+
+
+def test_a_technology_test_logs_its_own_step_and_the_report_names_what_it_compares(db, cfg):
+    conn, acme, zed, quiet = db
+    conn.execute("INSERT INTO runs(run_date,step,account_id,est_cost) VALUES ('2026-10-08','scan:tech_procurement',?,0.40)", (acme,))
+    sc = tech(cfg, [[found("https://acme.com/erp", "vendor_deal", "2026-09-25", "Signs an ERP deal.")]], urls=["https://acme.com/erp"])
+    rows = run_compare(conn, cfg, sc, [list_accounts(conn)[0]], AS_OF, MODEL)
+    assert conn.execute("SELECT COUNT(*) FROM runs WHERE step = 'compare:tech_procurement'").fetchone()[0] == 1
+    assert (len(rows[0].stored), len(rows[0].found), rows[0].matched, rows[0].new, rows[0].missed) == (1, 1, 1, 0, [])
+    text = "\n".join(report(rows, "claude-haiku-5-5", BASELINES["tech_procurement"]))
+    assert text.startswith("Technology scan on claude-haiku-5-5, nothing stored")
+    assert "signals the same scanner on the main model had stored" in text and "technology scan found 1" in text
+    assert "against $0.40 for the same scanner on the main model last time" in text and "The technology scan found at least as many signals" in text
+    assert "sweep" not in text.lower()
+
+
+def test_the_job_takes_an_optional_scanner_and_rejects_anything_else():
+    assert validate("compare", {"limit": "4", "scanner": "sweep"}) == validate("compare", {"limit": "4"})             # the combined scan is the default
+    assert validate("compare", {"limit": "4", "scanner": "tech_procurement"})[-2:] == ["--scanner", "tech_procurement"]
+    for bad in ("hiring", "leadership", "--all", "sweep,hiring"):
+        with pytest.raises(JobError):
+            validate("compare", {"limit": "4", "scanner": bad})
+    args = validate("compare", {"limit": "2", "only": "Acme Corp", "scanner": "tech_procurement"})
+    assert sequence_for("compare", args, "2026-10-19") == [["compare", "--count", "2", "--only", "Acme Corp", "--scanner", "tech_procurement", "--as-of", "2026-10-19"]]

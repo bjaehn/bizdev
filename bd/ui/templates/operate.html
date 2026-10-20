@@ -86,9 +86,10 @@
 
 <div class="card">
 <h2>Test the cheaper scan</h2>
-<p class="meta">Runs the combined scan (one model call a company instead of four) on the companies that already have the most signals, and sets what it finds beside what the separate scans stored. Set <code>ANTHROPIC_SCAN_MODEL</code> in the hosting dashboard to test a cheaper model. Nothing is saved or scored. Spends up to ${{ compare_budget }}; four companies usually cost well under $1. Read the result in the job log, then decide.</p>
+<p class="meta">Runs a scan on the cheaper model (<code>ANTHROPIC_SCAN_MODEL</code>) for the companies that already have the most signals of its kind, and sets what it finds beside what was stored before. <b>Combined scan</b> is compared with the separate scanners it replaces; <b>Technology scan</b> (platform changes, vendor deals, RFP matches, filing risk factors) is compared with its own earlier results on the main model, so run it before the next Update. Nothing is saved or scored. Spends up to ${{ compare_budget }}; four companies usually cost well under $1. Read the result in the job log, then decide.</p>
 <form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="compare">
-<div class="grid"><div><label>How many companies (1-8)</label><input type="number" name="limit" value="4" min="1" max="8" required></div>
+<div class="grid"><div><label>Which scan</label><select name="scanner"><option value="sweep">Combined scan</option><option value="tech_procurement">Technology scan</option></select></div>
+<div><label>How many companies (1-8)</label><input type="number" name="limit" value="4" min="1" max="8" required></div>
 <div><label>Or just this one (exact name, optional)</label><input type="text" name="only" maxlength="60"></div></div>
 <label><input type="checkbox" name="confirm" value="1"> I understand this uses paid model calls</label>
 <p><button class="ghost" type="submit">Run the test</button></p></form>

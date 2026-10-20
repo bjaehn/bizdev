@@ -18,5 +18,8 @@ SCANNERS: dict[str, type[Scanner]] = {
                       AtsScanner, TechProcurementScanner, WarnScanner, FinancialsScanner, SecEventsScanner, SweepScanner)
 }
 
+# The scanners that run on ANTHROPIC_SCAN_MODEL (the cheaper model) when it is set: search-and-extract jobs where code checks every source.
+SCAN_MODEL_SCANNERS = frozenset({"sweep", "tech_procurement"})
+
 __all__ = ["AcceptedSignal", "Rejection", "ScanOutcome", "Scanner", "store_signals", "SCANNERS",
-           "LeadershipScanner", "EventsScanner", "EdgarScanner"]
+           "LeadershipScanner", "EventsScanner", "EdgarScanner", "SCAN_MODEL_SCANNERS"]

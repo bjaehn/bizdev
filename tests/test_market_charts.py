@@ -137,7 +137,8 @@ def test_the_market_page_has_a_heatmap_whose_cells_open_the_matching_companies(s
 def test_the_heatmap_cell_link_lands_on_an_opportunities_page_that_filters_to_those_companies(seeded):
     e, today = seeded
     body = e.get("/opportunities?industry=Manufacturing&family=leadership&tracked=1").body
-    assert "Steelco" in body and "Medco" not in body
+    ranked = body.split('id="ranked"')[1].split("Existing clients are tagged")[0]          # the top three cards above it are always the overall best
+    assert "Steelco" in ranked and "Medco" not in ranked
 
 
 def test_the_trend_says_when_there_is_only_one_run_and_compares_two(seeded):

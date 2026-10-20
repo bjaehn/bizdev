@@ -10,15 +10,14 @@
 {% block head %}{% endblock %}
 </head>
 {% set is_admin = page is defined and page in admin_pages %}
-{% set narrow_pages = ['company', 'reports', 'week', 'help', 'find', 'signals'] %}
+{% set narrow_pages = ['company', 'reports', 'help', 'find', 'signals'] %}
 <body class="{{ 'admin' if is_admin else '' }} {{ 'narrow' if page is defined and page in narrow_pages else '' }} {{ 'auth' if auth is defined else '' }}">
 <header class="{{ 'admin' if is_admin else '' }}"><div class="bar">
-<a class="brand" href="{{ '/admin' if is_admin else '/week' }}">BD Signals{% if is_admin %} <span class="area">Admin</span>{% endif %}</a>
+<a class="brand" href="{{ '/admin' if is_admin else '/opportunities' }}">BD Signals{% if is_admin %} <span class="area">Admin</span>{% endif %}</a>
 {% if nav is not defined or nav %}
 <nav>
-{% if is_admin %}<a class="top" href="/week">← Back to analysis</a>
-{% else %}<a class="top {{ 'on' if page in ('week', 'help', 'find') else '' }}" href="/week">This week</a>
-<a class="top {{ 'on' if page in ('opportunities', 'company', 'signals') else '' }}" href="/opportunities">Companies</a>{% endif %}
+{% if is_admin %}<a class="top" href="/opportunities">← Back to analysis</a>
+{% else %}<a class="top {{ 'on' if page in ('opportunities', 'company', 'signals', 'help', 'find') else '' }}" href="/opportunities">Analysis</a>{% endif %}
 </nav>
 <div class="right">{% if not is_admin %}<a class="adminlink" href="/admin">Admin</a>{% endif %}
 {% if hosted %}<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Sign out</button></form>{% endif %}</div>

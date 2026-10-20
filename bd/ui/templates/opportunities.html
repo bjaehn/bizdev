@@ -1,86 +1,87 @@
 {% extends "base.html" %}
-{% from "_cards.html" import opp_card %}
-{% from "_ui.html" import shade_legend, bar_rows %}
-{% block title %}Companies{% endblock %}
-
-{% block hero %}<h1>Companies</h1>
-<p class="sub">Every company that shows signals, strongest first. Open one to see what was found and where. The short list is on <a href="/week">This week</a>.</p>{% endblock %}
+{% from "_ui.html" import rank_rows, feed_row %}
+{% block title %}Analysis{% endblock %}
+{% block herocls %}tall{% endblock %}
+{% block hero %}<h1>Analysis</h1>
+<p class="sub">{% if w.problem %}Nothing is ranked yet.{% else %}{{ w.ranked|length }} {{ 'company is' if w.ranked|length == 1 else 'companies are' }} ranked, scored {{ w.run_date|fdate }}.{% endif %}{% if w.trend.found_this_week %} {{ w.trend.found_this_week }} new signal{{ '' if w.trend.found_this_week == 1 else 's' }} found this week.{% endif %} <a href="/help">How this works</a></p>
+<form method="get" action="/find" class="search noprint">
+<input id="q" type="text" name="q" placeholder="Find a company by name" aria-label="Find a company by name">
+<button type="submit">Find</button>
+</form>{% endblock %}
 {% block body %}
+{% set tr = w.trend %}
+<div class="tiles tiles--3">
+<div class="tile hot"><b>{{ w.coverage.hot + w.coverage.warm }}</b><span>{{ 'company is' if w.coverage.hot + w.coverage.warm == 1 else 'companies are' }} Hot or Warm</span></div>
+<div class="tile good"><b>{{ tr.found_this_week }}</b><span>new signals found this week</span></div>
+<div class="tile accent"><b>{{ '▲' if tr.recent > tr.earlier else ('▼' if tr.recent < tr.earlier else '=') }} {{ tr.recent }}</b><span>signals in the last 4 weeks (the 4 weeks before: {{ tr.earlier }})</span></div>
+</div>
+{% if w.problem %}<div class="card empty">{{ w.problem }}</div>{% endif %}
+{% if w.stale %}<div class="flash err">The stored score is out of date for {{ w.stale|length }} compan{{ 'y' if w.stale|length == 1 else 'ies' }} ({{ w.stale[:3]|join(', ') }}{{ '…' if w.stale|length > 3 }}). An admin needs to run Score again.</div>{% endif %}
+{% if not w.problem and w.coverage.score_age_days is not none and w.coverage.score_age_days > 8 %}<div class="flash err">These scores are {{ w.coverage.score_age_days }} days old. An admin needs to run an update from the Admin area.</div>{% endif %}
 
-{% if not dates %}
-<div class="card empty">Nothing has been scored yet.<br>An admin needs to run an update from the Admin area to fill in company facts, scan for news and rank what it finds.</div>
-{% elif error %}<div class="errors"><b>{{ error }}</b></div>
-{% else %}
-{% if stale %}<div class="flash err">The stored score is out of date for {{ stale|length }} compan{{ 'y' if stale|length == 1 else 'ies' }} ({{ stale[:3]|join(', ') }}{{ '…' if stale|length > 3 }}). An admin needs to run Score again.</div>{% endif %}
-<p class="meta"><b>{{ cov.total }}</b> companies · <b>{{ cov.ready }}</b> scanned · <b>{{ cov.with_signal_90d }}</b> with signals in 90 days · <b>{{ cov.hot + cov.warm }}</b> Hot or Warm · scored {{ run_date|fdate }}{% if cov.unscanned %} · {{ cov.unscanned }} not scanned yet{% endif %}</p>
-{% if cov.score_age_days is not none and cov.score_age_days > 8 %}<div class="flash err">These scores are {{ cov.score_age_days }} days old.</div>{% endif %}
-
-{% if view == 'ranked' %}
-<form method="get" action="/opportunities" class="search noprint"><input type="hidden" name="band" value="{{ q.band }}"><input type="hidden" name="tracked" value="{{ q.tracked }}">
-<input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name"><button type="submit">Search</button></form>
-<div class="tabs">{% for label, href, on in ranked_tabs %}<a href="{{ href }}" class="{{ 'on' if on else '' }}">{{ label }}</a>{% endfor %}<span class="meta">{{ items|length }} of {{ total }} compan{{ 'y' if total == 1 else 'ies' }}</span></div>
-{% if items %}<div class="card">{{ bar_rows(items) }}</div>{% else %}<div class="card empty">No companies match.</div>{% endif %}
-{% else %}
-<form method="get" action="/opportunities" class="filters">
-<input type="hidden" name="view" value="{{ view }}">
-<input type="text" name="q" value="{{ q.q }}" placeholder="Search by name" aria-label="Search by name">
-<select name="band" aria-label="Band"><option value="">any band</option>{% for b in bands %}<option value="{{ b }}" {{ 'selected' if q.band == b else '' }}>{{ b|band_name }}</option>{% endfor %}</select>
-<select name="industry" aria-label="Industry"><option value="">any industry</option>{% for i in industries %}<option {{ 'selected' if q.industry == i else '' }}>{{ i }}</option>{% endfor %}</select>
-<button type="submit">Filter</button>
-<details class="more"><summary>More filters</summary>
-<div class="filters">
-<select name="date" aria-label="Scored on">{% for d in dates %}<option value="{{ d }}" {{ 'selected' if d == run_date else '' }}>scored {{ d }}</option>{% endfor %}</select>
-<select name="family" aria-label="Signal group"><option value="">any signal group</option>{% for f in families %}<option value="{{ f }}" {{ 'selected' if q.family == f else '' }}>{{ family_labels.get(f, {'sponsor': 'Sponsor activity', 'sequence': 'Pattern'}.get(f, f)) }}</option>{% endfor %}</select>
-<select name="service_line" aria-label="Service line"><option value="">any service line</option>{% for l in lines %}<option {{ 'selected' if q.service_line == l else '' }}>{{ l }}</option>{% endfor %}</select>
-<select name="status" aria-label="Status"><option value="">any status</option>
-{% for k, t in [('card','on the Monday card'),('over_cap','over the cap'),('held','held back'),('tracking','tracking only')] %}<option value="{{ k }}" {{ 'selected' if q.status == k else '' }}>{{ t }}</option>{% endfor %}</select>
-<select name="stage" aria-label="Your stage"><option value="">any stage</option><option value="open" {{ 'selected' if q.stage == 'open' else '' }}>open (not passed, won or lost)</option>
-{% for k in stages %}<option value="{{ k }}" {{ 'selected' if q.stage == k else '' }}>{{ stage_labels[k] }}</option>{% endfor %}</select>
-<select name="client" aria-label="Client"><option value="">clients and new logos</option><option value="yes" {{ 'selected' if q.client == 'yes' else '' }}>existing clients only</option><option value="no" {{ 'selected' if q.client == 'no' else '' }}>new logos only</option></select>
-<select name="sort" aria-label="Sort"><option value="score">sort: score</option><option value="types" {{ 'selected' if q.sort == 'types' else '' }}>sort: signal types</option><option value="newest" {{ 'selected' if q.sort == 'newest' else '' }}>sort: newest signal</option><option value="change" {{ 'selected' if q.sort == 'change' else '' }}>sort: biggest change</option><option value="hiring" {{ 'selected' if q.sort == 'hiring' else '' }}>sort: hiring</option></select>
-<label><input type="checkbox" name="pe" value="1" {{ 'checked' if q.pe else '' }}> PE-backed</label>
-<label><input type="checkbox" name="new" value="1" {{ 'checked' if q.new else '' }}> new since last run</label>
-<label><input type="checkbox" name="tracked" value="1" {{ 'checked' if q.tracked == '1' else '' }}> include below Watch</label>
-</div></details></form>
-
-<div class="tabs"><a href="{{ link(view='matrix') }}" class="{{ 'on' if view == 'matrix' else '' }}">Signal matrix</a><a href="{{ link(view='chart') }}" class="{{ 'on' if view == 'chart' else '' }}">Priority chart</a><a href="{{ link(view='list') }}" class="{{ 'on' if view == 'list' else '' }}">List</a>
-<span class="meta">{{ items|length }} of {{ total }} compan{{ 'y' if total == 1 else 'ies' }}{% if prev_date %}; change is against the run on {{ prev_date }}{% endif %}</span></div>
-
-{% if view == 'matrix' %}
-<div class="legend"><span>Points a signal type added to the score:</span>{{ shade_legend() }}
-<span>few to many · a dashed box means none · <b>●</b> news in the last 30 days · <b>Types</b> counts the different signal types, the thing the stacking bonus rewards</span></div>
-{% if matrix.rows %}
-<div class="wrap"><table class="matrix">
-<thead><tr><th>Company</th><th class="left"><a href="{{ link(sort='score') }}" class="{{ 'on' if (q.sort or 'score') == 'score' else '' }}">Score</a></th>
-{% for key, label in matrix.columns %}<th>{{ label }}</th>{% endfor %}
-<th><a href="{{ link(sort='types') }}" class="{{ 'on' if q.sort == 'types' else '' }}">Types</a></th></tr></thead>
-<tbody>
-{% for r in matrix.rows %}{% set o = r.opp %}<tr>
-<td class="co"><span class="rank">{{ o.rank }}</span><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a>{% if o.client %} <span class="badge good">client</span>{% endif %}
-{% if o.theme %}<div><b>{{ o.theme.name }}</b></div>{% endif %}
-<div class="meta">{{ [o.account.industry, o.account.hq_city]|select|join(' · ') or 'no company details' }}</div></td>
-<td class="sc"><div class="meter {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}"><i style="--w:{{ r.score_pct }}%"></i></div>
-<b>{{ o.result.score }}</b> <span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }}</span>{% if o.delta is not none and o.delta > 0 %} <span class="badge good">+{{ o.delta }}</span>{% endif %}</td>
-{% for c in r.cells %}<td>{% if c.points %}<a class="cell {{ 'hi' if c.shade > 0.55 else '' }}" style="--v:{{ '%.2f'|format(c.shade) }}" href="/companies/{{ o.account.id }}" title="{{ c.title }}" aria-label="{{ c.title }}">{{ c.points|round|int }}{{ ' ●' if c.recent }}</a>{% else %}<span class="cell none" aria-hidden="true">·</span>{% endif %}</td>{% endfor %}
-<td class="ctr"><b>{{ r.types }}</b>/{{ matrix.columns|length }}{% if o.result.stacking_bonus %}<br><span class="meta">+{{ o.result.stacking_bonus|round|int }}</span>{% endif %}</td></tr>
+{% if not w.problem %}
+<h2>The top three</h2>
+{% if w.calls %}
+<p class="meta">The three highest-scoring new-business companies, with the rank each holds below.</p>
+<div class="callgrid">
+{% for c in w.calls %}{% set o = c.opp %}
+<div class="card call">
+<div class="call-head"><h3><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a></h3><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }}</span></div>
+<p class="why"><b>{{ o.theme.name if o.theme else signs_line(o.result) }}</b>{% if o.theme and o.theme.service_line %} <span class="meta">· points to {{ o.theme.service_line }}</span>{% endif %}</p>
+<div class="score-line"><div><span class="bignum">{{ o.result.score }}</span>{% if o.delta is not none and o.delta != 0 %} <span class="{{ 'up' if o.delta > 0 else 'down' }}">{{ '▲ +' if o.delta > 0 else '▼ ' }}{{ o.delta }} since last run</span>{% endif %}</div>{{ spark(c.history)|safe }}</div>
+<p class="meta">Rank {{ o.rank }}{% if c.newest %} · newest signal {{ c.newest|fdate }}{% endif %}</p>
+<ul class="evidence">{% for e in c.evidence %}
+<li><span class="kdot" style="--c:{{ kind_colors[e.kind] }}"></span><span><span class="meta">{{ e.event_date|fdate }}</span> {{ e.summary }}{% if e.role_or_person %} <span class="meta">({{ e.role_or_person }})</span>{% endif %}{% if e.url|safe_url %} <a href="{{ e.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ e.url|host }}</a>{% endif %}</span></li>{% endfor %}
+</ul>
+<a class="btn" href="/companies/{{ o.account.id }}">Open brief →</a>
+</div>
 {% endfor %}
-</tbody></table></div>
-<p class="meta">Sort by <a href="{{ link(sort='score') }}">score</a> · <a href="{{ link(sort='types') }}">signal types</a> · <a href="{{ link(sort='newest') }}">newest signal</a> · <a href="{{ link(sort='change') }}">biggest change</a>. The number in a cell is the points that signal type added; they sum, with the stacking bonus, to the score.</p>
-{% else %}<div class="card empty">No companies match.</div>{% endif %}
-
-{% elif view == 'chart' %}
-{% if chart %}
-<div class="legend"><span>Each dot is a company. Up = higher score · right = larger revenue (each gridline is ten times the last) · colour = band ·
-size = how many different signal types fired · dark outline = news in the last 30 days. Top right is the biggest prize with the strongest signals.</span></div>
-<div class="card chart"><div class="chart-inner">{{ chart|safe }}</div></div>
-{% if priority.unplaced %}<p class="meta"><b>{{ priority.unplaced|length }}</b> compan{{ 'y has' if priority.unplaced|length == 1 else 'ies have' }} no revenue on file, so cannot be placed on this chart: {% for id, name, score in priority.unplaced[:8] %}<a href="/companies/{{ id }}">{{ name }}</a> ({{ score }}){{ ', ' if not loop.last }}{% endfor %}{% if priority.unplaced|length > 8 %} and {{ priority.unplaced|length - 8 }} more{% endif %}. Add revenue in Admin, or run the SEC check, and they appear.</p>{% endif %}
-{% elif priority and priority.unplaced %}<div class="card empty">None of these {{ priority.unplaced|length }} companies has a revenue on file, so there is nothing to place on a size axis. The signal matrix and list still show them.</div>
-{% else %}<div class="card empty">No companies match.</div>{% endif %}
-
+</div>
 {% else %}
-{% for o in items %}{{ opp_card(o, stage_labels, true) }}
-{% else %}<div class="card empty">No companies match.</div>{% endfor %}
+<div class="card empty">Nobody has reached Watch yet. {% if w.closest %}The companies closest are in the list below.{% else %}Run an update from the Admin area to scan more companies.{% endif %}</div>
 {% endif %}
 {% endif %}
+
+<div class="card">
+<h2>Is it heating up?</h2>
+<p class="why"><b>{{ tr.takeaway }}</b></p>
+<div class="legend">{% for key, label in kinds %}<span><span class="swatch sq" style="--c:{{ kind_colors[key] }}"></span> {{ label }}</span>{% endfor %}</div>
+{% if trend_chart %}<div class="chart chart--wide">{{ trend_chart|safe }}</div>
+<div class="chart chart--phone">{{ trend_chart_phone|safe }}<p class="meta">The last 6 weeks; all {{ tr.weeks|length }} are in the numbers below.</p></div>
+<details><summary>Show the numbers</summary>
+<div class="wrap"><table><tr><th>Week ending</th>{% for key, label in kinds %}<th class="num">{{ label }}</th>{% endfor %}<th class="num">All</th></tr>
+{% for i in range(tr.weeks|length - 1, -1, -1) %}<tr><td>{{ tr.weeks[i]|fdate }}</td>{% for key, label in kinds %}<td class="num">{{ tr.series[key][i] }}</td>{% endfor %}<td class="num"><b>{% set ns = namespace(t=0) %}{% for key, label in kinds %}{% set ns.t = ns.t + tr.series[key][i] %}{% endfor %}{{ ns.t }}</b></td></tr>{% endfor %}
+</table></div></details>
+{% else %}<p class="meta">No signals were found in the last {{ tr.weeks|length }} weeks.</p>{% endif %}
+</div>
+
+{% if not w.problem %}
+<h2 id="ranked">Ranked</h2>
+{% if family or industry %}<p class="meta">Only {% if industry %}{{ industry }} companies{% else %}companies{% endif %}{% if family %} with {{ family_labels[family]|lower }} signals{% endif %}. <a href="/opportunities{{ '?tracked=1' if everything else '' }}#ranked">Show everyone</a></p>{% endif %}
+<div class="tabs">{% for label, href, on in tabs %}<a href="{{ href }}" class="{{ 'on' if on else '' }}">{{ label }}</a>{% endfor %}<span class="meta">{{ shown|length }} compan{{ 'y' if shown|length == 1 else 'ies' }}{% if w.prev_date %}; changes are against the run on {{ w.prev_date|fdate }}{% endif %}</span></div>
+{% if shown %}<div class="card">{{ rank_rows(shown) }}</div>
+{% elif w.closest and not everything %}
+<div class="card"><p class="meta">Nobody has enough signals to be ranked yet; these have the most.</p>{{ rank_rows(w.closest) }}</div>
+{% else %}<div class="card empty">No companies match.</div>{% endif %}
+<p class="meta">{{ w.coverage.ready }} compan{{ 'y' if w.coverage.ready == 1 else 'ies' }} on the scan list{% if w.coverage.unscanned %} · {{ w.coverage.unscanned }} not scanned yet{% endif %} · Existing clients are tagged; they are expansion, not new business.</p>
 {% endif %}
+
+{% if w.tracked %}
+<h2>Companies you track</h2>
+{% for t in w.tracked %}{% set o = t.opp %}
+<div class="entry entry--compact"><div class="entry-head"><a class="name" href="/companies/{{ o.account.id }}">{{ o.account.name }}</a><span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }} {{ o.result.score }}</span>
+{% if o.stage in ('reviewing', 'pursuing') %}<span class="badge">{{ stage_labels[o.stage] }}</span>{% endif %}</div>
+{% if t.new %}<p><b>New:</b> {{ t.new[0].summary }} <span class="meta">({{ t.new[0].event_date|fdate }}{% if t.new|length > 1 %}; {{ t.new|length - 1 }} more{% endif %})</span></p>
+{% else %}<p class="meta">Nothing new in the last 14 days.</p>{% endif %}</div>
+{% endfor %}
+{% endif %}
+
+{% if w.recent %}
+<details class="card"><summary>Signals dated in the last 7 days ({{ w.recent|length }})</summary>
+<ul class="plain">{% for i in w.recent[:30] %}{{ feed_row(i) }}{% endfor %}</ul>
+<p class="meta">{% if w.recent|length > 30 %}The newest 30 of {{ w.recent|length }}. {% endif %}<a href="/signals">See every signal</a></p>
+</details>
+{% endif %}
+
+{% include "_hiring.html" %}
 {% endblock %}

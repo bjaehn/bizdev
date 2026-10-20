@@ -7,11 +7,11 @@
 
 <h2>What to do here</h2>
 <ol>
-<li><b>See who is worth a call.</b> Open <a href="/week">This week</a>. It shows up to three companies worth a call, each named by what its signals add up to (for example <i>new leadership and a hiring push</i>), with its score trend and the signals behind it, then a chart of whether signals are rising, and the next companies in line.</li>
-<li><b>Browse every signal.</b> On This week open <i>Signals dated in the last 7 days</i> and choose <i>See every signal</i>: everything found, newest first, filtered by kind and by how far back to look. Each row links to the page it came from.</li>
-<li><b>Prepare for one company.</b> Search by name on This week (or open <a href="/opportunities">Companies</a>), then open its brief. The brief is a two-minute read: what its signals add up to, what happened and when, with a link to every source. Use <b>Print / Save as PDF</b> or <b>Copy as text</b> to send it to someone. A company that has not been scanned can be scanned from its brief or from Find.</li>
-<li><b>Track a company over time.</b> On a company's brief choose <b>Track this company</b>. This week then shows what is new about it, and you can mark its stage and keep notes.</li>
-<li><b>Show the market to leadership.</b> The extra reports (market view by industry, hiring, private equity firms, open RFPs, ask your data and the Monday card) are in the Admin list under Reports.</li>
+<li><b>See who ranks first.</b> Open <a href="/opportunities">Analysis</a>, the one page for reading. It shows the top three new-business companies, each named by what its signals add up to (for example <i>new leadership and a hiring push</i>), with its score trend and the signals behind it; a chart of whether signals are rising; everyone at Watch or above, numbered from 1; and the open job postings at the bottom.</li>
+<li><b>Browse every signal.</b> On Analysis open <i>Signals dated in the last 7 days</i> and choose <i>See every signal</i>: everything found, newest first, filtered by kind and by how far back to look. Each row links to the page it came from.</li>
+<li><b>Prepare for one company.</b> Search by name at the top of Analysis, or click a company in the ranking, then open its brief. The brief is a two-minute read: what its signals add up to, what happened and when, with a link to every source. Use <b>Print / Save as PDF</b> or <b>Copy as text</b> to send it to someone. A company that has not been scanned can be scanned from its brief or from Find.</li>
+<li><b>Track a company over time.</b> On a company's brief choose <b>Track this company</b>. Analysis then shows what is new about it, and you can mark its stage and keep notes.</li>
+<li><b>Show the market to leadership.</b> The extra reports (market view by industry, private equity firms, open RFPs, ask your data and the Monday card) are in the Admin list under Reports.</li>
 </ol>
 
 <h2>Words used here</h2>
@@ -21,12 +21,12 @@
 <dt>Theme</dt><dd>What a company's signals add up to, named by a fixed rule, never written by a model: for example <i>Turnaround</i> is shown when a pressure signal (restructuring, cost or financial pressure) and a leadership change are both found. The rule is printed beside every theme, with the signals that satisfied it.</dd>
 <dt>Score</dt><dd>A number from 0 to {{ sc.score_max }}, worked out by plain code (no model) from the signals: how strong each kind of sign is, how recent, how trustworthy its source, and a bonus of +{{ sc.stacking_bonus_per_family|round|int }} for each extra kind that agrees (up to +{{ sc.stacking_bonus_max|round|int }}). The company page shows the sum.</dd>
 <dt>Bands</dt><dd><b>Hot</b> is {{ bands.hot }} or more, <b>Warm</b> {{ bands.warm }} or more, <b>Watch</b> {{ bands.watch }} or more. Below that a company is tracked but not listed.</dd>
-<dt>Client</dt><dd>An existing SEI client. Clients are scored like any company but listed apart, as expansion rather than new business.</dd>
+<dt>Client</dt><dd>An existing SEI client. Clients are scored like any company and tagged <i>client</i> in the ranking; the top three cards leave them out, as expansion rather than new business.</dd>
 <dt>Unverified</dt><dd>A company is scanned for signals unless it is known to be out of scope (excluded, outside Chicagoland, or below the size floor). If its location or size is not confirmed it is scanned anyway and tagged <i>unverified</i>.</dd>
 </dl>
 
 <h2>How fresh is it</h2>
-<p>The list is refreshed by a scheduled run ({{ schedule_note }}) or when an admin presses Update my list. Every page says the date it was scored. If the scores are more than a week old, This week says so.</p>
+<p>The list is refreshed by a scheduled run ({{ schedule_note }}) or when an admin presses Update my list. Every page says the date it was scored. If the scores are more than a week old, Analysis says so.</p>
 
 <h2>What it does not do</h2>
 <ul class="plain">

@@ -6,12 +6,12 @@
 <div class="row"><div>
 <h2>{{ step[0] }}</h2>
 <p class="sub">{{ step[1] }}</p></div>
-{% if step[2] == 'opportunities' %}<a class="btn" href="/week">Open This week</a>{% endif %}</div>
+{% if step[2] == 'opportunities' %}<a class="btn" href="/opportunities">Open Analysis</a>{% endif %}</div>
 </div>
 
 <div class="pill-row">
 <a class="badge good" href="/accounts?status=active">{{ ready }} companies on the scan list</a>
-<a class="badge" href="/week">{{ opps }} companies ranked</a>
+<a class="badge" href="/opportunities">{{ opps }} companies ranked</a>
 </div>
 
 <div class="card">
@@ -33,7 +33,7 @@
 <li>Searches <b>{{ u.segments }}</b> industry segments for new Chicagoland companies, with what is left of the limit.</li>
 <li>Researches up to <b>{{ u.research }}</b> companies whose location or size is unconfirmed, and fills in the ones with a source that checked out.</li>
 {% if u.rfps %}<li>Searches Chicago-area agency sites for open public RFPs (Open RFPs page).</li>{% endif %}
-<li>Scores everything and ranks it on This week.</li>
+<li>Scores everything and ranks it on Analysis.</li>
 </ol>
 {% if busy %}<div class="flash err">An update is already running. Open it from "Last update" below.</div>{% endif %}
 <form method="post" action="/update"><input type="hidden" name="csrf" value="{{ csrf }}">
@@ -63,5 +63,5 @@
 {% for o in top %}<div class="card"><div class="row"><div><span class="meta">#{{ o.rank }}</span> <a class="name" href="/accounts/{{ o.account.id }}">{{ o.account.name }}</a>
 <div class="meta">{{ o.why_now }}</div></div>
 <span class="badge {{ 'hot' if o.result.band == 'Hot' else ('warm' if o.result.band == 'Warm' else '') }}">{{ o.result.band|band_name }} · {{ o.result.score }}</span></div></div>{% endfor %}
-<p><a href="/week">See This week</a> · <a href="/opportunities">All {{ opps }} companies</a></p>{% endif %}
+<p><a href="/opportunities">See the {{ opps }} ranked companies</a></p>{% endif %}
 {% endblock %}

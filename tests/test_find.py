@@ -212,9 +212,9 @@ def test_the_wait_page_only_shows_signal_scans(world):
 
 
 # ---- where people find it ---------------------------------------------------------------------------------------------------------
-def test_this_week_searches_here_and_the_brief_offers_the_scan_when_a_company_has_none(world):
+def test_analysis_searches_here_and_the_brief_offers_the_scan_when_a_company_has_none(world):
     e, ids = world
-    assert 'action="/find"' in e.get("/week").body and 'class="top on" href="/week"' in e.get("/find").body.split("</nav>")[0]
+    assert 'action="/find"' in e.get("/opportunities").body and 'class="top on" href="/opportunities"' in e.get("/find").body.split("</nav>")[0]
     brief = e.get(f"/companies/{ids['held']}").body
     assert "Not scanned yet" in brief and "Scan for signals now" in brief and 'action="/find/run"' in brief and 'name="confirm"' in brief
     assert "Scan for signals now" not in e.get(f"/companies/{ids['ready']}").body

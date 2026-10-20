@@ -15,28 +15,29 @@ def nav_of(body):
     return body.split("<nav>")[1].split("</nav>")[0]
 
 
-def test_after_login_the_app_opens_on_this_week(app_env):  # noqa: F811
+def test_after_login_the_app_opens_on_the_analysis_page(app_env):  # noqa: F811
     r = call(app_env.app, "POST", "/login", {"password": PW})
-    assert r.code == 303 and r.h["Location"] == "/week" and "bd_session=" in r.h["Set-Cookie"]
+    assert r.code == 303 and r.h["Location"] == "/opportunities" and "bd_session=" in r.h["Set-Cookie"]
     ck = r.h["Set-Cookie"].split(";")[0].split("=", 1)[1]
-    assert call(app_env.app, "GET", "/login", cookie=ck).h["Location"] == "/week"      # already signed in
-    assert call(app_env.app, "GET", "/leadership", cookie=ck).h["Location"] == "/week"  # the old page folds into This week
+    assert call(app_env.app, "GET", "/login", cookie=ck).h["Location"] == "/opportunities"      # already signed in
+    assert call(app_env.app, "GET", "/leadership", cookie=ck).h["Location"] == "/opportunities"  # the old pages fold into Analysis
     assert call(app_env.app, "GET", "/", cookie=ck).code == 200                                  # "/" is still the Update page (Admin)
 
 
-ANALYSIS_PAGES = ["/week", "/signals", "/help", "/opportunities", "/reports", "/market", "/hiring", "/firms", "/rfps", "/ask", "/monday"]
+ANALYSIS_PAGES = ["/opportunities", "/signals", "/help", "/reports", "/market", "/firms", "/rfps", "/ask", "/monday"]
 
 
-def test_the_analysis_side_has_four_links_and_no_admin_machinery(app_env):  # noqa: F811
+def test_the_analysis_side_has_one_link_and_no_admin_machinery(app_env):  # noqa: F811
     e = app_env
     for path in ANALYSIS_PAGES:
         body = e.get(path).body
         assert e.get(path).code == 200, path
-        assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/week", "/opportunities"], path
+        assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/opportunities"], path
         assert 'class="adminlink" href="/admin"' in body and 'class="adminnav"' not in body and "<header class=\"admin\">" not in body, path
         assert "Update my list" not in nav_of(body) and "Look up" not in nav_of(body)
-    assert 'class="top on" href="/week"' in nav_of(e.get("/week").body) and 'class="top on" href="/week"' in nav_of(e.get("/help").body)
-    assert 'class="top on" href="/opportunities"' in nav_of(e.get("/opportunities").body)
+    assert 'class="top on" href="/opportunities"' in nav_of(e.get("/opportunities").body) and 'class="top on" href="/opportunities"' in nav_of(e.get("/help").body)
+    for old in ("/week", "/leadership", "/hiring"):                                          # the retired pages still lead somewhere
+        assert e.get(old).code == 303 and e.get(old).h["Location"].startswith("/opportunities"), old
     assert 'href="/reports"' not in nav_of(e.get("/market").body)                           # Reports is no longer a top-level screen
 
 
@@ -56,7 +57,7 @@ def test_admin_is_a_different_area_with_its_own_shell(app_env):  # noqa: F811
         assert page.code == 200, path
         body = page.body
         assert '<header class="admin">' in body and '<span class="area">Admin</span>' in body, path
-        assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/week"] and "Back to analysis" in nav_of(body), path
+        assert re.findall(r'href="(/[a-z]+)"', nav_of(body)) == ["/opportunities"] and "Back to analysis" in nav_of(body), path
         side = body.split('<aside class="adminnav">')[1].split("</aside>")[0]
         for _, href, *_ in (i for _, items in admin_groups for i in items):
             assert f'href="{href}"' in side, (path, href)                                  # every admin page is one click away
@@ -116,18 +117,17 @@ def test_a_company_with_unconfirmed_facts_is_scanned_and_says_what_is_unconfirme
     assert "Out of scope" in gone and "Not scanned: not in Chicagoland" in gone
 
 
-def test_opportunities_keeps_every_filter_under_more_filters(app_env):  # noqa: F811
+def test_the_analysis_page_keeps_the_filters_other_pages_link_to(app_env):  # noqa: F811
     e = app_env
-    a = add_account(e.conn, "Acme")
-    for t in ("leadership_change", "hiring_cluster"):
-        add_signal(e.conn, e.cfg, a, t, 3, as_of=date.today())
+    a = add_account(e.conn, "Acme", industry="Manufacturing")
+    b = add_account(e.conn, "Otherco", industry="Retail")
+    for acc, t in ((a, "leadership_change"), (a, "hiring_cluster"), (b, "hiring_cluster")):
+        add_signal(e.conn, e.cfg, acc, t, 3, as_of=date.today())
     score_accounts(e.conn, e.cfg, date.today())
-    body = e.get("/opportunities?view=matrix").body
-    form = body.split('<form method="get" action="/opportunities"')[1].split("</form>")[0]
-    visible, hidden = form.split('<details class="more">')
-    assert 'name="q"' in visible and 'name="band"' in visible and 'name="industry"' in visible and visible.count("<select") == 2
-    for name in ("date", "family", "service_line", "status", "stage", "client", "sort", "pe", "new", "tracked"):
-        assert f'name="{name}"' in hidden, name
-    # every old query string still works (bookmarks and links keep their meaning)
-    assert "Acme" in e.get("/opportunities?q=acme&client=no&stage=open&sort=change").body
-    assert "No companies match" in e.get("/opportunities?q=zzz").body and "No companies match" in e.get("/opportunities?client=yes").body
+    body = e.get("/opportunities?tracked=1&industry=Manufacturing").body
+    ranked = body.split('id="ranked"')[1].split("Existing clients are tagged")[0]
+    assert "Acme" in ranked and "Otherco" not in ranked and "Only Manufacturing companies" in body and "Show everyone" in body
+    assert "Otherco" in e.get("/opportunities?tracked=1&industry=Retail&family=hiring").body
+    assert "Acme" not in e.get("/opportunities?tracked=1&industry=Retail").body.split('id="ranked"')[1].split("Existing clients are tagged")[0]
+    assert "No companies match" in e.get("/opportunities?tracked=1&industry=Nowhere").body
+    assert "Show everyone" not in e.get("/opportunities?family=nonsense").body                 # an unknown signal type is ignored, not trusted

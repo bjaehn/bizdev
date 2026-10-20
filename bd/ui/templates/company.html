@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_ui.html" import evidence_list %}
 {% block title %}{{ d.a.name }}{% endblock %}
-{% block hero %}<p class="meta noprint"><a href="/week">← This week</a> · <a href="/opportunities">All companies</a> · <a href="/companies/{{ d.a.id }}/text">Plain-text version</a> · Print (Save as PDF) · <a href="/accounts/{{ d.a.id }}">Manage (Admin)</a></p>
+{% block hero %}<p class="meta noprint"><a href="/opportunities">← Analysis</a> · <a href="/companies/{{ d.a.id }}/text">Plain-text version</a> · Print (Save as PDF) · <a href="/accounts/{{ d.a.id }}">Manage (Admin)</a></p>
 <h1>{{ d.a.name }}</h1>
 <p class="sub">{{ d.signs or ('Signals found, not scored yet' if d.signals else ('No signals found yet' if d.a.last_scanned else 'Not scanned yet')) }}</p>
 <div class="tags">{% if d.opp %}<span class="badge {{ 'hot' if d.opp.result.band == 'Hot' else ('warm' if d.opp.result.band == 'Warm' else '') }}">{{ d.opp.result.band|band_name }} · {{ d.opp.result.score }}</span>
@@ -65,7 +65,7 @@
 
 <h2 class="noprint">Track this company</h2>
 <div class="card noprint">
-<p class="meta">{% if d.state.watching %}You are tracking this company. It is listed on <a href="/week">This week</a> with anything new found about it.{% else %}Track a company to see what is new about it on <a href="/week">This week</a>.{% endif %}</p>
+<p class="meta">{% if d.state.watching %}You are tracking this company. It is listed on <a href="/opportunities">Analysis</a> with anything new found about it.{% else %}Track a company to see what is new about it on <a href="/week">This week</a>.{% endif %}</p>
 <div class="filters">
 <form method="post" action="/accounts/{{ d.a.id }}/watch"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
 <input type="hidden" name="on" value="{{ '0' if d.state.watching else '1' }}"><button type="submit" class="{{ 'ghost' if d.state.watching else '' }}">{{ 'Stop tracking' if d.state.watching else 'Track this company' }}</button></form>

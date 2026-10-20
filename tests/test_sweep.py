@@ -121,3 +121,17 @@ def test_a_company_whose_search_failed_is_not_marked_scanned_so_it_is_not_taken_
     assert s.errors == 1 and "search tool errors" in s.accounts[1].errors[0]
     assert conn.execute("SELECT last_scanned FROM accounts").fetchone()[0] is None                  # it is tried again next run
     assert "search tool errors" in conn.execute("SELECT errors FROM runs WHERE step = 'scan:sweep'").fetchone()[0]
+
+
+def test_the_technology_scanner_runs_on_the_scan_model_too_and_hiring_and_the_older_scanners_do_not(cfg):
+    from bd.scanners import SCAN_MODEL_SCANNERS
+    assert SCAN_MODEL_SCANNERS == {"sweep", "tech_procurement"}
+    settings = Settings(anthropic_api_key="sk-test-123456", anthropic_model="claude-sonnet-5-5", teams_webhook_url=None, db_path="x.sqlite",
+                        user_agent="u", anthropic_scan_model="claude-haiku-5-5")
+    built = {s.name: s for s in cli._build_scanners(["sweep", "tech_procurement", "hiring", "leadership"], cfg, settings)}
+    for name in ("sweep", "tech_procurement"):
+        assert built[name].model_name == "claude-haiku-5-5" and built[name].llm._model == "claude-haiku-5-5"
+    for name in ("hiring", "leadership"):
+        assert built[name].model_name is None and built[name].llm._model == "claude-sonnet-5-5"
+    same = Settings(anthropic_api_key="sk-test-123456", anthropic_model="claude-sonnet-5-5", teams_webhook_url=None, db_path="x.sqlite", user_agent="u")
+    assert {s.name: s.model_name for s in cli._build_scanners(["sweep", "tech_procurement"], cfg, same)} == {"sweep": None, "tech_procurement": None}

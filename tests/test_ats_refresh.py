@@ -290,7 +290,7 @@ def test_refresh_jobs(runner, monkeypatch):
         runner.submit("refresh_now", {})
 
 
-def test_hiring_page_account_postings_and_settings_toggle(cfg, tmp_path):
+def test_hiring_section_account_postings_and_settings_toggle(cfg, tmp_path):
     from tests.test_hosted import PW, call
     from bd.ui.app import App
     from bd.ui.auth import Hosted
@@ -307,10 +307,10 @@ def test_hiring_page_account_postings_and_settings_toggle(cfg, tmp_path):
     app = App(cfg, db, root=tmp_path, hosted=Hosted(PW), jobs=JobRunner(db, tmp_path, ["true"]))
     app.fail_delay = 0
     ck = call(app, "POST", "/login", {"password": PW}).h["Set-Cookie"].split(";")[0].split("=", 1)[1]
-    page = call(app, "GET", "/hiring", cookie=ck).body
+    page = call(app, "GET", "/opportunities", cookie=ck).body
     assert "Acme" in page and "VP, Data" in page and "greenhouse board, daily" in page
-    assert "Acme" in call(app, "GET", "/hiring?theme=data_analytics", cookie=ck).body
-    assert "No postings recorded yet" in call(app, "GET", "/hiring?theme=ai_technology", cookie=ck).body
+    assert "Acme" in call(app, "GET", "/opportunities?theme=data_analytics", cookie=ck).body
+    assert "No postings recorded yet" in call(app, "GET", "/opportunities?theme=ai_technology", cookie=ck).body
     acc = call(app, "GET", f"/accounts/{a}", cookie=ck).body
     assert "Open job postings (2)" in acc and "leadership" in acc and "own greenhouse job board" in acc
     assert "Run the light refresh daily" in call(app, "GET", "/settings", cookie=ck).body
