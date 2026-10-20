@@ -78,6 +78,55 @@ def add_firm(conn: sqlite3.Connection, name: str, domain: str = "", hq_city: str
     return []
 
 
+def update_firm(conn: sqlite3.Connection, firm_id: int, domain: str = "", hq_city: str = "", hq_state: str = "", portfolio_url: str = "",
+                actor: str = "ui") -> tuple[list[str], list[str]]:
+    """Set the details of a firm that already exists (one derived from an account's sponsor has no domain or portfolio page). A blank value means
+    "not known": it clears the field, it is never guessed. Returns (errors, notes). The firm's name is not editable here: a name is what the
+    relationships and their evidence were recorded under.
+
+    Changing the portfolio page registers the new page; the old one is dropped only when it was never read, because a page that has been read has
+    evidence and history behind it, so it stays registered and the notes say so."""
+    row = conn.execute("SELECT * FROM pe_firms WHERE id = ?", (firm_id,)).fetchone()
+    if row is None:
+        return ["no such firm"], []
+    errs: list[str] = []
+    dom = normalize_domain(domain) if (domain or "").strip() else None
+    if dom is not None and not is_valid_domain(dom):
+        errs.append("domain is not a valid host name")
+    url = (portfolio_url or "").strip()
+    if url and not re.match(r"^https?://[^\s]+$", url):
+        errs.append("portfolio URL must start with http:// or https://")
+    city, state = " ".join((hq_city or "").split()), " ".join((hq_state or "").split())
+    if len(city) > 80 or len(state) > 40:
+        errs.append("city or state is too long")
+    if errs:
+        return errs, []
+    notes: list[str] = []
+    old_url = (row["portfolio_url"] or "").strip()
+    changed = [f"{k}: {a or 'none'} -> {b or 'none'}" for k, a, b in
+               (("domain", row["domain"], dom), ("hq_city", row["hq_city"], city or None), ("hq_state", row["hq_state"], state or None),
+                ("portfolio_url", old_url or None, url or None)) if (a or None) != (b or None)]
+    if not changed:
+        return [], ["Nothing changed."]
+    with conn:
+        conn.execute("UPDATE pe_firms SET domain = ?, hq_city = ?, hq_state = ?, portfolio_url = ? WHERE id = ?", (dom, city or None, state or None, url or None, firm_id))
+        if url != old_url:
+            if url:
+                conn.execute("INSERT OR IGNORE INTO pe_sources(firm_id, kind, url, origin) VALUES (?,?,?, 'firm_config')", (firm_id, "portfolio_page", url))
+            if old_url:
+                src = conn.execute("SELECT id, status FROM pe_sources WHERE firm_id = ? AND kind = 'portfolio_page' AND url = ?", (firm_id, old_url)).fetchone()
+                if src is not None:
+                    read = conn.execute("SELECT (SELECT COUNT(*) FROM pe_snapshots WHERE source_id = ?) + (SELECT COUNT(*) FROM pe_listing_entries WHERE source_id = ?)",
+                                        (src["id"], src["id"])).fetchone()[0]
+                    if src["status"] == "never" and not read:
+                        conn.execute("DELETE FROM pe_sources WHERE id = ?", (src["id"],))
+                    else:
+                        notes.append(f"The earlier page {old_url} was read before, so it stays registered with its history and will still be read.")
+        log_audit(conn, actor, "update", None, "pe_firm", f"#{firm_id} {row['name']}", "; ".join(changed))
+    notes.insert(0, "Saved." + (" Run \"Read PE portfolio pages\" from Operate to read it." if url or dom else ""))
+    return [], notes
+
+
 def set_firm_status(conn: sqlite3.Connection, firm_id: int, status: str, actor: str = "ui") -> bool:
     if status not in ("active", "excluded"):
         return False

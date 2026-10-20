@@ -51,7 +51,7 @@ from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.lookup import find as find_company
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date, money
-from bd.pe_store import add_firm, set_firm_status
+from bd.pe_store import add_firm, set_firm_status, update_firm
 from bd.ask_store import add_question, clean_question, recent as recent_questions
 from bd.rfp_store import list_open as list_open_rfps
 from bd.pipeline import (MAX_CLIENT_NAMES, STAGE_LABELS, STAGES, add_note, client_rows, default_since, get_state, mark_clients, notes_for, set_client,
@@ -448,6 +448,10 @@ class App:
         if m == "POST" and len(parts) == 3 and parts[0] == "firms" and parts[1].isdigit() and parts[2] == "status":
             ok = set_firm_status(conn, int(parts[1]), req.f("status"))
             self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
+            return self.redirect(f"/firms/{int(parts[1])}")
+        if m == "POST" and len(parts) == 3 and parts[0] == "firms" and parts[1].isdigit() and parts[2] == "edit":
+            errs, notes = update_firm(conn, int(parts[1]), req.f("domain"), req.f("hq_city"), req.f("hq_state"), req.f("portfolio_url"))
+            self.say("err" if errs else "ok", "Not saved: " + "; ".join(errs) if errs else " ".join(notes))
             return self.redirect(f"/firms/{int(parts[1])}")
         if m == "GET" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "onepager":
             return self.redirect(f"/companies/{int(parts[1])}")                                        # the profile is the printable summary now

@@ -589,7 +589,10 @@ def firm_summary(conn: sqlite3.Connection, cfg: Config, firm_id: int, today: dat
         by_cat[h.assessment.category] = by_cat.get(h.assessment.category, 0) + 1
     sources = conn.execute("SELECT * FROM pe_sources WHERE firm_id = ? ORDER BY id", (firm_id,)).fetchall()
     if not sources:
-        note = "No portfolio page is registered for this firm, so nothing has been collected."
+        dom = conn.execute("SELECT domain FROM pe_firms WHERE id = ?", (firm_id,)).fetchone()["domain"]
+        note = ("No portfolio page is registered for this firm, so nothing has been collected. " + (
+            f"Reading the PE portfolio pages will look for a Portfolio link on {dom}." if dom else
+            "Add the firm's website domain or its portfolio page URL under Firm details."))
     elif all(s["coverage"] == "complete" and s["status"] == "ok" for s in sources):
         note = "The portfolio page was read to its end on its last reading. That is the firm's page as of that day, not independent proof of every holding."
     else:
