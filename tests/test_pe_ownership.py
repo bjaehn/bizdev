@@ -193,6 +193,28 @@ def test_a_newer_reading_of_the_same_page_replaces_an_older_one(conn, cfg):
     assert status(conn, cfg, oid)["status"] == "current"
 
 
+def test_a_listing_without_a_status_label_is_unclear_not_current(conn, cfg):
+    oid = rel(conn)
+    ev(conn, oid, "listed")
+    o = status(conn, cfg, oid)
+    assert (o["status"], o["basis"], o["confidence"]) == ("unclear", "listed_unlabeled", "Low") and "does not say whether" in o["conflict_note"]
+
+
+def test_current_by_contrast_is_flagged_as_inferred_and_low_confidence(conn, cfg):
+    oid = rel(conn)
+    ev(conn, oid, "listed_current", value="by_contrast")
+    o = status(conn, cfg, oid)
+    assert (o["status"], o["basis"], o["confidence"]) == ("current", "firm_listing_by_contrast", "Low") and "outside the page's separate exited section" in o["conflict_note"]
+
+
+def test_one_reading_that_shows_it_in_two_sections_is_a_conflict(conn, cfg):
+    oid = rel(conn)
+    ev(conn, oid, "listed_current", h="same")
+    ev(conn, oid, "listed_historical", h="same2")
+    o = status(conn, cfg, oid)
+    assert o["status"] == "unclear" and o["basis"] == "conflict"
+
+
 def test_unchecked_snippets_never_support_a_status(conn, cfg):
     oid = rel(conn)
     ev(conn, oid, "completed", "https://news.example/x", st="search_snippet", ver="snippet_only", event="2025-01-01")

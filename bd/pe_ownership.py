@@ -300,6 +300,7 @@ class Facts:
     exited_authoritative: bool = False
     announced_authoritative: bool = False
     listing_absent_since: str | None = None
+    listing_by_contrast: bool = False             # current only because the page has a separate exited section it is not in
 
 
 @dataclass
@@ -315,17 +316,22 @@ class StatusResult:
 
 def facts_from_evidence(rows: list[sqlite3.Row], listing_absent_since: str | None = None) -> Facts:
     f = Facts(listing_absent_since=listing_absent_since)
-    latest: dict[str, tuple[str, int, str]] = {}          # url -> (retrieved_at, id, state)
+    latest: dict[str, tuple[str, set[str]]] = {}          # url -> (the latest reading's time, the states it shows)
+    by_contrast = False
     for r in rows:
         if r["verification"] != "page_verified":
             continue                                         # a snippet never supports a status
         auth = r["source_type"] in AUTHORITATIVE
         c = r["claim"]
-        if c in ("listed_current", "listed_historical"):
-            state = "current" if c == "listed_current" else "historical"
+        if c in ("listed", "listed_current", "listed_historical"):
+            state = {"listed": "unlabeled", "listed_current": "current", "listed_historical": "historical"}[c]
             cur = latest.get(r["url"])
-            if cur is None or (r["retrieved_at"], r["id"]) > (cur[0], cur[1]):
-                latest[r["url"]] = (r["retrieved_at"], r["id"], state)
+            if cur is None or r["retrieved_at"] > cur[0]:
+                latest[r["url"]] = (r["retrieved_at"], {state})
+            elif r["retrieved_at"] == cur[0]:
+                cur[1].add(state)                            # one reading showing it in two sections is a conflict, not a choice
+            if state == "current" and r["value"] == "by_contrast":
+                by_contrast = True
         elif c == "announced":
             f.announced.append(r["event_date"])
             f.announced_authoritative |= auth
@@ -337,9 +343,10 @@ def facts_from_evidence(rows: list[sqlite3.Row], listing_absent_since: str | Non
             f.exited_authoritative |= auth
         elif c == "expected_close" and r["event_date"]:
             f.expected_close = max(filter(None, [f.expected_close, r["event_date"]]))
-    states = {v[2] for v in latest.values()}
+    states = set().union(*(v[1] for v in latest.values())) if latest else set()
     if len(states) == 1:
         f.listing_state = next(iter(states))
+        f.listing_by_contrast = by_contrast and f.listing_state == "current"
     elif len(states) > 1:
         f.listing_conflict = True
     return f
@@ -371,12 +378,18 @@ def derive_status(f: Facts, today: date, cfg: Config) -> StatusResult:
     if f.completed:
         note = f"not listed on the firm's page since {f.listing_absent_since}; the completion still stands" if f.listing_absent_since else None
         return StatusResult("current", "completion_notice", "High" if f.completed_authoritative else "Medium", **base, conflict=note)
-    # 5. the firm's page lists it as a current investment
+    # 5. the firm's page lists it, as current or without saying
+    if f.listing_state in ("current", "unlabeled") and f.listing_absent_since:
+        return StatusResult("unclear", "listing_absent", "Low", **base,
+                            conflict=f"no longer listed on the firm's page since {f.listing_absent_since}; no source states an exit")
     if f.listing_state == "current":
-        if f.listing_absent_since:
-            return StatusResult("unclear", "listing_absent", "Low", **base,
-                                conflict=f"no longer listed on the firm's page since {f.listing_absent_since}; no source states an exit")
+        if f.listing_by_contrast:
+            return StatusResult("current", "firm_listing_by_contrast", "Low", **base,
+                                conflict="the page does not label it current; it is outside the page's separate exited section")
         return StatusResult("current", "firm_listing", "Medium", **base)
+    if f.listing_state == "unlabeled":
+        return StatusResult("unclear", "listed_unlabeled", "Low", **base,
+                            conflict="listed on the firm's page, which does not say whether the investment is current or exited")
     # 6. an announcement with no completion
     if f.announced:
         ref = ann_day
