@@ -55,7 +55,7 @@ def test_a_dimension_nothing_speaks_to_is_unknown_not_zero_and_never_rescaled(cf
     assert a.by_key("investment").points is None and a.by_key("external_help").points is None
     assert a.by_key("investment").contribution == 0 and a.known_dimensions == 3 and a.known_weight == 65
     assert a.score == round(30 * 10 / 100 + 25 * 85 / 100 + 10 * 90 / 100) == 33               # not rescaled to 100 over the known weight (which would give 51)
-    assert "Funding or procurement evidence: unknown" in a.unknowns and any("Potential for external help: unknown" in u for u in a.unknowns)
+    assert "Funding or procurement evidence: unknown" in a.unknowns and any(u.startswith("No evidence speaks to:") and "potential for external help" in u for u in a.unknowns)
 
 
 def test_missing_evidence_can_only_lower_never_raise_a_score(cfg):
@@ -98,6 +98,16 @@ def test_distinct_events_count_separately_with_a_credit_for_the_second(cfg):
     assert two.events == 2 and two.by_key("need").points == round(75 + 0.2 * 75)
     near = run(cfg, items(("platform_migration", 20), ("platform_migration", 24)))
     assert near.events == 1
+
+
+def test_an_unrelated_second_event_adds_nothing_to_a_dimension_but_a_corroborating_one_does(cfg):
+    trigger = [it("add_on_completed", 9, cats=("Acquisition integration and separation",))]
+    unrelated = trigger + [it("hiring_cluster", 12, cats=("Data and analytics",))]
+    assert run(cfg, unrelated).by_key("need").points == run(cfg, trigger).by_key("need").points == 45
+    same = trigger + [it("pe_addon", 40, cats=("Acquisition integration and separation",))]
+    assert run(cfg, same).by_key("need").points == round(45 + 0.2 * 40)
+    a = run(cfg, unrelated)
+    assert a.category == "Validate first"                                                         # an acquisition plus unrelated hiring is not a specific hypothesis by itself
 
 
 def test_the_same_transaction_as_a_signal_and_as_a_ledger_deal_is_one_event(cfg):
@@ -351,3 +361,21 @@ def test_the_sponsor_summary_discloses_partial_coverage(cfg, tmp_path):
     assert note.startswith("Partial coverage") and "stopped after 12 pages" in note
     conn.execute("UPDATE pe_sources SET coverage = 'complete'")
     assert "read to its end" in firm_summary(conn, cfg, fid, TODAY).coverage_note
+
+
+def test_an_authoritative_announcement_establishes_the_facts_not_the_need(cfg):
+    deal = run(cfg, [it("deal_completed", 10, st="sec_filing", cats=CATS["deal_completed"])])
+    assert deal.fact_confidence == "High" and deal.confidence == "Low"                                    # a filing proves the transaction, not a consulting need
+    assert any("supports only low confidence in a consulting need" in r for r in deal.confidence_reasons)
+    mid = run(cfg, [it("ai_commitment", 10, cats=("AI implementation and adoption",))])                     # need anchor 60
+    assert mid.fact_confidence == "High" and mid.confidence == "Medium"
+    top = run(cfg, items(("platform_migration", 10)))                                                      # need anchor 75
+    assert top.fact_confidence == "High" and top.confidence == "High"
+    weak = run(cfg, [it("platform_migration", 10, st="secondary_report", cats=CATS["platform_migration"])])
+    assert weak.fact_confidence == "Medium" and weak.confidence == "Medium"                                # a thin source limits both
+
+
+def test_next_steps_read_as_sentences(cfg):
+    a = run(cfg, items(("platform_migration", 20)))
+    assert "Identify who is responsible for this work (technology or IT leadership) from the company's own leadership page" in a.next_step
+    assert a.next_step.endswith(".") and "; Identify" not in a.next_step

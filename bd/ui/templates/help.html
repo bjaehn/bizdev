@@ -25,6 +25,13 @@
 <dt>Unverified</dt><dd>A company is scanned for signals unless it is known to be out of scope (excluded, outside Chicagoland, or below the size floor). If its location or size is not confirmed it is scanned anyway and tagged <i>unverified</i>.</dd>
 </dl>
 
+<h2 id="priority">How the evidence-based priority works</h2>
+<p>Besides the Hot, Warm and Watch score, each company has an <b>evidence-based priority</b> and one of five action categories. It answers where business-development attention is best spent <i>now</i>. It is not a probability of purchase or win, and it never rests on company size, news volume, job count, portfolio size or PE ownership. It is computed by code from the stored, sourced evidence, so the same evidence always gives the same result.</p>
+<p>Five dimensions, with their weights: <b>specific business need</b> {{ opp.weights.need }}, <b>timing and urgency</b> {{ opp.weights.timing }}, <b>investment evidence</b> {{ opp.weights.investment }}, <b>potential for external help</b> {{ opp.weights.external_help }}, <b>evidence quality</b> {{ opp.weights.evidence_quality }}. Each is 0 to 100 from anchor tables (in <code>config.yaml</code> under <code>opportunity_model</code>): for example a need anchored at 90 is an explicit solicitation, 75 a named platform migration, 25 a hiring cluster, and 30 a completed acquisition (a research trigger, not proof of a need). A dimension that no evidence speaks to is <b>unknown</b>: it adds nothing, it is not treated as negative, and the others are not scaled up to cover it. The page shows how many dimensions have evidence. One event is counted once however many outlets repeat it.</p>
+<p><b>Confidence</b> is separate: how well supported the hypothesis is (the source, corroboration by distinct events, a stated date, verified ownership). A company can have a high priority and low confidence.</p>
+<ul class="plain">{% for r in priority_rules %}<li>{{ r }}</li>{% endfor %}</ul>
+<p>Hiring alone does not establish demand for outside help, a technology named in a job posting does not prove a migration, and an acquisition is a research trigger. Evidence that is Low confidence, unchecked, or only a holding period is listed as not used.</p>
+
 <h2>How fresh is it</h2>
 <p>The list is refreshed by a scheduled run ({{ schedule_note }}) or when an admin presses Update my list. Every page says the date it was scored. If the scores are more than a week old, Analysis says so.</p>
 

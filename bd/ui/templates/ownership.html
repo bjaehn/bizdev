@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_ui.html" import status_badge, src_link %}
+{% block title %}{{ d.company['name'] }} and {{ d.firm['name'] }}{% endblock %}
+{% block hero %}<p class="meta"><a href="/firms/{{ d.firm['id'] }}">← {{ d.firm['name'] }}</a></p>
+<h1>{{ d.company['name'] }}</h1>
+<p class="sub">Relationship with <b>{{ d.firm['name'] }}</b>: {{ status_badge(d.o['status']) }} {% if d.stale %}<span class="badge warm">stale</span>{% endif %} · {{ d.o['basis']|replace('_', ' ') }} · confidence {{ d.o['confidence'] }}</p>{% endblock %}
+{% block body %}
+<h2>What is established</h2>
+<div class="card"><dl class="kv">
+<dt>Status</dt><dd>{{ d.o['status'] }} <span class="meta">(derived by rule from the evidence below, as of {{ d.o['as_of_date']|fdate if d.o['as_of_date'] else 'no stated date' }})</span></dd>
+<dt>Role</dt><dd>{{ d.o['relationship']|replace('unspecified', 'not stated') }}{% if d.fund %} · fund {{ d.fund['name'] }}{% endif %}</dd>
+<dt>Stake</dt><dd>{{ d.o['stake']|replace('unspecified', 'not stated by a source') }}</dd>
+<dt>Announced</dt><dd>{{ d.o['announced_date']|fdate if d.o['announced_date'] else 'not stated' }}</dd>
+<dt>Closed</dt><dd>{{ d.o['closed_date']|fdate if d.o['closed_date'] else 'not stated (a closing is never assumed from an announcement)' }}</dd>
+<dt>Exit</dt><dd>{{ d.o['exit_date']|fdate if d.o['exit_date'] else 'none stated' }}</dd>
+{% if d.o['expected_close'] %}<dt>Expected close</dt><dd>{{ d.o['expected_close']|fdate }} <span class="meta">(an expectation, not a closing)</span></dd>{% endif %}
+<dt>First seen / last checked / last verified</dt><dd>{{ d.o['first_seen']|fdate }} / {{ d.o['last_checked']|fdate }} / {{ d.o['last_verified']|fdate if d.o['last_verified'] else 'never' }}</dd>
+{% if d.o['listing_absent_since'] %}<dt>Not listed since</dt><dd>{{ d.o['listing_absent_since']|fdate }} <span class="meta">(an exit is not inferred from this)</span></dd>{% endif %}
+{% if d.o['conflict_note'] %}<dt>Unresolved</dt><dd>{{ d.o['conflict_note'] }}</dd>{% endif %}
+{% if d.others %}<dt>Other sponsors</dt><dd>{% for x in d.others %}<a href="/ownership/{{ x['id'] }}">{{ x['firm_name'] }}</a> ({{ x['status'] }}){{ ', ' if not loop.last }}{% endfor %}</dd>{% endif %}
+<dt>Against the configured geography</dt><dd>{{ {'in_scope': 'inside', 'out_of_scope': 'outside', 'unknown': 'not verified'}[d.geography] }} <span class="meta">· {{ d.geography_reason }}</span></dd>
+{% if d.aliases %}<dt>Also known as</dt><dd>{{ d.aliases|join(', ') }}</dd>{% endif %}
+{% if d.company['account_id'] %}<dt>On the target list</dt><dd><a href="/companies/{{ d.company['account_id'] }}">open the company brief</a></dd>{% else %}<dt>On the target list</dt><dd>no <span class="meta">(collected from the firm's page; not scanned for signals)</span></dd>{% endif %}
+</dl></div>
+
+<h2>Sources ({{ d.evidence|length }})</h2>
+<div class="wrap wide"><table><tr><th>What it supports</th><th>Source</th><th>Dates</th><th>Excerpt</th><th>Check</th></tr>
+{% for e in d.evidence %}<tr><td><b>{{ e['claim']|replace('_', ' ') }}</b>{% if e['value'] %}<br><span class="meta">{{ e['value']|replace('_', ' ') }}</span>{% endif %}</td>
+<td>{{ src_link(e['url']) }}<br><span class="meta">{{ e['source_type']|replace('_', ' ') }}{% if e['publisher'] %} · {{ e['publisher'] }}{% endif %}</span>{% if e['title'] %}<br><span class="meta">{{ e['title'] }}</span>{% endif %}</td>
+<td><span class="meta">event</span> {{ e['event_date']|fdate if e['event_date'] else 'not stated' }}<br><span class="meta">published</span> {{ e['published_date']|fdate if e['published_date'] else 'not stated' }}<br><span class="meta">read</span> {{ fmt_ts(e['retrieved_at']) }}</td>
+<td>{% if e['excerpt'] %}&ldquo;{{ e['excerpt'] }}&rdquo;{% else %}<span class="meta">none</span>{% endif %}</td>
+<td>{% if e['verification'] == 'page_verified' %}<span class="badge good">page read by code</span><br><span class="meta">hash {{ e['content_hash'][:10] }}</span>{% else %}<span class="badge">unchecked</span><br><span class="meta">not used for status</span>{% endif %}</td></tr>
+{% else %}<tr><td colspan="5" class="empty">No source is recorded.</td></tr>{% endfor %}</table></div>
+<p class="meta">Retrieval time is not a publication date; dates are shown only when a source states them. "Page read by code" means the page was retrieved and the excerpt was found in it. Anything else is kept but never decides a status.</p>
+
+<h2>Status history</h2>
+{% if d.log %}<div class="card"><ul class="plain">{% for l in d.log %}<li><span class="meta">{{ l['at']|fdate }}</span> · {{ l['from_status'] or 'new' }} &rarr; <b>{{ l['to_status'] }}</b> <span class="meta">({{ l['reason']|replace('_', ' ') }})</span></li>{% endfor %}</ul></div>
+{% else %}<div class="card empty">No status change has been recorded since this relationship was first stored.</div>{% endif %}
+
+<h2>Ranking logic for {{ d.company['name'] }}</h2>
+{% with a = d.assessment %}{% include "_assessment.html" %}{% endwith %}
+{% endblock %}

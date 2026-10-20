@@ -38,3 +38,13 @@
 
 {# The four-step shade ramp used to explain heat/matrix cells. #}
 {% macro shade_legend() %}{% for v in (0.12, 0.35, 0.6, 0.9) %}<span class="swatch shade" style="--v:{{ v }}"></span>{% endfor %}{% endmacro %}
+
+
+{# A relationship's status as a chip: current = good, pending = warm, unclear and historical = plain. #}
+{% macro status_badge(status) %}<span class="badge {{ 'good' if status == 'current' else ('warm' if status == 'pending' else '') }}">{{ status }}</span>{% endmacro %}
+
+{# An action category as a chip. #}
+{% macro cat_badge(category) %}<span class="badge {{ 'accent' if category == 'Prospect now' else ('warm' if category == 'Validate first' else ('good' if category == 'Nurture' else '')) }}">{{ category }}</span>{% endmacro %}
+
+{# A source link with its host; nothing when the URL is not a safe http(s) one. #}
+{% macro src_link(url) %}{% if url|safe_url %}<a href="{{ url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ url|host }}</a>{% endif %}{% endmacro %}

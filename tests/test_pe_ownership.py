@@ -327,19 +327,19 @@ def test_a_holding_that_is_already_an_account_is_one_record(conn):
 
 
 def test_merging_duplicates_keeps_every_relationship_and_its_evidence(conn, cfg):
-    f = firm(conn)
+    f, g = firm(conn), firm(conn, "Gamma Partners")
     with conn:
         a = resolve_company(conn, "Beta One", None, today=TODAY).id
         b = resolve_company(conn, "Beta Uno", "betauno.com", today=TODAY).id
         oa, _ = ensure_ownership(conn, f, a, TODAY)
-        ob, _ = ensure_ownership(conn, f, b, TODAY, "platform")
+        ob, _ = ensure_ownership(conn, g, b, TODAY, "platform")
     ev(conn, oa, "listed_current", h="x1")
     ev(conn, ob, "completed", PR, st="company_release", event="2025-01-01", h="x2")
     with conn:
         merge_companies(conn, a, b)
     assert conn.execute("SELECT COUNT(*) FROM pe_companies").fetchone()[0] == 1
     assert conn.execute("SELECT domain FROM pe_companies WHERE id=?", (a,)).fetchone()[0] == "betauno.com"
-    assert conn.execute("SELECT COUNT(*) FROM pe_ownership WHERE company_id=?", (a,)).fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM pe_ownership WHERE company_id=?", (a,)).fetchone()[0] == 2           # two different sponsors: two relationships
     assert conn.execute("SELECT COUNT(*) FROM pe_evidence").fetchone()[0] == 2
     assert "Beta Uno" in [r["alias"] for r in conn.execute("SELECT alias FROM pe_aliases WHERE entity_type='company' AND entity_id=?", (a,))]
 
@@ -411,6 +411,36 @@ def test_an_add_on_is_a_link_between_companies_and_a_completion_is_not_walked_ba
     assert (row["status"], row["closed_date"]) == ("completed", "2026-09-15")
     with pytest.raises(ValueError):
         record_add_on(conn, platform, platform, TODAY)
+
+
+def test_one_sponsor_and_one_company_is_one_relationship_whose_role_is_refined_not_duplicated(conn, cfg):
+    f = firm(conn)
+    with conn:
+        c = resolve_company(conn, "Acme Corp", None, today=TODAY).id
+        a, made = ensure_ownership(conn, f, c, TODAY)                                       # found on the firm's page: role not stated
+        b, again = ensure_ownership(conn, f, c, TODAY, "platform", "announcement")          # a press release says it is a platform investment
+        z, _ = ensure_ownership(conn, f, c, TODAY, "co_invest")                              # a refinement never overrides a stated role
+    assert a == b == z and made and not again
+    assert conn.execute("SELECT relationship FROM pe_ownership WHERE id = ?", (a,)).fetchone()[0] == "platform"
+    assert conn.execute("SELECT COUNT(*) FROM pe_ownership").fetchone()[0] == 1
+
+
+def test_the_firms_page_listing_a_company_while_an_announcement_has_no_completion_is_current_with_the_conflict_stated(conn, cfg):
+    oid = rel(conn)
+    ev(conn, oid, "listed_current")
+    ev(conn, oid, "announced", PR, st="company_release", event="2026-09-20", h="h2")
+    ev(conn, oid, "expected_close", PR, st="company_release", event="2026-12-31", h="h3")
+    o = status(conn, cfg, oid)
+    assert (o["status"], o["basis"], o["closed_date"]) == ("current", "firm_listing", None)
+    assert "announcement on 2026-09-20 expected the deal to close 2026-12-31" in o["conflict_note"] and "no source states the closing date" in o["conflict_note"]
+
+
+def test_a_place_shown_on_a_listing_is_named_in_the_geography_reason_but_is_not_a_headquarters(conn, cfg):
+    with conn:
+        cid = resolve_company(conn, "Office Co", None, today=TODAY).id
+        record_location(conn, "company", cid, "office", "Evanston", "IL", None, TODAY)
+    g = company_geography(conn, cid, cfg)
+    assert g.status == "unknown" and "Evanston, IL is shown by a retrieved page, but no page says it is the headquarters" in g.reason
 
 
 def test_funds_are_per_firm_and_idempotent(conn):

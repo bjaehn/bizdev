@@ -20,7 +20,8 @@ from datetime import date, datetime, timezone
 from bd.config import Config
 from bd.htmltext import links, ld_objects, node_text, parse_html
 from bd.pe_listing import HQ_WORDS, PLACE, Collected, Entry, collect_listing
-from bd.pe_ownership import (AmbiguousCompany, add_evidence, company_geography, ensure_ownership, recompute, record_location, resolve_company)
+from bd.pe_ownership import (AmbiguousCompany, add_evidence, company_geography, ensure_ownership, recompute, record_location, resolve_company,
+                             source_is_stale)  # noqa: F401  (re-exported: the stale check lives where the UI can import it without the page reader)
 from bd.pe_store import norm_name
 from bd.sources import FetchError, Fetcher, now_iso, recently_read, store_snapshot
 from bd.urls import host_in, hostname
@@ -179,7 +180,9 @@ def collect_source(conn: sqlite3.Connection, cfg: Config, fetcher: Fetcher, firm
     out.via, out.pages = res.via, len(res.pages)
     if res.error:
         out.status = "blocked" if res.error in BLOCKED else "failed"
-        out.error, out.coverage, out.coverage_note = res.error, src["coverage"], src["coverage_note"] or ""      # the last good reading stands
+        out.error = res.error                                                    # this attempt read nothing; the last good reading stands, and is described as such
+        if src["last_success"]:
+            out.coverage_note = f"this attempt read nothing; the last good reading ({src['last_success'][:10]}) had coverage {src['coverage']}"
         with conn:
             conn.execute("UPDATE pe_sources SET status=?, last_attempt=?, last_error=?, consecutive_failures=consecutive_failures+1 WHERE id=?",
                          (out.status, now, res.error, src["id"]))
@@ -238,13 +241,6 @@ def run_collect(conn: sqlite3.Connection, cfg: Config, fetcher: Fetcher, today: 
 
 def run_history(conn: sqlite3.Connection, limit: int = 10) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM pe_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
-
-
-def source_is_stale(src: sqlite3.Row, today: date, cfg: Config) -> bool:
-    """Never read, or last read successfully longer ago than listing_fresh_days. Shown, never acted on."""
-    if not src["last_success"]:
-        return True
-    return (today - datetime.fromisoformat(src["last_success"]).date()).days > cfg.pe_portfolio.listing_fresh_days
 
 
 # ---- where a company is, from its own site (free) -------------------------------------------------------------------------------------------------

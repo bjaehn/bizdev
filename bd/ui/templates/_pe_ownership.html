@@ -1,0 +1,19 @@
+{# A company's sponsor relationships, each with its evidence. `pe` is a bd.pe_view.CompanyPe. #}
+{% from "_ui.html" import status_badge, src_link %}
+<div class="card">
+{% if pe.relationships %}
+<table><tr><th>Sponsor</th><th>Status</th><th>As of</th><th>Closing</th><th>Evidence</th></tr>
+{% for r in pe.relationships %}{% set o = r.o %}<tr>
+<td><a href="/firms/{{ o['firm_id'] }}">{{ o['firm_name'] }}</a><br><span class="meta">{{ o['relationship']|replace('unspecified', 'role not stated') }}{% if o['stake'] != 'unspecified' %} · {{ o['stake'] }}{% endif %}</span></td>
+<td>{{ status_badge(o['status']) }} {% if r.stale %}<span class="badge warm">stale</span>{% endif %}<br><span class="meta">{{ o['basis']|replace('_', ' ') }} · confidence {{ o['confidence'] }}</span></td>
+<td>{{ o['as_of_date']|fdate if o['as_of_date'] else 'not stated' }}<br><span class="meta">verified {{ o['last_verified'] or 'never' }}</span></td>
+<td>{{ o['closed_date']|fdate if o['closed_date'] else 'not stated' }}{% if o['exit_date'] %}<br><span class="meta">exit {{ o['exit_date']|fdate }}</span>{% endif %}{% if o['expected_close'] %}<br><span class="meta">expected close {{ o['expected_close']|fdate }}</span>{% endif %}</td>
+<td>{{ r.evidence|length }} item{{ '' if r.evidence|length == 1 else 's' }}{% if r.evidence %} · <a href="/ownership/{{ o['id'] }}">sources and status log</a>{% endif %}{% if o['conflict_note'] %}<br><span class="meta">{{ o['conflict_note'] }}</span>{% endif %}</td></tr>{% endfor %}
+</table>
+<p class="meta">A relationship is current, pending, historical or unclear by rule, from its evidence. An announcement never counts as a closing, a company missing from a firm's page is never treated as an exit, and the closing date is shown only when a source states it.</p>
+{% else %}<p class="meta">No sponsor relationship is recorded for this company.</p>{% endif %}
+{% if pe.add_ons %}<h3>Add-on acquisitions</h3><ul class="plain">{% for l in pe.add_ons %}<li>{{ l['parent'] }} &rarr; {{ l['child'] }} · <b>{{ l['status'] }}</b>{% if l['announced_date'] %} · announced {{ l['announced_date']|fdate }}{% endif %}{% if l['closed_date'] %} · closed {{ l['closed_date']|fdate }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+<dl class="kv"><dt>Place</dt><dd>{% if pe.places %}{% for p in pe.places %}{{ p['city'] }}{% if p['state'] %}, {{ p['state'] }}{% endif %} <span class="meta">({{ p['kind'] }} shown by a retrieved page)</span>{{ '; ' if not loop.last }}{% endfor %}{% else %}<span class="meta">none shown by a retrieved page</span>{% endif %}</dd>
+<dt>Against the configured geography</dt><dd>{{ {'in_scope': 'inside', 'out_of_scope': 'outside', 'unknown': 'not verified'}[pe.geography] }} <span class="meta">· {{ pe.geography_reason }}</span></dd>
+{% if pe.aliases %}<dt>Also known as</dt><dd>{{ pe.aliases|join(', ') }}</dd>{% endif %}</dl>
+</div>

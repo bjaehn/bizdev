@@ -57,6 +57,8 @@ from bd.rfp_store import list_open as list_open_rfps
 from bd.pipeline import (MAX_CLIENT_NAMES, STAGE_LABELS, STAGES, add_note, client_rows, default_since, get_state, mark_clients, notes_for, set_client,
                          set_stage, set_watching, stage_counts, watchlist_changes)
 from bd.opportunities import build_opportunities, filter_opportunities, score_dates
+from bd.opportunity_model import assess_account, kind_label, rules_text
+from bd.pe_view import GEO, collection_status, company_pe, firm_detail, firm_directory, fmt_ts, ownership_detail, run_detail, run_history as pe_run_history
 from bd.setup_check import static_problems
 from bd.settings_store import (UPDATE_FIELDS, load_update, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
                                refresh_enabled, reset_discovery, save_discovery, save_refresh)
@@ -165,7 +167,8 @@ class App:
         self.env.filters.update(band_name=lambda b: {'Stored': 'Below Watch'}.get(b, b), status_label=lambda v: {'active': 'Scanned for signals', 'hold_review': 'Unverified', 'unverified': 'Unverified', 'excluded': 'Out of scope'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
                                 hosted=hosted is not None, operate=jobs is not None, signs_line=signs_line, newest_signal=newest_signal, spark=spark_svg, kind_colors=KIND_COLORS, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
-                                report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"}, find_budget=FIND_BUDGET)
+                                report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"}, find_budget=FIND_BUDGET,
+                                fmt_ts=fmt_ts, priority_rules=rules_text(self.cfg), kind_label=kind_label)
         init_conn = connect(db_path)
         init_db(init_conn)
         init_conn.close()
@@ -351,7 +354,7 @@ class App:
     def job_start(self, req: Request) -> Response:
         assert self.jobs is not None
         kind = req.f("kind")
-        form = {k: req.f(k) for k in ("limit", "only", "tier", "no_llm", "scanner")}
+        form = {k: req.f(k) for k in ("limit", "only", "tier", "no_llm", "scanner", "firm", "force")}
         form["scanners"] = ",".join(req.flist("scanners"))
         try:
             job_id = self.jobs.submit(kind, form, confirmed=bool(req.f("confirm")))
@@ -435,7 +438,13 @@ class App:
         if len(parts) == 2 and parts[0] == "accounts" and parts[1].isdigit():
             return self.account_page(req, conn, int(parts[1])) if m == "GET" else self.account_save(req, conn, int(parts[1]))
         if parts[0] == "firms" and len(parts) == 2 and parts[1].isdigit() and m == "GET":
-            return self.firm_page(conn, int(parts[1]))
+            return self.firm_page(req, conn, int(parts[1]))
+        if parts[0] == "firms" and len(parts) == 3 and parts[1] == "runs" and parts[2].isdigit() and m == "GET":
+            return self.pe_run_page(conn, int(parts[2]))
+        if parts[0] == "ownership" and len(parts) == 2 and parts[1].isdigit() and m == "GET":
+            return self.ownership_page(conn, int(parts[1]))
+        if parts[0] == "portfolio" and len(parts) == 2 and parts[1].isdigit() and m == "GET":
+            return self.portfolio_company_page(conn, int(parts[1]))
         if m == "POST" and len(parts) == 3 and parts[0] == "firms" and parts[1].isdigit() and parts[2] == "status":
             ok = set_firm_status(conn, int(parts[1]), req.f("status"))
             self.say("ok" if ok else "err", "Firm updated." if ok else "Could not update that firm.")
@@ -572,7 +581,7 @@ class App:
                            items=mine[:SIGNALS_MAX], shown_total=len(mine))
 
     def help_page(self) -> Response:
-        return self.render("help.html", page="help", sc=self.cfg.scoring, bands=self.cfg.scoring.bands, schedule_note="Mondays 05:00 America/Chicago")
+        return self.render("help.html", page="help", sc=self.cfg.scoring, bands=self.cfg.scoring.bands, opp=self.cfg.opportunity_model, schedule_note="Mondays 05:00 America/Chicago")
 
     def reports_page(self) -> Response:
         return self.render("reports.html", page="reports", items=REPORT_ITEMS)
@@ -672,8 +681,9 @@ class App:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
         if a is None:
             return self.error("404 Not Found", "No such company.")
-        return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, date.today()), stage_labels=STAGE_LABELS, stages=STAGES,
-                           cfg_hiring_days=self.cfg.hiring.window_days)
+        today = date.today()
+        return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, today), stage_labels=STAGE_LABELS, stages=STAGES,
+                           cfg_hiring_days=self.cfg.hiring.window_days, pe=company_pe(conn, self.cfg, today, account_id=account_id), ap=assess_account(conn, self.cfg, account_id, today))
 
     def company_text(self, conn: sqlite3.Connection, account_id: int) -> Response:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
@@ -930,14 +940,10 @@ class App:
         return self.redirect("/settings")
 
     def firms(self, conn: sqlite3.Connection, form: dict[str, str] | None = None, errors: list[str] | None = None) -> Response:
-        rows = conn.execute(
-            "SELECT f.*, "
-            "(SELECT COUNT(*) FROM portfolio_links l WHERE l.firm_id = f.id AND l.status = 'current') AS companies, "
-            "(SELECT COUNT(*) FROM portfolio_links l WHERE l.firm_id = f.id AND l.status = 'current' AND l.account_id IS NOT NULL) AS accounts, "
-            "(SELECT COUNT(*) FROM firm_signals s WHERE s.firm_id = f.id) AS signals, "
-            "(SELECT MAX(event_date) FROM firm_signals s WHERE s.firm_id = f.id) AS last_signal "
-            "FROM pe_firms f ORDER BY f.status, companies DESC, f.name").fetchall()
-        return self.render("firms.html", page="firms", rows=rows, form=form or {}, errors=errors or [])
+        today = date.today()
+        last_job = next((j for j in (self.jobs.recent() if self.jobs else []) if j.kind in ("pe_collect", "pe_deals", "pe_promote")), None)
+        return self.render("firms.html", page="firms", rows=firm_directory(conn, self.cfg, today), st=collection_status(conn, self.cfg, today),
+                           history=pe_run_history(conn, 6), form=form or {}, errors=errors or [], last_job=last_job)
 
     def firm_add(self, req: Request, conn: sqlite3.Connection) -> Response:
         form = {k: req.f(k) for k in ("name", "domain", "hq_city", "portfolio_url")}
@@ -947,15 +953,32 @@ class App:
         self.say("ok", f"Added {form['name'].strip()}. Run PE portfolio research from Operate to find its companies.")
         return self.redirect("/firms")
 
-    def firm_page(self, conn: sqlite3.Connection, firm_id: int) -> Response:
-        firm = conn.execute("SELECT * FROM pe_firms WHERE id = ?", (firm_id,)).fetchone()
-        if firm is None:
+    def firm_page(self, req: Request, conn: sqlite3.Connection, firm_id: int) -> Response:
+        geo = req.q("geo")
+        d = firm_detail(conn, self.cfg, firm_id, date.today(), geo)
+        if d is None:
             return self.error("404 Not Found", "No such firm.")
-        links = conn.execute(
-            "SELECT l.*, a.status AS account_status FROM portfolio_links l LEFT JOIN accounts a ON a.id = l.account_id "
-            "WHERE l.firm_id = ? ORDER BY l.status, l.company_name", (firm_id,)).fetchall()
-        sigs = conn.execute("SELECT * FROM firm_signals WHERE firm_id = ? ORDER BY event_date DESC, id DESC", (firm_id,)).fetchall()
-        return self.render("firm.html", page="firms", firm=firm, links=links, sigs=sigs, conf_scored={"High", "Medium"})
+        return self.render("firm.html", page="firms", d=d, geo=geo if geo in dict(GEO) else "", geo_tabs=GEO, conf_scored={"High", "Medium"})
+
+    def pe_run_page(self, conn: sqlite3.Connection, run_id: int) -> Response:
+        d = run_detail(conn, run_id)
+        if d is None:
+            return self.error("404 Not Found", "No such run.")
+        return self.render("pe_run.html", page="firms", d=d)
+
+    def ownership_page(self, conn: sqlite3.Connection, ownership_id: int) -> Response:
+        d = ownership_detail(conn, self.cfg, ownership_id, date.today())
+        if d is None:
+            return self.error("404 Not Found", "No such relationship.")
+        return self.render("ownership.html", page="firms", d=d)
+
+    def portfolio_company_page(self, conn: sqlite3.Connection, company_id: int) -> Response:
+        pe = company_pe(conn, self.cfg, date.today(), company_id=company_id)
+        if pe is None:
+            return self.error("404 Not Found", "No such portfolio company.")
+        if pe.company["account_id"]:
+            return self.redirect(f"/companies/{pe.company['account_id']}")
+        return self.render("pe_company.html", page="firms", pe=pe)
 
     def candidates(self, conn: sqlite3.Connection) -> Response:
         import json

@@ -1,0 +1,38 @@
+{# The evidence-based priority of one company. `a` is a bd.opportunity_model.Assessment. Facts, hypotheses, unknowns and next steps are kept apart. #}
+{% from "_ui.html" import cat_badge, src_link %}
+<div class="card">
+<div class="score-line"><div><span class="bignum">{{ a.score }}</span> <span class="meta">evidence-based priority, 0 to 100. Not a probability of purchase or win.</span></div>{{ cat_badge(a.category) }}</div>
+<p class="why"><b>{{ a.category }}</b> <span class="meta">· facts established: <b>{{ a.fact_confidence }}</b> confidence · consulting hypothesis: <b>{{ a.confidence }}</b> confidence · evidence in {{ a.known_dimensions }} of 5 dimensions ({{ a.known_weight }}% of the weight)</span></p>
+<p class="meta">{{ a.rule|capitalize }}. {% if a.events %}{{ a.events }} distinct event{{ '' if a.events == 1 else 's' }} counted; repeated coverage of one event counts once.{% endif %}</p>
+{% for d in a.dimensions %}<div class="dim-row {{ 'unknown' if d.points is none else '' }}">
+<div><b>{{ d.label }}</b> <span class="meta">weight {{ d.weight }}</span><br><span class="meta">{{ d.anchor }}</span></div>
+<div class="bar-track"><i style="--w:{{ d.points or 0 }}%"></i></div>
+<div class="num">{% if d.points is none %}<span class="meta">unknown</span>{% else %}{{ d.points }}/100 &rarr; <b>{{ d.contribution }}</b>{% endif %}</div></div>{% endfor %}
+<p class="meta">Score = each dimension's 0 to 100 points times its weight, added up. A dimension no evidence speaks to is unknown: it adds nothing, it is not counted as negative, and the others are not scaled up to cover it.</p>
+<details><summary>Why this category, and the rules for every category</summary>
+<ul class="plain">{% for g in a.gates %}<li><span class="{{ 'good' if g.ok else 'bad' }}">{{ '✓' if g.ok else '✗' }}</span> <b>{{ g.name }}</b> <span class="meta">{{ g.detail }}</span></li>{% endfor %}</ul>
+<ul class="plain">{% for r in priority_rules %}<li>{{ r }}</li>{% endfor %}</ul>
+<p class="meta">Confidence is kept apart from priority, and facts apart from the hypothesis: a source can establish that a transaction happened without establishing that anyone needs outside help. {{ a.confidence_reasons|join('; ') }}.</p></details>
+</div>
+
+<h3>Confirmed facts</h3>
+{% if a.facts %}<div class="card"><ul class="plain">
+{% for f in a.facts %}<li><span class="meta">{{ f.event_date|fdate if f.event_date else 'date not stated' }}</span> · <b>{{ kind_label(f.kind) }}</b>{% if f.confidence != 'High' %} <span class="meta">· {{ f.confidence }} confidence</span>{% endif %}<br>
+{{ f.summary }}{% if f.role_or_person %} <span class="meta">({{ f.role_or_person }})</span>{% endif %} {{ src_link(f.url) }} <span class="meta">{{ f.source_type|replace('_', ' ') }}</span></li>{% endfor %}
+</ul></div>{% else %}<div class="card empty">No scored evidence of a need yet.</div>{% endif %}
+{% if a.counter %}<h3>Counterevidence</h3><div class="card"><ul class="plain">{% for f in a.counter %}<li><span class="meta">{{ f.event_date|fdate if f.event_date else 'date not stated' }}</span> · <b>{{ kind_label(f.kind) }}</b><br>{{ f.summary }} {{ src_link(f.url) }}</li>{% endfor %}</ul></div>{% endif %}
+
+<h3>Potential consulting need <span class="meta">(hypothesis, not a finding)</span></h3>
+{% if a.hypotheses %}<div class="card"><ul class="plain">
+{% for h in a.hypotheses %}<li><b>{{ h.category }}</b><br>{{ h.text }}<br><span class="meta">{{ h.initiative_owner }}.</span></li>{% endfor %}
+</ul>
+{% if a.owner_function %}<p class="meta">Function that would own work in the first category: <b>{{ a.owner_function }}</b>. This is inferred from the category, not a verified buyer.{% if a.named_people %} Named in the evidence: {{ a.named_people|join('; ') }} (their buying authority is not assumed).{% endif %}</p>{% endif %}</div>
+{% else %}<div class="card empty">The evidence suggests no consulting category. Hiring, a transaction or a risk disclosure alone does not establish demand for outside help.</div>{% endif %}
+
+<h3>Unknowns and uncertainty</h3>
+<div class="card">{% if a.unknowns %}<ul class="plain">{% for u in a.unknowns %}<li>{{ u }}</li>{% endfor %}</ul>{% else %}<p class="meta">Nothing unknown was identified.</p>{% endif %}
+{% if a.excluded %}<details><summary>Evidence not used ({{ a.excluded|length }})</summary><ul class="plain">{% for i, why in a.excluded %}<li><b>{{ kind_label(i.kind) }}</b> {{ src_link(i.url) }}<br><span class="meta">{{ why }}</span></li>{% endfor %}</ul></details>{% endif %}</div>
+
+<h3>Next research step</h3>
+<div class="card"><p>{{ a.next_step }}</p>
+{% if a.discussion_question %}<p class="meta"><b>A question to explore</b> (built from the confirmed fact above; it is not outreach copy): {{ a.discussion_question }}</p>{% endif %}</div>

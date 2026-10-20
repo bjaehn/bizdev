@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ pe.company['name'] }}{% endblock %}
+{% block hero %}<p class="meta"><a href="/firms">← PE firms</a></p>
+<h1>{{ pe.company['name'] }}</h1>
+<p class="sub">A portfolio company collected from a firm's own page{% if pe.company['domain'] %} · {{ pe.company['domain'] }}{% endif %}. It is not on the target list, so it has not been scanned for signals.</p>{% endblock %}
+{% block body %}
+<h2>Private equity ownership</h2>
+{% include "_pe_ownership.html" %}
+<h2>Evidence-based priority</h2>
+{% with a = pe.assessment %}{% include "_assessment.html" %}{% endwith %}
+<div class="card"><p class="meta">To research this company's size and location with the existing fit gate and add it to the scan list if it passes, an admin runs "Research portfolio companies for the target list" in Admin, Operate (paid, capped, with confirmation). Nothing is added automatically.</p></div>
+{% endblock %}

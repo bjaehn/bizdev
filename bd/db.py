@@ -305,7 +305,7 @@ CREATE TABLE IF NOT EXISTS pe_funds (
     UNIQUE (firm_id, name_key)
 );
 
--- One row per sponsor, company and kind of relationship. Status is derived by code from the evidence (bd.pe_ownership.derive_status):
+-- One row per sponsor and company (the role is refined as evidence states it, never duplicated). Status is derived by code from the evidence (bd.pe_ownership.derive_status):
 -- current / pending / historical / unclear. Dates are only ever set from evidence that states them.
 CREATE TABLE IF NOT EXISTS pe_ownership (
     id                  INTEGER PRIMARY KEY,
@@ -329,7 +329,7 @@ CREATE TABLE IF NOT EXISTS pe_ownership (
     conflict_note       TEXT,
     listing_absent_since TEXT,       -- the first successful full read of the firm's page that did not list it (an exit is NOT inferred)
     origin              TEXT NOT NULL DEFAULT 'portfolio_page' CHECK (origin IN ('portfolio_page','announcement','legacy','manual')),
-    UNIQUE (firm_id, company_id, relationship)
+    UNIQUE (firm_id, company_id)
 );
 CREATE INDEX IF NOT EXISTS ix_pe_ownership_company ON pe_ownership(company_id);
 

@@ -189,11 +189,12 @@ def merge_companies(conn: sqlite3.Connection, keep_id: int, drop_id: int, actor:
     conn.execute("UPDATE OR IGNORE pe_aliases SET entity_id = ? WHERE entity_type='company' AND entity_id = ?", (keep_id, drop_id))
     conn.execute("DELETE FROM pe_aliases WHERE entity_type='company' AND entity_id = ?", (drop_id,))
     for o in conn.execute("SELECT * FROM pe_ownership WHERE company_id = ?", (drop_id,)).fetchall():
-        same = conn.execute("SELECT id FROM pe_ownership WHERE firm_id=? AND company_id=? AND relationship=?",
-                            (o["firm_id"], keep_id, o["relationship"])).fetchone()
+        same = conn.execute("SELECT id FROM pe_ownership WHERE firm_id=? AND company_id=?", (o["firm_id"], keep_id)).fetchone()
         if same is None:
             conn.execute("UPDATE pe_ownership SET company_id = ? WHERE id = ?", (keep_id, o["id"]))
         else:
+            if o["relationship"] != "unspecified":
+                conn.execute("UPDATE pe_ownership SET relationship = ? WHERE id = ? AND relationship = 'unspecified'", (o["relationship"], same["id"]))
             conn.execute("UPDATE OR IGNORE pe_evidence SET subject_id = ? WHERE subject_type='ownership' AND subject_id = ?", (same["id"], o["id"]))
             conn.execute("DELETE FROM pe_evidence WHERE subject_type='ownership' AND subject_id = ?", (o["id"],))
             conn.execute("UPDATE pe_ownership_log SET ownership_id = ? WHERE ownership_id = ?", (same["id"], o["id"]))
@@ -254,6 +255,10 @@ def company_geography(conn: sqlite3.Connection, company_id: int, cfg: Config) ->
     hq = conn.execute("SELECT city, state FROM pe_locations WHERE entity_type='company' AND entity_id=? AND kind='headquarters' "
                       "ORDER BY id LIMIT 1", (company_id,)).fetchone()
     if hq is None:
+        other = conn.execute("SELECT kind, city, state FROM pe_locations WHERE entity_type='company' AND entity_id=? ORDER BY id LIMIT 1", (company_id,)).fetchone()
+        if other is not None:
+            where = ", ".join(x for x in (other["city"], other["state"]) if x)
+            return Geography("unknown", f"{where} is shown by a retrieved page, but no page says it is the headquarters", other["city"], other["state"])
         return Geography("unknown", "no headquarters shown by a retrieved page")
     city, state = hq["city"], hq["state"]
     if state and state != cfg.fit_gate.state.upper():
@@ -279,8 +284,11 @@ def ensure_fund(conn: sqlite3.Connection, firm_id: int, name: str, vintage: int 
 
 def ensure_ownership(conn: sqlite3.Connection, firm_id: int, company_id: int, today: date, relationship: str = "unspecified",
                      origin: str = "portfolio_page") -> tuple[int, bool]:
-    row = conn.execute("SELECT id FROM pe_ownership WHERE firm_id=? AND company_id=? AND relationship=?", (firm_id, company_id, relationship)).fetchone()
+    """One relationship per sponsor and company. A later source that states the role (platform, co-invest...) refines an unspecified one."""
+    row = conn.execute("SELECT id, relationship FROM pe_ownership WHERE firm_id=? AND company_id=?", (firm_id, company_id)).fetchone()
     if row:
+        if relationship != "unspecified" and row["relationship"] == "unspecified":
+            conn.execute("UPDATE pe_ownership SET relationship = ? WHERE id = ?", (relationship, row["id"]))
         return row["id"], False
     cur = conn.execute("INSERT INTO pe_ownership(firm_id, company_id, relationship, origin, first_seen, last_checked) VALUES (?,?,?,?,?,?)",
                        (firm_id, company_id, relationship, origin, today.isoformat(), today.isoformat()))
@@ -398,7 +406,11 @@ def _derive_core(f: Facts, today: date, cfg: Config) -> StatusResult:
         if f.listing_by_contrast:
             return StatusResult("current", "firm_listing_by_contrast", "Low", **base,
                                 conflict="the page does not label it current; it is outside the page's separate exited section")
-        return StatusResult("current", "firm_listing", "Medium", **base)
+        note = None
+        if f.announced and not f.completed:
+            note = (f"an announcement{' on ' + ann_day if ann_day else ''}{' expected the deal to close ' + f.expected_close if f.expected_close else ''} is on record; "
+                    "no source states the closing date, but the firm's own page lists the company")
+        return StatusResult("current", "firm_listing", "Medium", **base, conflict=note)
     if f.listing_state == "unlabeled":
         return StatusResult("unclear", "listed_unlabeled", "Low", **base,
                             conflict="listed on the firm's page, which does not say whether the investment is current or exited")
@@ -454,6 +466,13 @@ def is_stale(o: sqlite3.Row, today: date, cfg: Config) -> bool:
     return (today - date.fromisoformat(o["last_verified"])).days > cfg.pe_portfolio.ownership_fresh_days
 
 
+def source_is_stale(src: sqlite3.Row, today: date, cfg: Config) -> bool:
+    """Never read, or last read successfully longer ago than listing_fresh_days. Shown, never acted on."""
+    if not src["last_success"]:
+        return True
+    return (today - datetime.fromisoformat(src["last_success"]).date()).days > cfg.pe_portfolio.listing_fresh_days
+
+
 # ---- add-ons ----------------------------------------------------------------------------------------------------------------------------
 def record_add_on(conn: sqlite3.Connection, parent_id: int, child_id: int, today: date, *, announced: date | str | None = None,
                   closed: date | str | None = None, expected_close: date | str | None = None, completed: bool = False,
@@ -480,9 +499,10 @@ def record_add_on(conn: sqlite3.Connection, parent_id: int, child_id: int, today
 
 
 # ---- the older, single-owner links ---------------------------------------------------------------------------------------------------------
-def mirror_legacy(conn: sqlite3.Connection, today: date, cfg: Config) -> int:
+def mirror_legacy(conn: sqlite3.Connection, today: date, cfg: Config | None = None) -> int:
     """Bring pre-ledger `portfolio_links` into the ledger as UNCLEAR relationships with unverified evidence, so they are listed and can be
-    verified but are never shown as verified holdings. Existing ledger rows are left as they are. Returns relationships created."""
+    verified but are never shown as verified holdings. Existing ledger rows are left as they are. Returns relationships created. Needs no
+    configuration: nothing here is derived from evidence that code has read. Caller owns the transaction."""
     made = 0
     for l in conn.execute("SELECT l.*, f.id AS fid FROM portfolio_links l JOIN pe_firms f ON f.id = l.firm_id").fetchall():
         m = resolve_company(conn, l["company_name"], l["company_domain"], today=today)
@@ -496,7 +516,8 @@ def mirror_legacy(conn: sqlite3.Connection, today: date, cfg: Config) -> int:
         if l["source_url"]:
             add_evidence(conn, "ownership", oid, "listed_historical" if l["status"] == "exited" else "listed_current", l["source_url"],
                          retrieved_at=l["found_date"] + "T00:00:00+00:00", source_type="search_snippet", verification="snippet_only")
-        recompute(conn, oid, today, cfg)
-        conn.execute("UPDATE pe_ownership SET basis='legacy_unverified', conflict_note=? WHERE id=?",
-                     ("recorded by an earlier version of the product from a model's report; the source has not been re-read by code", oid))
+        note = ("the account's facts name this sponsor (from researched evidence); the sponsor's own page has not been read by code" if l["origin"] == "account"
+                else "recorded by an earlier version of the product from a model's report; the source has not been re-read by code")
+        conn.execute("UPDATE pe_ownership SET status='unclear', basis='legacy_unverified', confidence='Low', conflict_note=?, as_of_date=NULL WHERE id=?", (note, oid))
+        conn.execute("INSERT INTO pe_ownership_log(ownership_id, at, from_status, to_status, reason) VALUES (?,?,?,?,?)", (oid, today.isoformat(), None, "unclear", "legacy_unverified"))
     return made

@@ -33,6 +33,20 @@ DEAL_KINDS = frozenset(FAMILY)
 COMPANY_OWN = frozenset({"platform_migration", "vendor_deal", "rfp_match", "leadership_change", "leadership_transformation_ai_data", "open_exec_search",
                          "restructuring_layoffs", "cost_program", "ops_failure", "ai_commitment", "strategy_rebrand", "hiring_cluster", "hiring_leadership",
                          "hiring_interim", "hiring_single", "financial_pressure", "activist", "ma_divestiture", "risk_factor"})
+DEAL_LABELS = {"deal_completed": "completed acquisition", "deal_announced": "announced acquisition", "add_on_completed": "completed add-on acquisition",
+               "add_on_announced": "announced add-on acquisition"}
+
+
+def phrase(category: str) -> str:
+    """A consulting category inside a sentence: lower-cased, except an acronym stays as it is ('AI implementation and adoption')."""
+    return category if category[:3].isupper() or category[:2] == "AI" else category[:1].lower() + category[1:]
+
+
+def kind_label(kind: str) -> str:
+    from bd.labels import TYPE_LABELS
+    return DEAL_LABELS.get(kind) or TYPE_LABELS.get(kind) or kind.replace("_", " ")
+
+
 EXCLUDED_KINDS = {"pe_hold_2_4": "how long a sponsor has held a company is not evidence of a need, so it is not used"}
 
 
@@ -105,7 +119,8 @@ class Assessment:
     dimensions: list[DimensionScore] = field(default_factory=list)
     known_dimensions: int = 0
     known_weight: int = 0
-    confidence: str = "Unknown"
+    confidence: str = "Unknown"              # in the consulting HYPOTHESIS (capped by how specific the need is)
+    fact_confidence: str = "Unknown"         # that the facts themselves are accurate (the source's quality)
     confidence_reasons: list[str] = field(default_factory=list)
     category: str = "Insufficient evidence"
     rule: str = ""
@@ -239,21 +254,29 @@ def assess(items: list[Item], today: date, cfg: Config, ctx: Context) -> Assessm
     clusters = cluster_events(scored, cfg)
     a.events = len(clusters)
 
-    def top(vals: list[tuple[int, str]]) -> tuple[int | None, list[str]]:
-        vals = sorted(vals, key=lambda v: -v[0])
-        if not vals:
+    def top(key: str) -> tuple[int | None, list[str]]:
+        """The best distinct event for a dimension, plus a fraction of the next best one only when that one points at the same consulting category
+        (corroboration of the same hypothesis). An unrelated event adds nothing to this dimension."""
+        have = sorted((c for c in clusters if c.points[key] is not None), key=lambda c: (-c.points[key], c.rep.id))
+        if not have:
             return None, []
-        pts = vals[0][0] + (m.second_event_credit * vals[1][0] if len(vals) > 1 else 0)
-        return min(100, round(pts)), [v[1] for v in vals[:2]]
+        first = have[0]
+        pts = float(first.points[key])
+        ids = [first.rep.id]
+        second = next((c for c in have[1:] if set(c.categories) & set(first.categories)), None)
+        if second is not None:
+            pts += m.second_event_credit * second.points[key]
+            ids.append(second.rep.id)
+        return min(100, round(pts)), ids
 
-    need_pts, need_ev = top([(c.points["need"], c.rep.id) for c in clusters if c.points["need"] is not None])
+    need_pts, need_ev = top("need")
     best_need_cluster = max((c for c in clusters if c.points["need"] is not None), key=lambda c: (c.points["need"], c.quality), default=None)
     countering = [k for k in a.counter if best_need_cluster is not None and (best_need_cluster.date is None or k.event_date is None or k.event_date >= best_need_cluster.date)]
     a.need_before_counter = need_pts
     if countering and need_pts is not None:
         need_pts = round(need_pts * m.counter_need_factor)
-    inv_pts, inv_ev = top([(c.points["investment"], c.rep.id) for c in clusters if c.points["investment"] is not None])
-    ext_pts, ext_ev = top([(c.points["external_help"], c.rep.id) for c in clusters if c.points["external_help"] is not None])
+    inv_pts, inv_ev = top("investment")
+    ext_pts, ext_ev = top("external_help")
     timings = [(timing_points(c, today, cfg), c.rep.id) for c in clusters if c.points["need"] is not None]
     timings = [t for t in timings if t[0] is not None]
     tim_pts = max((t[0] for t in timings), default=None)
@@ -284,10 +307,18 @@ def assess(items: list[Item], today: date, cfg: Config, ctx: Context) -> Assessm
     return a
 
 
+def _level(score: int, c) -> str:
+    return "High" if score >= c.high else "Medium" if score >= c.medium else "Low"
+
+
 def _confidence(a: Assessment, clusters: list[Cluster], best: Cluster | None, cfg: Config) -> None:
+    """Two separate judgments. Fact confidence: how sure we can be that the facts are accurate (the best source's quality, corroboration, a stated date,
+    verified ownership). Hypothesis confidence: how well supported the consulting hypothesis is, which can never exceed what the need anchor allows: an
+    authoritative announcement can establish a transaction (High facts) without establishing consulting demand (Low hypothesis)."""
     c = cfg.opportunity_model.confidence
     if best is None:
-        a.confidence, a.confidence_reasons = "Unknown", ["no scored evidence of a need"]
+        a.confidence = a.fact_confidence = "Unknown"
+        a.confidence_reasons = ["no scored evidence of a need"]
         return
     score = best.quality
     why = [f"the best supporting event rests on a {best.rep.source_type.replace('_', ' ')} (quality {best.quality})"]
@@ -296,9 +327,6 @@ def _confidence(a: Assessment, clusters: list[Cluster], best: Cluster | None, cf
         add = c.corroboration_per_extra_event * min(2, len(same))
         score += add
         why.append(f"{len(same)} other distinct event(s) point to the same category (+{add})")
-    if (best.points["need"] or 0) >= 75:
-        score += c.specific_need_bonus
-        why.append(f"the need is specific (+{c.specific_need_bonus})")
     if best.date is None:
         score -= c.unknown_date_penalty
         why.append(f"the source states no date (-{c.unknown_date_penalty})")
@@ -308,8 +336,15 @@ def _confidence(a: Assessment, clusters: list[Cluster], best: Cluster | None, cf
     if len(best.domains) >= 2:
         why.append("the event is reported by two independent sources")
     score = max(0, min(100, score))
-    a.confidence = "High" if score >= c.high else "Medium" if score >= c.medium else "Low"
-    a.confidence_reasons = why + [f"confidence score {score} (High from {c.high}, Medium from {c.medium})"]
+    a.fact_confidence = _level(score, c)
+    need = best.points["need"] or 0
+    cap = "High" if need >= 75 else "Medium" if need >= 50 else "Low"
+    a.confidence = min((a.fact_confidence, cap), key=lambda lv: CONF_RANK[lv])
+    if CONF_RANK[cap] < CONF_RANK[a.fact_confidence]:
+        why.append(f"the facts are {a.fact_confidence.lower()}-confidence, but the need anchor ({need}) supports only {cap.lower()} confidence in a consulting need")
+    elif need >= 75:
+        why.append("the need is specific (75 or more)")
+    a.confidence_reasons = why + [f"fact confidence score {score} (High from {c.high}, Medium from {c.medium})"]
 
 
 def _hypotheses(a: Assessment, clusters: list[Cluster], cfg: Config, ctx: Context) -> None:
@@ -330,8 +365,8 @@ def _hypotheses(a: Assessment, clusters: list[Cluster], cfg: Config, ctx: Contex
             owner = "Work likely owned by the company itself (the evidence concerns its own operations)"
         else:
             owner = "Ownership of the initiative is unknown"
-        what = ", ".join(k.replace("_", " ") for k in kinds)
-        text = (f"Hypothesis: the evidence ({what}) could point to work in {cat.lower()}. It establishes that the event happened, not that "
+        what = ", ".join(kind_label(k).lower() for k in kinds)
+        text = (f"Hypothesis: the evidence ({what}) could point to work in {phrase(cat)}. It establishes that the event happened, not that "
                 f"{ctx.name} needs outside help, has a budget, or intends to buy.")
         a.hypotheses.append(Hypothesis(cat, text, [c.rep.id for c in cs], owner))
     if a.hypotheses:
@@ -376,9 +411,9 @@ def _category(a: Assessment, ctx: Context, cfg: Config, countered: bool, best: C
 
 def _unknowns(a: Assessment, ctx: Context) -> None:
     u = a.unknowns
-    for d in a.dimensions:
-        if d.points is None:
-            u.append(f"{d.label}: unknown (no evidence speaks to it)")
+    unknown_dims = [d.label.lower() for d in a.dimensions if d.points is None]
+    if unknown_dims:
+        u.append("No evidence speaks to: " + ", ".join(unknown_dims) + ". Each adds nothing to the score and none is counted as negative")
     if a.by_key("investment").points is None:
         u.append("Funding or procurement evidence: unknown")
     if not a.named_people:
@@ -411,15 +446,15 @@ def _next_step(a: Assessment, ctx: Context, best: Cluster | None) -> None:
         if a.by_key("timing").points is None or "current" in failed:
             steps.append("Check what has happened since the newest event and whether it is still current")
         if not a.named_people and a.owner_function:
-            steps.append(f"Identify who leads {a.owner_function} from the company's own leadership page (a function is inferred, not a verified buyer)")
+            steps.append(f"Identify who is responsible for this work ({a.owner_function}) from the company's own leadership page; the function is inferred, not a verified buyer")
         if not steps:
             steps.append("Read the cited sources in full, then decide whether a conversation about the hypothesis is warranted")
-    a.next_step = "; ".join(s[0].upper() + s[1:] for s in steps[:3]) + "."
+    a.next_step = ". ".join(s[0].upper() + s[1:] for s in steps[:3]) + "."
     if a.hypotheses and a.facts:
         f = a.facts[0]
         when = f"on {f.event_date:%B %-d, %Y}" if f.event_date else "(date not stated)"
         a.discussion_question = (f"Public sources report {when}: \"{f.summary.rstrip('.')}\". How is {ctx.name} approaching "
-                                 f"{a.hypotheses[0].category.lower()} in light of that? (A question to explore; it assumes no problem, budget or intent.)")
+                                 f"{phrase(a.hypotheses[0].category)} in light of that? (A question to explore; it assumes no problem, budget or intent.)")
 
 
 def rules_text(cfg: Config) -> list[str]:
@@ -558,6 +593,14 @@ def firm_summary(conn: sqlite3.Connection, cfg: Config, firm_id: int, today: dat
     elif all(s["coverage"] == "complete" and s["status"] == "ok" for s in sources):
         note = "The portfolio page was read to its end on its last reading. That is the firm's page as of that day, not independent proof of every holding."
     else:
-        note = "Partial coverage: " + "; ".join(f"{s['url']} - {s['status']}, coverage {s['coverage']}" + (f" ({s['coverage_note']})" if s["coverage_note"] else "")
-                                                for s in sources if not (s["coverage"] == "complete" and s["status"] == "ok")) + "."
+        bits = []
+        for s in sources:
+            if s["status"] in ("failed", "blocked"):
+                bits.append(f"the latest attempt to read {s['url']} failed ({s['last_error']}); what is shown is from the last good reading"
+                            + (f" on {s['last_success'][:10]} (coverage {s['coverage']})" if s["last_success"] else ", and there has been none"))
+            elif s["status"] == "never":
+                bits.append(f"{s['url']} has not been read yet")
+            elif s["coverage"] != "complete":
+                bits.append(f"{s['url']} was read with {s['coverage']} coverage" + (f" ({s['coverage_note']})" if s["coverage_note"] else ""))
+        note = "Partial coverage: " + "; ".join(bits) + ". The portfolio may be larger than what is listed here."
     return FirmSummary(sum(by_status.values()), by_status, len(held), by_cat, note, sources)
