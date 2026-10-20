@@ -9,7 +9,7 @@ from tests.conftest import add_account, add_signal
 from tests.test_admin import ADMIN_GROUPS, call, PW  # noqa: F401
 from tests.test_update import app_env  # noqa: F401  (fixture)
 
-ANALYSIS = ["/week", "/signals", "/help", "/opportunities", "/opportunities?view=chart", "/reports", "/market", "/hiring", "/firms", "/rfps", "/ask", "/monday"]
+ANALYSIS = ["/opportunities", "/signals", "/help", "/reports", "/market", "/firms", "/rfps", "/ask", "/monday"]
 
 
 @pytest.fixture
@@ -57,10 +57,10 @@ def test_the_login_page_is_a_centred_card_without_a_band(app_env):  # noqa: F811
     assert 'class="card card--narrow"' in body and "<h1" not in band(body) and "Sign in" in body
 
 
-def test_this_week_shows_three_numbers_that_match_the_page(seeded):
+def test_analysis_shows_three_numbers_that_match_the_page(seeded):
     e, a = seeded
-    body = e.get("/week").body
-    assert "<b>1</b><span>company worth a call</span>" in body                                    # the three signals made one company Hot
+    body = e.get("/opportunities").body
+    assert "<b>1</b><span>company is Hot or Warm</span>" in body                                          # the three signals made one company Hot
     assert "<b>3</b><span>new signals found this week</span>" in body
     assert "<span>signals in the last 4 weeks (the 4 weeks before: 0)</span>" in body and "&#9650;" not in body
     assert 'class="tile hot"' in body and 'class="tile good"' in body and 'class="tile accent"' in body
@@ -69,15 +69,15 @@ def test_this_week_shows_three_numbers_that_match_the_page(seeded):
 
 def test_a_call_card_shows_the_change_since_the_last_run_only_when_there_was_an_earlier_run(seeded):
     e, a = seeded
-    assert "since last run" not in e.get("/week").body
+    assert "since last run" not in e.get("/opportunities").body
     prev = (date.today() - timedelta(days=7)).isoformat()
     e.conn.execute("INSERT INTO scores(account_id, run_date, score, band, components_json, rationale) VALUES (?,?,?,?,'{}','x')", (a, prev, 10, "Stored"))
     e.conn.commit()
-    assert "&#9650; +90 since last run" in e.get("/week").body or "▲ +90 since last run" in e.get("/week").body
+    assert "&#9650; +90 since last run" in e.get("/opportunities").body or "▲ +90 since last run" in e.get("/opportunities").body
 
 
 def test_the_stylesheet_has_light_dark_phone_and_print_rules_and_no_script(seeded):
     e, a = seeded
-    css = e.get("/week").body.split("<style>")[1].split("</style>")[0]
+    css = e.get("/opportunities").body.split("<style>")[1].split("</style>")[0]
     assert "prefers-color-scheme:dark" in css and "max-width:640px" in css and "@media print" in css
-    assert "<script" not in e.get("/week").body and 'class="auth"' not in e.get("/week").body
+    assert "<script" not in e.get("/opportunities").body and 'class="auth"' not in e.get("/opportunities").body

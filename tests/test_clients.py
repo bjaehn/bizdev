@@ -93,9 +93,8 @@ def test_pages_and_forms(app_env):  # noqa: F811
     assert "Not a client" in e.get(f"/accounts/{a}").body
     body = e.get("/clients").body
     assert "Acme" in body and "2 signals in 90 days" in body and "Hiring cluster" in body
-    opp = e.get("/opportunities?view=matrix").body
-    assert '<span class="badge good">client</span>' in opp and "client" in e.get("/opportunities").body
-    assert "Acme" in e.get("/opportunities?client=yes").body and "No companies match" in e.get("/opportunities?client=no").body
+    opp = e.get("/opportunities?tracked=1").body
+    assert '<span class="badge good">client</span>' in opp.split('id="ranked"')[1]            # clients stay in the numbered list, tagged
     r = e.post("/clients/mark", {"names": "Acme Inc\nNew Target <b>\n"})
     assert r.code == 200 and "Already marked: Acme" in r.body and "/lookup?q=New%20Target%20%3Cb%3E" in r.body and "&lt;b&gt;" in r.body
     assert e.post("/clients/mark", {"names": "  "}).code == 303

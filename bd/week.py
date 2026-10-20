@@ -1,12 +1,12 @@
-"""The "This week" home: who is worth a call, why, and whether things are heating up.
+"""The Analysis page's data: who ranks where, who is worth a call, and whether things are heating up.
 
 Read-only and deterministic, in plain words. It composes the ranked opportunities (each named by its theme), the signals behind them, the
-weekly trend and the pipeline state from what past runs stored; every sentence is built from counts and stored, sourced signals. Nothing is
+weekly trend and what is being tracked from what past runs stored; every sentence is built from counts and stored, sourced signals. Nothing is
 paraphrased or invented, and the page says how much of the list it actually covers, so a thin week looks thin.
 
-What is "worth a call" is one plain rule: a new-business company that is Hot or Warm and has a signal dated in the last 14 days, strongest
-score first, at most three. When fewer than three qualify, the strongest Watch companies with a signal that recent fill the list and the
-page says so. Existing clients are kept apart (they are expansion, not new business)."""
+One build feeds the whole page, so the cards and the numbered list can never disagree. The list is everyone at Watch or above, strongest score
+first, numbered by rank, existing clients tagged. The cards are the three highest-scoring companies that are new business (a client is expansion,
+not a new logo), whatever the dates of their signals, each with the rank it holds in the list."""
 
 from __future__ import annotations
 
@@ -24,10 +24,8 @@ from bd.shortlist import ShortlistError
 from bd.trend import Trend, build_trend, score_history
 
 CALLS_MAX = 3                # companies in "Worth a call"
-RECENT_DAYS = 14             # a company is worth a call only with a signal this recent
-NEXT_MAX = 5                 # companies in "Next in line"
+CLOSEST_MAX = 5              # when nobody is at Watch yet: the strongest below it
 EVIDENCE_MAX = 3             # signals shown on a call card
-CLIENTS_MAX = 3
 TRACK_DAYS = 14              # "what's new" at a tracked company looks back this far
 TRACK_STAGES = ("reviewing", "pursuing")
 FEED_DAYS = 7                # the collapsed list of everything found this week
@@ -64,6 +62,7 @@ class Call:
     opp: Opportunity
     evidence: list[CallEvidence] = field(default_factory=list)
     history: list[int] = field(default_factory=list)       # stored scores, oldest first, ending with the current one
+    newest: date | None = None                             # the date of its newest signal
 
 
 @dataclass
@@ -73,14 +72,14 @@ class Week:
     trend: Trend = field(default_factory=Trend)
     run_date: str | None = None
     problem: str | None = None                       # why there is no ranked list, in plain words
-    calls: list[Call] = field(default_factory=list)
-    padded: bool = False                             # fewer than CALLS_MAX were Hot or Warm, so Watch companies fill the list
-    next_up: list[Opportunity] = field(default_factory=list)
+    calls: list[Call] = field(default_factory=list)  # the top CALLS_MAX new-business companies by score
+    ranked: list[Opportunity] = field(default_factory=list)    # everyone at Watch or above, strongest first (clients included, tagged)
+    items: list[Opportunity] = field(default_factory=list)     # everyone scored, for "everything scanned"
     closest: list[Opportunity] = field(default_factory=list)   # when nobody is at Watch yet: the strongest below it
-    clients: list[Opportunity] = field(default_factory=list)
     tracked: list[Tracked] = field(default_factory=list)
-    recent: list[FeedItem] = field(default_factory=list)       # everything found in the last FEED_DAYS days
-    qualifying: int = 0                              # Hot or Warm new-business companies that met the rule (the list shows at most CALLS_MAX)
+    recent: list[FeedItem] = field(default_factory=list)       # signals dated in the last FEED_DAYS days
+    stale: list[str] = field(default_factory=list)             # companies whose stored score no longer matches their signals
+    prev_date: str | None = None                               # the run "since last run" changes are measured against
 
 
 def signs_line(result: ScoreResult) -> str:
@@ -123,18 +122,9 @@ def _tracked(conn: sqlite3.Connection, items: list[Opportunity], today: date) ->
     return sorted((Tracked(o, new.get(o.account.id, [])) for o in mine), key=lambda t: (not t.new, t.opp.rank))
 
 
-def choose_calls(new_business: list[Opportunity], today: date, watch: int) -> tuple[list[Opportunity], bool, int]:
-    """(companies worth a call, whether Watch companies had to fill the list, how many Hot or Warm ones qualified)."""
-    cutoff = today - timedelta(days=RECENT_DAYS)
-    recent = [o for o in new_business if (n := newest_signal(o)) is not None and n >= cutoff]
-    hot_warm = [o for o in recent if o.result.band in ("Hot", "Warm")]
-    chosen = hot_warm[:CALLS_MAX]
-    padded = False
-    if len(chosen) < CALLS_MAX:
-        fill = [o for o in recent if o.result.band not in ("Hot", "Warm") and o.result.score >= watch]
-        chosen += fill[:CALLS_MAX - len(chosen)]
-        padded = len(chosen) > len(hot_warm[:CALLS_MAX])
-    return chosen, padded, len(hot_warm)
+def choose_calls(ranked: list[Opportunity]) -> list[Opportunity]:
+    """The top CALLS_MAX new-business companies of the ranked list, in rank order. Whatever the dates of their signals: the cards are the top of the list."""
+    return [o for o in ranked if not o.client][:CALLS_MAX]
 
 
 def build_week(conn: sqlite3.Connection, cfg: Config, today: date) -> Week:
@@ -154,18 +144,16 @@ def build_week(conn: sqlite3.Connection, cfg: Config, today: date) -> Week:
         out.problem = str(e)
         return out
     watch = cfg.scoring.bands.watch
-    ranked = [o for o in ol.items if o.result.score >= watch]
-    cov.scored = len(ranked)
-    cov.hot, cov.warm = sum(o.result.band == "Hot" for o in ranked), sum(o.result.band == "Warm" for o in ranked)
+    out.items, out.stale = ol.items, ol.stale
+    out.prev_date = ol.prev_date.isoformat() if ol.prev_date else None
+    out.ranked = [o for o in ol.items if o.result.score >= watch]
+    cov.scored = len(out.ranked)
+    cov.hot, cov.warm = sum(o.result.band == "Hot" for o in out.ranked), sum(o.result.band == "Warm" for o in out.ranked)
 
-    new_business = [o for o in ranked if not o.client]
-    chosen, out.padded, out.qualifying = choose_calls(new_business, today, watch)
+    chosen = choose_calls(out.ranked)
     history = score_history(conn, [o.account.id for o in chosen])
-    out.calls = [Call(o, call_evidence(o), history.get(o.account.id, [])) for o in chosen]
-    shown = {o.account.id for o in chosen}
-    out.next_up = [o for o in new_business if o.account.id not in shown][:NEXT_MAX]
-    if not ranked:
-        out.closest = [o for o in ol.items if not o.client][:NEXT_MAX]
-    out.clients = [o for o in ranked if o.client][:CLIENTS_MAX]
+    out.calls = [Call(o, call_evidence(o), history.get(o.account.id, []), newest_signal(o)) for o in chosen]
+    if not out.ranked:
+        out.closest = [o for o in ol.items if not o.client][:CLOSEST_MAX]
     out.tracked = _tracked(conn, ol.items, today)
     return out

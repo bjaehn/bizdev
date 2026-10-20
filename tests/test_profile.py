@@ -48,54 +48,6 @@ def seeded(app_env):  # noqa: F811
     return e, ids
 
 
-def test_the_ranking_is_a_matrix_with_one_row_per_company_and_a_column_per_signal_type(seeded):
-    e, ids = seeded
-    body = e.get("/opportunities?view=matrix&tracked=1").body                                  # include the company that is below Watch
-    head = body.split("<thead>")[1].split("</thead>")[0]
-    for label in ("Company", "Score", "Leadership", "Hiring", "Company events", "Private equity", "Technology", "Procurement", "Filings", "Financials", "Types"):
-        assert label in head, label
-    assert body.count('<td class="co">') == 3 and "Wideco &lt;b&gt;" in body and "Wideco <b>" not in body
-    assert f'href="/companies/{ids["Wideco <b>"]}"' in body                                   # every row and cell opens the company profile
-    assert 'class="cell hi"' in body or 'class="cell ' in body
-    assert "<b>4</b>/8" in body and "<b>1</b>/8" in body                                       # types firing, out of eight
-    assert "dashed box" in body and "Signal matrix" in body
-    # ranked by score: the widest company first
-    assert body.index("Wideco") < body.index("Midco") < body.index("Deepco")
-
-
-def test_cells_show_the_points_and_hover_text_says_what_fired(seeded):
-    e, ids = seeded
-    body = e.get("/opportunities?view=matrix").body
-    assert 'title="Leadership: ' in body and "strongest Leadership change" in body and "points" in body
-    assert "●" in body                                                                       # recent signals are marked
-
-
-def test_the_default_companies_page_is_one_simple_ranked_list_with_search_and_band_tabs(seeded):
-    e, ids = seeded
-    body = e.get("/opportunities").body
-    assert "<b>3</b> companies" in body and "Hot or Warm" in body                           # the coverage line
-    assert body.count('class="bar-row"') == 2 and "Wideco &lt;b&gt;" in body and "Midco" in body and "Deepco" not in body      # below Watch is left out
-    assert body.index("Wideco") < body.index("Midco")                                          # strongest first
-    assert 'class="matrix"' not in body and "Signal matrix" not in body and 'name="service_line"' not in body       # no toolbar of options
-    for label in ("All", "Hot", "Warm", "Watch", "Everything scanned"):
-        assert f">{label}</a>" in body, label
-    assert "Deepco" in e.get("/opportunities?tracked=1").body and body.count('name="q"') == 1
-
-
-def test_sorting_filtering_and_the_list_view_keep_working(seeded):
-    e, ids = seeded
-    by_types = e.get("/opportunities?view=matrix&sort=types&tracked=1").body
-    assert by_types.index("Wideco") < by_types.index("Midco") < by_types.index("Deepco")
-    assert e.get("/opportunities?view=matrix&industry=Insurance&tracked=1").body.count('<td class="co">') == 2
-    assert "Wideco" not in e.get("/opportunities?view=matrix&industry=Insurance&tracked=1").body.split("<tbody>")[1]
-    assert e.get("/opportunities?view=matrix&client=yes&tracked=1").body.count('<td class="co">') == 1
-    assert "Deepco" not in e.get("/opportunities?view=matrix").body.split("<tbody>")[1]        # below Watch: not an opportunity yet
-    assert 'href="/opportunities?view=list' in e.get("/opportunities?view=matrix").body and "sort=types" in e.get("/opportunities?view=matrix").body
-    lst = e.get("/opportunities?view=list&industry=Insurance").body
-    assert 'class="why"' in lst and '<table class="matrix">' not in lst and "Wideco" not in lst.split('class="tabs"')[1]
-    assert e.get("/opportunities?view=bogus&sort=bogus&industry=<x>").code == 200
-
-
 def test_the_profile_explains_the_score_and_its_parts_add_up(seeded):
     e, ids = seeded
     from bd.profile import explain

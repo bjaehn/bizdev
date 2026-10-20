@@ -82,7 +82,7 @@ def test_the_rules_are_recorded_in_project_memory():
         assert needle in memory, needle
 
 
-@pytest.mark.parametrize("path", ["/week", "/opportunities", "/market", "/reports", "/help", "/admin"])
+@pytest.mark.parametrize("path", ["/opportunities", "/market", "/reports", "/help", "/admin"])
 def test_pages_render_with_the_stylesheet_inlined_once_and_no_script(app_env, path):
     body = app_env.get(path).body
     assert body.count("<style>") == 1 and "<script" not in body and "THE ONLY PLACE STYLING IS DEFINED" in body
