@@ -28,7 +28,7 @@ accounts.csv ──bd seed──► database ──► fit gate ──► scan (
   score rises 15+. Low-confidence signals are stored but never scored.
 * **Signals first, facts second.** Every company on your list is scanned for leadership changes, hiring, press and
   company events unless it is *known* to be out of scope (an exclusion, outside Chicagoland, or below the size floor).
-  A location or size that is not confirmed does not stop a scan: the company is scanned and tagged *unverified*.
+  A location or size that is not confirmed does not stop a scan: the company is scanned and tagged *unverified* (on Analysis too: the ranked list, the top three and the tracked list carry the tag, with the reasons on hover; it is never scored down for it).
   Nothing is guessed: facts are never inferred, and an unverified company's brief says so.
 * **Themes, not prose.** What a company's signals add up to is named by fixed rules in `bd/insights.py` (for example
   *New leadership and a hiring push*: a leadership signal and a hiring signal both found), shown with the rule and the

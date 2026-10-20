@@ -22,7 +22,7 @@
 <dt>Score</dt><dd>A number from 0 to {{ sc.score_max }}, worked out by plain code (no model) from the signals: how strong each kind of sign is, how recent, how trustworthy its source, and a bonus of +{{ sc.stacking_bonus_per_family|round|int }} for each extra kind that agrees (up to +{{ sc.stacking_bonus_max|round|int }}). The company page shows the sum.</dd>
 <dt>Bands</dt><dd><b>Hot</b> is {{ bands.hot }} or more, <b>Warm</b> {{ bands.warm }} or more, <b>Watch</b> {{ bands.watch }} or more. Below that a company is tracked but not listed.</dd>
 <dt>Client</dt><dd>An existing SEI client. Clients are scored like any company and tagged <i>client</i> in the ranking; the top three cards leave them out, as expansion rather than new business.</dd>
-<dt>Unverified</dt><dd>A company is scanned for signals unless it is known to be out of scope (excluded, outside Chicagoland, or below the size floor). If its location or size is not confirmed it is scanned anyway and tagged <i>unverified</i>.</dd>
+<dt>Unverified</dt><dd>A company is scanned for signals unless it is known to be out of scope (excluded, outside Chicagoland, or below the size floor). If its location or size is not confirmed it is scanned and ranked anyway and tagged <i>unverified</i> (on the ranked list, the top three and its own page; hover the tag for what is not confirmed). It is never scored down for it: unknown is not negative. Companies are researched a batch per update, so the tag fades as facts are confirmed.</dd>
 </dl>
 
 <h2 id="priority">How the evidence-based priority works</h2>

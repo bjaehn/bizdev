@@ -340,3 +340,32 @@ def test_the_help_page_uses_the_real_thresholds_and_names_the_jobs(seeded):
     assert f"<b>Hot</b> is {b.hot} or more" in body and f"<b>Warm</b> {b.warm} or more" in body and f"<b>Watch</b> {b.watch} or more" in body
     assert "See who ranks first" in body and 'href="/opportunities"' in body and "This week" not in body
     assert "does not write outreach" in body and "LinkedIn" in body
+
+
+# ---- a company whose location or size is not confirmed is ranked, and says so ------------------------------------------------------------------------
+def test_an_unconfirmed_company_is_ranked_like_any_other_and_tagged_with_why(tmp_path, cfg):
+    conn = make_db(tmp_path)
+    sure = add_account(conn, "Sureco")                                                           # location and size known (the defaults)
+    unsure = add_account(conn, "Unsureco", chicagoland="unknown", revenue=None, ownership=None)
+    for a in (sure, unsure):
+        for t, age in (("leadership_change", 4), ("hiring_cluster", 8), ("restructuring_layoffs", 15)):
+            add_signal(conn, cfg, a, t, age)
+    score_accounts(conn, cfg, AS_OF)
+    by = {o.account.name: o for o in build_opportunities(conn, cfg, AS_OF).items}
+    assert by["Sureco"].unverified == [] and by["Unsureco"].unverified                          # tagged, with its reasons
+    assert by["Sureco"].result.score == by["Unsureco"].result.score                              # never scored down for it: unknown is not negative
+    assert any("Chicagoland" in r for r in by["Unsureco"].unverified)
+
+
+def test_the_analysis_page_shows_the_unverified_tag_only_where_it_applies(app_env):  # noqa: F811
+    e = app_env
+    sure = add_account(e.conn, "Sureco")
+    unsure = add_account(e.conn, "Unsureco", chicagoland="unknown", revenue=None, ownership=None)
+    for a in (sure, unsure):
+        for t, age in (("leadership_change", 4), ("hiring_cluster", 8), ("restructuring_layoffs", 15)):
+            add_signal(e.conn, e.cfg, a, t, age, as_of=date.today())
+    score_accounts(e.conn, e.cfg, date.today())
+    body = e.get("/opportunities").body
+    assert body.count(">unverified</span>") >= 1 and 'title="Chicagoland status unverified' in body.replace("&#39;", "'")
+    row = lambda name: body.split(f">{name}</a>")[1].split("</li>")[0]                           # noqa: E731
+    assert "unverified" not in row("Sureco") and "unverified" in row("Unsureco")
