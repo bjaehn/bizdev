@@ -58,6 +58,9 @@ def test_recency_boundaries(cfg, as_of, age, mult):
 
 
 def test_status_type_flat_regardless_of_age(cfg, as_of):
+    assert signal_points(sig("pe_hold_2_4", 120), as_of, cfg).points == 0           # the holding-duration signal carries no weight by default
+    cfg = cfg.model_copy(deep=True)
+    cfg.scoring.base_points["pe_hold_2_4"] = 12                                       # the mechanism is still tested with a weight
     for age in (0, 120, 900):
         p = signal_points(sig("pe_hold_2_4", age), as_of, cfg)
         assert p.recency == 0.7

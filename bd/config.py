@@ -278,6 +278,50 @@ class PePortfolio(_Strict):
     research_unresolved: int              # per run, portfolio companies whose location the listing does not show that are sent to the existing fact research (paid); 0 = none
 
 
+class OppWeights(_Strict):
+    need: int
+    timing: int
+    investment: int
+    external_help: int
+    evidence_quality: int
+
+
+class OppConfidence(_Strict):
+    high: int
+    medium: int
+    corroboration_per_extra_event: int
+    specific_need_bonus: int
+    unknown_date_penalty: int
+    unverified_ownership_penalty: int
+
+
+class OpportunityModel(_Strict):
+    weights: OppWeights
+    second_event_credit: float
+    event_cluster_days: int
+    need: dict[str, int]
+    investment: dict[str, int]
+    external_help: dict[str, int]
+    recency: list[dict[str, int]]
+    milestone: list[dict[str, int]]
+    quality: dict[str, int]
+    unknown_date_quality_cap: int
+    corroboration_bonus: int
+    confidence: OppConfidence
+    categories: dict[str, dict[str, int | str]]
+    counter_kinds: list[str]
+    counter_need_factor: float
+    consulting_categories: dict[str, list[str]]
+    hiring_theme_categories: dict[str, str]
+    owner_function: dict[str, str]
+
+    @model_validator(mode="after")
+    def _weights_total(self) -> "OpportunityModel":
+        if sum(self.weights.model_dump().values()) != 100:
+            raise ValueError("opportunity_model.weights must total 100")
+        return self
+
+
 class RfpGroup(_Strict):
     name: str
     domains: list[str]
@@ -337,6 +381,7 @@ class Config(_Strict):
     discovery: Discovery
     pe_firms: PeFirms
     pe_portfolio: PePortfolio
+    opportunity_model: OpportunityModel
 
     @model_validator(mode="after")
     def _sec_events(self) -> "Config":

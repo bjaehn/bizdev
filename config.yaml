@@ -9,7 +9,7 @@ scoring:
     open_exec_search: 20
     pe_platform_or_sponsor_exec: 28
     pe_addon: 22
-    pe_hold_2_4: 12
+    pe_hold_2_4: 0          # was 12. How long a sponsor has held a company is not evidence of a need (and a holding period from an announcement date is not a closing date), so it no longer scores; stored rows stay and score 0
     restructuring_layoffs: 24
     ma_divestiture: 24
     activist: 18
@@ -323,3 +323,157 @@ pe_portfolio:
   deal_window_days: 730                  # transaction research (paid): deals dated this far back
   deals_max_per_firm: 10
   research_unresolved: 0                 # paid fact research of portfolio companies whose HQ the listing does not show (0 = off; set a cap to enable)
+
+# Evidence-based priority (bd/opportunity_model.py). Deterministic: structured evidence in, a breakdown out. Priority is NOT the Hot/Warm/Watch score above
+# and is NOT a probability of purchase or win. Confidence (how well the hypothesis is supported) is reported separately.
+opportunity_model:
+  weights: {need: 30, timing: 25, investment: 20, external_help: 15, evidence_quality: 10}   # must total 100
+  second_event_credit: 0.2         # a dimension is its best distinct event plus this fraction of the next best one
+  event_cluster_days: 7            # evidence about the same kind of event within this many days is one event, however many sources repeat it
+  # How specifically the evidence establishes a business need, 0-100. 100 = an explicit, scoped program with a named owner; 75 = a specific initiative
+  # (system, scope or program named); 50 = a defined event that usually brings a category of work; 25 = a generic indicator; 10 = context only.
+  # A kind that is absent says nothing about the dimension (unknown), which is not the same as 0.
+  need:
+    rfp_match: 90
+    platform_migration: 75
+    leadership_transformation_ai_data: 70
+    ai_commitment: 60
+    cost_program: 60
+    ma_divestiture: 55
+    ops_failure: 55
+    vendor_deal: 50
+    restructuring_layoffs: 45
+    hiring_interim: 45
+    add_on_completed: 45
+    leadership_change: 40
+    hiring_leadership: 40
+    pe_addon: 40
+    financial_pressure: 35
+    activist: 35
+    deal_completed: 30          # a completed acquisition is a research trigger, not proof of a need
+    open_exec_search: 30
+    strategy_rebrand: 30
+    add_on_announced: 25
+    hiring_cluster: 25
+    pe_platform_or_sponsor_exec: 20
+    deal_announced: 15
+    risk_factor: 15
+    hiring_single: 10
+  # Evidence that money or procurement effort is committed, 0-100: 90 = an open solicitation; 70 = a named vendor deal; 55 = a stated program or capital
+  # deployed; 35 = effort implied (a leadership hire, a hiring push); unknown when the kind says nothing about spend.
+  investment:
+    rfp_match: 90
+    vendor_deal: 70
+    platform_migration: 55
+    deal_completed: 55
+    add_on_completed: 55
+    pe_addon: 55
+    ai_commitment: 50
+    pe_platform_or_sponsor_exec: 45
+    hiring_leadership: 40
+    cost_program: 35
+    hiring_interim: 35
+    hiring_cluster: 30
+  # How likely the situation is to involve outside help, 0-100: 100 = a solicitation for outside services; 75 = interim or temporary capacity;
+  # 60 = a transition that usually needs capacity the company lacks; 40 = ambiguous; 20 = building in-house capacity.
+  external_help:
+    rfp_match: 100
+    hiring_interim: 75
+    ma_divestiture: 60
+    platform_migration: 60
+    add_on_completed: 55
+    vendor_deal: 55
+    leadership_transformation_ai_data: 55
+    ops_failure: 50
+    deal_completed: 45
+    ai_commitment: 45
+    cost_program: 45
+    activist: 45
+    pe_addon: 45
+    financial_pressure: 40
+    restructuring_layoffs: 40
+    pe_platform_or_sponsor_exec: 40
+    leadership_change: 35
+    hiring_leadership: 35
+    strategy_rebrand: 30
+    open_exec_search: 25
+    add_on_announced: 25
+    hiring_cluster: 20
+  # Timing from the age of the event the source states (the first band whose max_days covers it). Older than the last band = 0. An unknown date is unknown.
+  recency:
+    - {max_days: 30, points: 85}
+    - {max_days: 90, points: 65}
+    - {max_days: 180, points: 40}
+    - {max_days: 365, points: 15}
+  # An explicit stated expected closing in the future, in days from today, is a stated milestone.
+  milestone:
+    - {within_days: 90, points: 100}
+    - {within_days: 180, points: 80}
+  # Evidence quality of one item, 0-100, by the kind of source; a date the source does not state caps it.
+  quality:
+    sec_filing: 100
+    company_release: 90
+    firm_site: 90
+    company_site: 90
+    warn_notice: 90
+    secondary_report: 55
+    search_snippet: 0
+    rumor: 0
+  unknown_date_quality_cap: 50
+  corroboration_bonus: 10          # the same event reported by a second, independent source domain
+  # Confidence in the hypothesis (separate from priority): the best supporting item's quality, plus corroboration, minus gaps.
+  confidence:
+    high: 80
+    medium: 55
+    corroboration_per_extra_event: 15      # distinct events pointing at the same consulting category (max two)
+    specific_need_bonus: 10                # the best item's need anchor is at least 75
+    unknown_date_penalty: 20
+    unverified_ownership_penalty: 25       # a deal item whose ownership status is unclear, conflicting or stale
+  # Action categories, evaluated in this order; the first whose conditions all hold wins. Every number is a threshold you can change.
+  categories:
+    prospect_now:    {min_score: 50, min_need: 50, min_timing: 60, min_confidence: Medium, min_known_dimensions: 3, min_source_quality: 70}
+    validate_first:  {min_score: 30, min_need: 40, min_timing: 40}
+    nurture:         {min_need: 40}
+    monitor:         {min_score: 10}
+  # Signal kinds that count against a hypothesis. Each is evidence of a canceled program or a spending restriction.
+  counter_kinds: [program_canceled, spending_restriction]
+  counter_need_factor: 0.4         # when a counter signal is as new as the best supporting event or newer, that need is multiplied by this
+  # What a kind suggests, as general consulting categories (a hypothesis, never a finding).
+  consulting_categories:
+    platform_migration: [Technology implementation and integration]
+    vendor_deal: [Technology implementation and integration]
+    rfp_match: [Program and change management]
+    leadership_transformation_ai_data: [AI implementation and adoption, Data and analytics]
+    ai_commitment: [AI implementation and adoption]
+    leadership_change: [Program and change management]
+    open_exec_search: [Program and change management]
+    restructuring_layoffs: [Operating model and process improvement]
+    cost_program: [Operating model and process improvement]
+    ops_failure: [Operating model and process improvement, Customer experience and service operations]
+    activist: [Operating model and process improvement]
+    financial_pressure: [Operating model and process improvement]
+    strategy_rebrand: [Product strategy and delivery]
+    ma_divestiture: [Acquisition integration and separation]
+    pe_addon: [Acquisition integration and separation]
+    add_on_completed: [Acquisition integration and separation]
+    add_on_announced: [Acquisition integration and separation]
+    deal_completed: [Acquisition integration and separation, Operating model and process improvement]
+    deal_announced: [Acquisition integration and separation]
+    pe_platform_or_sponsor_exec: [Operating model and process improvement]
+  # Hiring signals name their area in the summary; it picks the category.
+  hiring_theme_categories:
+    "AI and technology": AI implementation and adoption
+    "data and analytics": Data and analytics
+    "strategy and operations": Operating model and process improvement
+    "transformation and change": Program and change management
+    "product and engineering": Product strategy and delivery
+  # The function that would own work in a category, as an inference from the category (never a verified buyer).
+  owner_function:
+    Technology implementation and integration: technology or IT leadership
+    Data and analytics: data or analytics leadership
+    AI implementation and adoption: technology, data or AI leadership
+    Customer experience and service operations: customer or service operations leadership
+    Product strategy and delivery: product leadership
+    Operating model and process improvement: operations leadership or the CFO
+    Acquisition integration and separation: the CEO, CFO or integration lead
+    Program and change management: a transformation or program office, or the COO

@@ -58,28 +58,22 @@ def test_event_types_use_the_180_day_window(cfg, t):
     assert old.signals == [] and old.rejections[0].reason == "date_out_of_window"
 
 
-@pytest.mark.parametrize("age,ok", [(729, False), (730, True), (1000, True), (1461, True), (1462, False), (3000, False), (90, False)])
-def test_hold_signal_needs_the_original_investment_2_to_4_years_ago(cfg, age, ok):
+@pytest.mark.parametrize("age", [90, 730, 1000, 1461, 3000])
+def test_holding_duration_is_no_longer_requested_or_accepted(cfg, age):
+    """How long a sponsor has held a company is not evidence of a need, and a holding period measured from an announcement is not a closing date."""
     out, _ = run(cfg, [sig(type="pe_hold_2_4", event_date=days_ago(age), summary="Test Capital acquired Acme.")])
-    assert bool(out.signals) is ok
-    if not ok:
-        assert out.rejections[0].reason == "date_out_of_window" and "hold must be 730-1461 days" in out.rejections[0].detail
+    assert out.signals == [] and out.rejections[0].reason == "type_not_allowed"
+    from importlib import resources
+    assert "pe_hold_2_4" not in resources.files("bd.prompts").joinpath("pe.md").read_text(encoding="utf-8")
 
 
-def test_hold_signal_is_not_subject_to_the_180_day_window(cfg):
-    out, _ = run(cfg, [sig(type="pe_hold_2_4", event_date=days_ago(900))])
-    assert len(out.signals) == 1 and out.signals[0].extract.event_date == AS_OF - timedelta(days=900)
-
-
-def test_hold_hash_is_stable_week_to_week_so_it_is_stored_once(cfg, tmp_path):
+def test_a_hold_signal_stored_earlier_scores_nothing_and_cannot_make_a_company_look_like_a_lead(cfg, tmp_path):
     conn = make_db(tmp_path)
-    conn.execute("INSERT INTO accounts(id, name, domain, ownership) VALUES (1, 'Acme Corp', 'acme.com', 'pe-backed')")
-    conn.commit()
-    a, _ = run(cfg, [sig(type="pe_hold_2_4", event_date=days_ago(900))])
-    assert store_signals(conn, 1, a.signals, AS_OF) == (1, 0)
-    llm = FakeLLM([json.dumps({"signals": [sig(type="pe_hold_2_4", event_date=days_ago(900))]})], urls=(URL,))
-    b = PeScanner(cfg, llm, FakeVerifier()).scan(pe_account(), AS_OF)           # the same fact, found again
-    assert store_signals(conn, 1, b.signals, AS_OF + timedelta(days=7)) == (0, 1)
+    a = add_account(conn, "Pecorp", ownership="pe-backed")
+    add_signal(conn, cfg, a, "pe_hold_2_4", 900)
+    assert cfg.scoring.base_points["pe_hold_2_4"] == 0
+    r = score_accounts(conn, cfg, AS_OF)[0].result
+    assert r.score == 0 and tuple(r.signals) == () and r.families == ()
 
 
 def test_other_scanners_types_rejected(cfg):
@@ -105,7 +99,10 @@ def test_a_hold_that_passes_four_years_stops_scoring(cfg, tmp_path):
     assert drop_lapsed_status_signals([other], AS_OF, cfg) == [other]            # events are never touched
 
 
-def test_stored_hold_scores_flat_while_valid_then_drops_out(cfg, tmp_path):
+def test_the_status_signal_mechanism_still_works_when_a_weight_is_configured(cfg, tmp_path):
+    """The mechanism (flat while valid, then dropped) is kept for any status type; it is just weightless for the hold by default."""
+    cfg = cfg.model_copy(deep=True)
+    cfg.scoring.base_points["pe_hold_2_4"] = 12
     conn = make_db(tmp_path)
     a = add_account(conn, "Pecorp", ownership="pe-backed")
     add_signal(conn, cfg, a, "pe_hold_2_4", 900)

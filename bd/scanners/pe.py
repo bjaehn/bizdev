@@ -3,9 +3,8 @@
   pe_platform_or_sponsor_exec  a sponsor acquires the company as a platform, or a sponsor-linked executive
                                is appointed (event inside the 180-day window)
   pe_addon                     the company announces or completes an add-on acquisition (inside the window)
-  pe_hold_2_4                  STATUS signal: the sponsor bought the company 2-4 years ago. Its event_date is
-                               the original investment date, so it is validated against the hold range in
-                               config (scan.status_type_age_days), not the 180-day window.
+  (pe_hold_2_4 is no longer requested: how long a sponsor has held a company is not evidence of a need. Rows stored
+   earlier stay in the database and score 0; see scoring.base_points in config.yaml.)
 
 Runs only for accounts whose ownership is `pe-backed`; every other account costs nothing."""
 
@@ -20,7 +19,7 @@ from bd.scanners.base import Scanner
 
 class PeScanner(Scanner):
     name = "pe"
-    allowed_types = frozenset({"pe_platform_or_sponsor_exec", "pe_addon", "pe_hold_2_4"})
+    allowed_types = frozenset({"pe_platform_or_sponsor_exec", "pe_addon"})
 
     def applies_to(self, account: Account) -> bool:
         return account.ownership == "pe-backed"

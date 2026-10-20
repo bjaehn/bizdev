@@ -7,7 +7,6 @@ Using the web_search tool, find public, dated evidence of any of these, and emit
 
 - `pe_platform_or_sponsor_exec` - (a) a private equity sponsor acquiring the company as a new platform investment, OR (b) an executive appointed to the company who comes from, or is installed by, the sponsor (a new CEO, CFO, COO or chair placed by the sponsor, or a sponsor operating partner joining management). Only events dated inside the window in the user message.
 - `pe_addon` - the company announcing or completing an add-on acquisition (a bolt-on purchase of another business by this PE-backed company). Only events dated inside the window.
-- `pe_hold_2_4` - a STATUS signal: the sponsor's original investment in the company closed or was announced between 2 and 4 years before today, and the sponsor still owns the company. Its `event_date` is the date of that ORIGINAL investment as stated in the source (not a recent date). If the investment was less than 2 or more than 4 years ago, or the sponsor has sold, do not emit it.
 
 Company press releases, the sponsor's own website and SEC filings are the most authoritative sources.
 
