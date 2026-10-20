@@ -298,3 +298,26 @@ discovery:
 pe_firms:
   max_firms_per_run: 25
   portfolio_max_per_firm: 25
+
+# PE portfolio intelligence (bd pe-collect): reads each firm's own portfolio page, keeps every relationship with its evidence and dates.
+pe_portfolio:
+  fetch:
+    timeout_seconds: 20
+    max_retries: 2
+    retry_backoff_seconds: 2
+    min_seconds_between_requests: 2      # per host
+    max_bytes: 2000000
+    max_pages_per_source: 12             # pages of one listing (pagination, "next" links, public site API pages)
+    respect_robots: true
+    user_agent_suffix: "bd-portfolio-reader"
+    cache_hours: 6
+  ownership_fresh_days: 120              # shown as stale after this, never silently changed
+  listing_fresh_days: 45
+  pending_window_days: 270               # announced and not shown as completed: "pending" this long, then "unclear"
+  snapshot_keep: 5
+  text_cap_bytes: 400000
+  # Geography follows fit_gate (state and counties). A company's city is not mapped to a county by this code; if you want cities inside
+  # the state counted as in scope without fact research, list them here. Empty means not configured, and the page says so.
+  scope_cities: []
+  locate_per_run: 25                     # free: reads a company's own site for an address shown on it
+  research_unresolved: 0                 # paid fact research of portfolio companies whose HQ the listing does not show (0 = off; set a cap to enable)
