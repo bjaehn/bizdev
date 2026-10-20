@@ -29,7 +29,7 @@ def test_the_signal_scan_reads_job_boards_free_then_searches_for_signals_then_sc
     free, paid = steps[0], steps[1]
     assert set(free[free.index("--scanners") + 1].split(",")) <= FREE_SCANNERS and "--light" in free and not is_paid(free)
     scanners = set(paid[paid.index("--scanners") + 1].split(","))
-    assert scanners == set(FIND_SCANNERS.split(",")) == {"leadership", "press", "hiring"}
+    assert scanners == set(FIND_SCANNERS.split(",")) == {"sweep", "hiring"}
     assert is_paid(paid) and "--force" in paid and "--light" not in paid       # the paid scan counts against the cap and records that the company was scanned
     assert not is_paid(steps[2])
     monkeypatch.delenv("BD_USER_AGENT")
@@ -145,7 +145,7 @@ def test_running_the_scan_adds_the_company_and_starts_exactly_one_capped_job(wor
     zeta = [x for x in list_accounts(e.conn, status=None) if x.name == "Zeta Holdings"][0]
     assert zeta.origin == "manual" and zeta.tier == "B" and zeta.status == "active"
     log = e.app.jobs.log_tail(job.id)
-    assert "ARGS: scan --only Zeta Holdings --exact --scanners ats" in log and "--scanners leadership,press,hiring" in log
+    assert "ARGS: scan --only Zeta Holdings --exact --scanners ats" in log and "--scanners sweep,hiring" in log
     assert "ARGS: score" in log and "sec-fill" not in log
     assert e.conn.execute("SELECT actor FROM audit_log WHERE account_id = ? ORDER BY id LIMIT 1", (zeta.id,)).fetchone()["actor"] == "ui"
     assert e.post("/find/run", {"name": "zeta holdings, inc.", "confirm": "1"}).code == 303                      # typed differently: found, not added twice

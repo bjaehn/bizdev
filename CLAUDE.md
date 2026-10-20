@@ -47,8 +47,9 @@ To change the look of the whole app: edit the tokens or one component in `design
   of the list has been scanned (Admin Home); the viewer lookup is the capped (`$1`) `find` signal-scan job in `bd/jobs.py` + `/find` in `app.py`; `bd/matrix.py` the signal matrix; `bd/profile.py` the company brief and its plain-text copy;
   `bd/priority.py` the priority chart data; `bd/market.py` the Market view data; `bd/charts.py` SVG charts.
 - Analysis nav is This week and Companies (the Signals feed is reached from This week); Reports live under Admin. `ADMIN_GROUPS` in `app.py` lists the Admin pages.
-- Cost levers (the user finds the weekly scan too expensive): tiered scan (`CORE_SCANNERS` for everyone, `EXTRA_SCANNERS` only where a signal shows, in `bd/jobs.py`), quiet companies wait `scan.quiet_every_weeks` (`bd/runner.py`),
-  the `sweep` scanner and `ANTHROPIC_SCAN_MODEL` (built, **not the default until the user has run `bd compare` and read it**), per-model pricing in `bd/cost.py`. Cost figures for the sweep are estimates until then.
+- Cost levers (the user finds the weekly scan too expensive): the core scan is the combined `sweep` (on `ANTHROPIC_SCAN_MODEL`, Haiku, set in Railway) plus `hiring`; `tech_procurement` is the extra that runs only where a signal shows
+  (`CORE_SCANNERS` / `EXTRA_SCANNERS` in `bd/jobs.py`). Quiet companies wait `scan.quiet_every_weeks` (`bd/runner.py`); per-model pricing is in `bd/cost.py`. The switch rests on a four-company `bd compare` run (sweep $0.33 against $3.88; 13 found against 8 stored,
+  two real misses): watch signal counts after the first weekly run. Hiring is the largest remaining cost and has not been tried on the cheaper model. `scripts/weekly.sh` still runs the older `all` list.
 
 ## Working agreements
 - Open pull requests as drafts and subscribe to their activity; the user merges. Never merge unless explicitly told to.

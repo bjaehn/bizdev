@@ -24,6 +24,7 @@ from bd.scanners.sweep import SweepScanner
 from bd.urls import normalize_url
 
 REPLACED_STEPS = ("scan:leadership", "scan:press", "scan:events", "scan:tech_procurement")     # the calls the sweep stands in for
+SAME_EVENT_DAYS = 3           # a found and a stored signal of the same type this close in date are one event reported at two sources
 
 
 @dataclass
@@ -42,6 +43,7 @@ class CompareRow:
     new: int = 0                  # found, and not stored by the separate scanners
     missed: list[Stored] = field(default_factory=list)       # stored, and the sweep did not find
     cost: float | None = None     # None: the model has no price in config.yaml
+    tokens: int = 0
     searches: int = 0
     prior_cost: float | None = None      # what the separate scanners cost the last time they ran for this company
     error: str | None = None
@@ -74,15 +76,18 @@ def pick_accounts(conn: sqlite3.Connection, accounts: list[Account], as_of: date
 
 
 def _same(found: AcceptedSignal, stored: Stored) -> bool:
+    """The same event: the same source page, or the same type dated within SAME_EVENT_DAYS (an 8-K and the press release for one appointment are a day apart)."""
     e = found.extract
-    return normalize_url(e.source_url) == normalize_url(stored.url) or (e.type == stored.type and e.event_date.isoformat() == stored.event_date)
+    if normalize_url(e.source_url) == normalize_url(stored.url):
+        return True
+    return e.type == stored.type and abs((e.event_date - date.fromisoformat(stored.event_date)).days) <= SAME_EVENT_DAYS
 
 
 def compare_account(conn: sqlite3.Connection, cfg: Config, scanner: Scanner, account: Account, as_of: date, model: str | None) -> CompareRow:
     since = (as_of - timedelta(days=cfg.scan.window_days)).isoformat()
     row = CompareRow(account, stored=stored_signals(conn, account.id, since), prior_cost=prior_cost(conn, account.id))
     out = scanner.scan(account, as_of)
-    row.found, row.error, row.searches = out.signals, out.error, out.usage.web_searches
+    row.found, row.error, row.searches, row.tokens = out.signals, out.error, out.usage.web_searches, out.usage.total_tokens
     row.cost = estimate_cost(out.usage, scanner.model_name or model, cfg)
     row.matched = sum(any(_same(f, s) for s in row.stored) for f in row.found)
     row.new = len(row.found) - row.matched
@@ -101,6 +106,9 @@ def run_compare(conn: sqlite3.Connection, cfg: Config, scanner: Scanner, account
             continue
         row = compare_account(conn, cfg, scanner, acc, as_of, model)
         rows.append(row)
+        with conn:       # the cost is real spend, so it is logged (Runs and cost, and the job's own total); no signal is stored
+            conn.execute("INSERT INTO runs(run_date,step,account_id,accounts_scanned,signals_found,tokens,est_cost,errors) VALUES (?,?,?,?,?,?,?,?)",
+                         (as_of.isoformat(), "compare:sweep", acc.id, 1, 0, row.tokens, row.cost, row.error))
         spent += row.cost or 0.0
         reserve.note(row.cost, row.searches > 0)
         log(f"  {acc.name}: {len(row.found)} found, {row.searches} searches" + (f", ${row.cost:.4f}" if row.cost is not None else ", unpriced")

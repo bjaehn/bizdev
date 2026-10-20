@@ -80,12 +80,44 @@ def test_a_stored_signal_the_sweep_does_not_find_is_reported_missed(db, cfg):
 
 def test_nothing_is_written_to_the_database(db, cfg):
     conn, acme, zed, quiet = db
-    before = [conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("signals", "runs", "accounts")]
+    before = [conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("signals", "accounts", "postings")]
     last = conn.execute("SELECT last_scanned FROM accounts WHERE id = ?", (acme,)).fetchone()[0]
     sc = sweep(cfg, [[found("https://acme.com/brand-new", "ai_commitment", "2026-10-05")]], urls=["https://acme.com/brand-new"])
     run_compare(conn, cfg, sc, [list_accounts(conn)[0]], AS_OF, MODEL)
-    assert [conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("signals", "runs", "accounts")] == before
+    assert [conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("signals", "accounts", "postings")] == before      # no signal, company or posting is stored
     assert conn.execute("SELECT last_scanned FROM accounts WHERE id = ?", (acme,)).fetchone()[0] == last
+
+
+def test_the_cost_of_a_test_is_logged_as_real_spend_so_runs_and_the_jobs_total_see_it(db, cfg):
+    conn, acme, zed, quiet = db
+    sc = sweep(cfg, [[found("https://acme.com/coo")], []], urls=["https://acme.com/coo"])
+    rows = run_compare(conn, cfg, sc, list_accounts(conn)[:2], AS_OF, MODEL)
+    logged = conn.execute("SELECT account_id, signals_found, tokens, est_cost FROM runs WHERE step = 'compare:sweep' ORDER BY id").fetchall()
+    assert [r["account_id"] for r in logged] == [acme, zed] and all(r["signals_found"] == 0 and r["tokens"] > 0 for r in logged)
+    assert [r["est_cost"] for r in logged] == pytest.approx([x.cost for x in rows]) and all(r["est_cost"] > 0 for r in logged)
+    assert prior_cost(conn, acme) is None                          # a test's own cost is never mistaken for what the separate scanners cost
+    assert conn.execute("SELECT COUNT(*) FROM runs WHERE step LIKE 'scan:%'").fetchone()[0] == 0
+
+
+def test_one_event_found_at_a_second_source_a_day_apart_is_not_a_miss(db, cfg):
+    conn, acme, zed, quiet = db
+    add_signal(conn, cfg, acme, "leadership_change", 25, url="https://acme.com/press/cfo")                 # the press release, dated 2026-09-20
+    add_signal(conn, cfg, acme, "leadership_change", 25, url="https://sec.example/ex99.htm")               # its exhibit: same date, another page
+    sc = sweep(cfg, [[found("https://sec.example/8k.htm", "leadership_change", "2026-09-21", "Names a new CFO."),       # the 8-K, a day later
+                      found("https://acme.com/other", "leadership_change", "2026-10-12", "Names another officer.")]],     # a different event
+               urls=["https://sec.example/8k.htm", "https://acme.com/other"])
+    [row] = run_compare(conn, cfg, sc, [list_accounts(conn)[0]], AS_OF, MODEL)
+    missed = {m.url for m in row.missed}
+    assert "https://acme.com/press/cfo" not in missed and "https://sec.example/ex99.htm" not in missed        # both stored pages are the event the 8-K reports
+    assert missed == {"https://acme.com/erp", "https://acme.com/coo"}                                          # the others really were not found
+    assert row.matched == 1 and row.new == 1                                                                   # the 8-K matches; the October 12 item is new
+
+
+def test_two_events_of_one_type_more_than_a_few_days_apart_stay_separate(db, cfg):
+    conn, acme, zed, quiet = db
+    sc = sweep(cfg, [[found("https://acme.com/new-coo", "leadership_change", "2026-09-27", "Names a different COO.")]], urls=["https://acme.com/new-coo"])
+    [row] = run_compare(conn, cfg, sc, [list_accounts(conn)[0]], AS_OF, MODEL)       # the stored COO signal is dated 2026-10-05: eight days apart
+    assert row.matched == 0 and row.new == 1 and "https://acme.com/coo" in {m.url for m in row.missed}
 
 
 def test_the_spending_limit_stops_the_test_before_the_next_company(db, cfg):

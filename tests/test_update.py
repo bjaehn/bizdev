@@ -34,8 +34,8 @@ def test_update_job_is_validated_and_runs_the_steps_in_order():
     assert steps[1] == ["sec-fill", "--as-of", "2026-10-16"]
     assert steps[6] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
     assert "--light" in steps[3] and "--light" not in steps[4] and steps[4][:3] == ["scan", "--limit", "25"]
-    assert steps[4][steps[4].index("--scanners") + 1] == "leadership,press,hiring" and steps[4][steps[4].index("--extras") + 1] == "events,tech_procurement"
-    assert "warn" not in " ".join(steps[4])                                  # WATCH notices are left to Advanced tools
+    assert steps[4][steps[4].index("--scanners") + 1] == "sweep,hiring" and steps[4][steps[4].index("--extras") + 1] == "tech_procurement"
+    assert "warn" not in " ".join(steps[4]) and "leadership" not in steps[4] and "press" not in steps[4]       # WARN notices are left to Advanced tools; the sweep covers leadership, press and events
     assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[4]
     skip = sequence_for("update", validate("update", {**UPD, "research": "0", "segments": "0"}), "2026-10-16")
     assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "scan", "scan", "score"]
