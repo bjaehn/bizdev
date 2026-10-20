@@ -355,7 +355,7 @@ class App:
     def job_start(self, req: Request) -> Response:
         assert self.jobs is not None
         kind = req.f("kind")
-        form = {k: req.f(k) for k in ("limit", "only", "tier", "no_llm")}
+        form = {k: req.f(k) for k in ("limit", "only", "tier", "no_llm", "scanner")}
         form["scanners"] = ",".join(req.flist("scanners"))
         try:
             job_id = self.jobs.submit(kind, form, confirmed=bool(req.f("confirm")))

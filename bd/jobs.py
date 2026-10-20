@@ -126,7 +126,11 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         return ["find", "--only", company_name(form, required=True), "--budget", str(FIND_BUDGET)]
     if kind == "compare":
         only = company_name(form)
-        return ["compare", "--count", str(num("limit", 1, 8, required=True)), "--budget", str(COMPARE_BUDGET)] + (["--only", only] if only else [])
+        which = (form.get("scanner") or "sweep").strip()
+        if which not in COMPARE_SCANNERS:
+            raise JobError("Choose the combined scan or the technology scan.")
+        return (["compare", "--count", str(num("limit", 1, 8, required=True)), "--budget", str(COMPARE_BUDGET)] + (["--only", only] if only else [])
+                + (["--scanner", which] if which != "sweep" else []))
     if kind == "ask":
         return ["ask", "--id", str(num("id", 1, 10**9, required=True))]
     if kind == "rfps":
@@ -169,6 +173,7 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 
 
 LOOKUP_BUDGET = 3        # dollars: the most one "research and scan this company" may spend, whatever the company
+COMPARE_SCANNERS = ("sweep", "tech_procurement")      # the scanners `bd compare` can test; a test keeps this in step with bd.compare.BASELINES
 COMPARE_BUDGET = 3       # dollars: the most one side-by-side test of the combined scan may spend (about 4 companies cost $0.5 to $1.5)
 FIND_BUDGET = 1          # dollars: the most one signal scan of a single company, started from the viewer's Find page, may spend
 # What a scan looks for. Every company gets the core scanners: the combined sweep (leadership, press, company events and technology in one call, on
@@ -245,7 +250,8 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
                 ["score", "--allow-empty", "--as-of", as_of]]
     if kind == "compare":      # nothing is stored, so no score step
         a = dict(zip(args[1::2], args[2::2]))
-        return [["compare", "--count", a["--count"], *(["--only", a["--only"]] if "--only" in a else []), "--as-of", as_of]]
+        return [["compare", "--count", a["--count"], *(["--only", a["--only"]] if "--only" in a else []),
+                 *(["--scanner", a["--scanner"]] if "--scanner" in a else []), "--as-of", as_of]]
     if kind in ("refresh", "refresh_now"):
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):

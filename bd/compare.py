@@ -21,10 +21,29 @@ from bd.config import Config
 from bd.cost import estimate_cost
 from bd.scanners.base import AcceptedSignal, Scanner
 from bd.scanners.sweep import SweepScanner
+from bd.scanners.tech_procurement import TechProcurementScanner
 from bd.urls import normalize_url
 
 REPLACED_STEPS = ("scan:leadership", "scan:press", "scan:events", "scan:tech_procurement")     # the calls the sweep stands in for
 SAME_EVENT_DAYS = 3           # a found and a stored signal of the same type this close in date are one event reported at two sources
+
+
+@dataclass(frozen=True)
+class Baseline:
+    """What a scanner under test is measured against, and the words the report uses for it."""
+    types: frozenset[str]            # the signal types the stored baseline is taken from
+    steps: tuple[str, ...]           # the logged runs whose cost is the "last time" price
+    title: str                       # report heading: "<title> on <model>, nothing stored"
+    subject: str                     # "what <subject> found now"
+    short: str                       # in a company's line
+    others: str                      # "signals <others> had stored" and "for <others> last time"
+
+
+BASELINES = {
+    "sweep": Baseline(SweepScanner.allowed_types, REPLACED_STEPS, "Combined sweep", "the sweep", "sweep", "the separate scanners"),
+    "tech_procurement": Baseline(TechProcurementScanner.allowed_types, ("scan:tech_procurement",), "Technology scan", "the technology scan",
+                                 "technology scan", "the same scanner on the main model"),
+}
 
 
 @dataclass
@@ -50,28 +69,29 @@ class CompareRow:
     skipped: bool = False         # never started: the spending limit
 
 
-def stored_signals(conn: sqlite3.Connection, account_id: int, since: str) -> list[Stored]:
-    marks = ",".join("?" * len(SweepScanner.allowed_types))
+def stored_signals(conn: sqlite3.Connection, account_id: int, since: str, types: frozenset[str] = SweepScanner.allowed_types) -> list[Stored]:
+    marks = ",".join("?" * len(types))
     return [Stored(r["type"], r["event_date"], r["source_url"]) for r in conn.execute(
         f"SELECT type, event_date, source_url FROM signals WHERE account_id = ? AND event_date >= ? AND type IN ({marks}) "
-        "ORDER BY event_date DESC, id DESC", (account_id, since, *sorted(SweepScanner.allowed_types)))]
+        "ORDER BY event_date DESC, id DESC", (account_id, since, *sorted(types)))]
 
 
-def prior_cost(conn: sqlite3.Connection, account_id: int) -> float | None:
-    """What the four replaced scanners cost for this company on the most recent day any of them ran; None if never run or unpriced."""
-    marks = ",".join("?" * len(REPLACED_STEPS))
+def prior_cost(conn: sqlite3.Connection, account_id: int, steps: tuple[str, ...] = REPLACED_STEPS) -> float | None:
+    """What the scanners under test replace cost for this company on the most recent day any of them ran; None if never run or unpriced."""
+    marks = ",".join("?" * len(steps))
     day = conn.execute(f"SELECT MAX(run_date) FROM runs WHERE account_id = ? AND step IN ({marks}) AND est_cost IS NOT NULL",
-                       (account_id, *REPLACED_STEPS)).fetchone()[0]
+                       (account_id, *steps)).fetchone()[0]
     if not day:
         return None
     return conn.execute(f"SELECT SUM(est_cost) FROM runs WHERE account_id = ? AND run_date = ? AND step IN ({marks}) AND est_cost IS NOT NULL",
-                        (account_id, day, *REPLACED_STEPS)).fetchone()[0]
+                        (account_id, day, *steps)).fetchone()[0]
 
 
-def pick_accounts(conn: sqlite3.Connection, accounts: list[Account], as_of: date, window_days: int, count: int) -> list[Account]:
-    """The companies with the most stored signals of the kinds the sweep covers (a test needs something to find), most first."""
+def pick_accounts(conn: sqlite3.Connection, accounts: list[Account], as_of: date, window_days: int, count: int,
+                  types: frozenset[str] = SweepScanner.allowed_types) -> list[Account]:
+    """The companies with the most stored signals of the kinds under test (a test needs something to find), most first."""
     since = (as_of - timedelta(days=window_days)).isoformat()
-    n = {a.id: len(stored_signals(conn, a.id, since)) for a in accounts}
+    n = {a.id: len(stored_signals(conn, a.id, since, types)) for a in accounts}
     return sorted((a for a in accounts if n[a.id]), key=lambda a: (-n[a.id], a.name))[:count]
 
 
@@ -85,7 +105,8 @@ def _same(found: AcceptedSignal, stored: Stored) -> bool:
 
 def compare_account(conn: sqlite3.Connection, cfg: Config, scanner: Scanner, account: Account, as_of: date, model: str | None) -> CompareRow:
     since = (as_of - timedelta(days=cfg.scan.window_days)).isoformat()
-    row = CompareRow(account, stored=stored_signals(conn, account.id, since), prior_cost=prior_cost(conn, account.id))
+    b = BASELINES.get(scanner.name, BASELINES["sweep"])
+    row = CompareRow(account, stored=stored_signals(conn, account.id, since, b.types), prior_cost=prior_cost(conn, account.id, b.steps))
     out = scanner.scan(account, as_of)
     row.found, row.error, row.searches, row.tokens = out.signals, out.error, out.usage.web_searches, out.usage.total_tokens
     row.cost = estimate_cost(out.usage, scanner.model_name or model, cfg)
@@ -97,7 +118,7 @@ def compare_account(conn: sqlite3.Connection, cfg: Config, scanner: Scanner, acc
 
 def run_compare(conn: sqlite3.Connection, cfg: Config, scanner: Scanner, accounts: list[Account], as_of: date, model: str | None,
                 max_cost: float | None = None, log: Callable[[str], None] = lambda s: None) -> list[CompareRow]:
-    """One sweep per company, one after another, stopping before the spending limit. Nothing is written to the database."""
+    """One scan per company, one after another, stopping before the spending limit. No signal is written to the database."""
     rows: list[CompareRow] = []
     reserve, spent = Reserve(cfg.llm.call_reserve_usd), 0.0
     for acc in accounts:
@@ -108,7 +129,7 @@ def run_compare(conn: sqlite3.Connection, cfg: Config, scanner: Scanner, account
         rows.append(row)
         with conn:       # the cost is real spend, so it is logged (Runs and cost, and the job's own total); no signal is stored
             conn.execute("INSERT INTO runs(run_date,step,account_id,accounts_scanned,signals_found,tokens,est_cost,errors) VALUES (?,?,?,?,?,?,?,?)",
-                         (as_of.isoformat(), "compare:sweep", acc.id, 1, 0, row.tokens, row.cost, row.error))
+                         (as_of.isoformat(), f"compare:{scanner.name}", acc.id, 1, 0, row.tokens, row.cost, row.error))
         spent += row.cost or 0.0
         reserve.note(row.cost, row.searches > 0)
         log(f"  {acc.name}: {len(row.found)} found, {row.searches} searches" + (f", ${row.cost:.4f}" if row.cost is not None else ", unpriced")
@@ -120,19 +141,20 @@ def _money(x: float | None) -> str:
     return "unknown" if x is None else f"${x:.2f}"
 
 
-def report(rows: list[CompareRow], model: str | None) -> list[str]:
+def report(rows: list[CompareRow], model: str | None, baseline: Baseline = BASELINES["sweep"]) -> list[str]:
     """The side-by-side in plain words."""
+    b = baseline
     done = [r for r in rows if not r.skipped and not r.error]
-    lines = [f"Combined sweep on {model or 'the default model'}, nothing stored. Each line: signals the separate scanners had stored for the company "
-             "against what the sweep found now.", ""]
+    lines = [f"{b.title} on {model or 'the default model'}, nothing stored. Each line: signals {b.others} had stored for the company "
+             f"against what {b.subject} found now.", ""]
     for r in rows:
         if r.skipped:
             lines.append(f"{r.account.name}: not run (spending limit)")
         elif r.error:
-            lines.append(f"{r.account.name}: the sweep failed ({r.error})")
+            lines.append(f"{r.account.name}: {b.subject} failed ({r.error})")
         else:
-            lines.append(f"{r.account.name}: stored {len(r.stored)} · sweep found {len(r.found)} ({r.matched} the same, {r.new} not stored before) · "
-                         f"missed {len(r.missed)} · sweep {_money(r.cost)} against {_money(r.prior_cost)} for the separate scanners last time")
+            lines.append(f"{r.account.name}: stored {len(r.stored)} · {b.short} found {len(r.found)} ({r.matched} the same, {r.new} not stored before) · "
+                         f"missed {len(r.missed)} · {b.short} {_money(r.cost)} against {_money(r.prior_cost)} for {b.others} last time")
             for f in r.found:
                 if not any(_same(f, s) for s in r.stored):
                     e = f.extract
@@ -145,13 +167,13 @@ def report(rows: list[CompareRow], model: str | None) -> list[str]:
     matched, new = sum(r.matched for r in done), sum(r.new for r in done)
     priced = [r for r in done if r.cost is not None and r.prior_cost is not None]        # only companies with a cost on both sides can be compared
     cost, past = sum(r.cost for r in priced), sum(r.prior_cost for r in priced)
-    lines += ["", f"Together: stored {stored}, sweep found {found} ({matched} the same, {new} not stored before), missed {stored - matched}."]
+    lines += ["", f"Together: stored {stored}, {b.short} found {found} ({matched} the same, {new} not stored before), missed {stored - matched}."]
     if priced:
-        lines.append(f"Cost for the {len(priced)} compan{'y' if len(priced) == 1 else 'ies'} with a past cost: sweep {_money(cost)} against {_money(past)} for the separate scanners.")
+        lines.append(f"Cost for the {len(priced)} compan{'y' if len(priced) == 1 else 'ies'} with a past cost: {b.short} {_money(cost)} against {_money(past)} for {b.others}.")
     else:
-        lines.append("No past cost on file to compare with (the separate scanners have not run for these companies since costs were logged).")
+        lines.append(f"No past cost on file to compare with ({b.others} have not run for these companies since costs were logged).")
     enough = "at least as many signals as were stored" if found >= stored else "fewer signals than were stored"
     cheaper = " and cost less." if priced and cost < past else (" and did not cost less." if priced else ".")
-    lines.append(f"The sweep found {enough}{cheaper} Open the 'new' sources to judge whether they are real signals. "
+    lines.append(f"{b.subject[0].upper() + b.subject[1:]} found {enough}{cheaper} Open the 'new' sources to judge whether they are real signals. "
                  "Stored counts build up over several runs, so read this as a guide, not a measurement.")
     return lines

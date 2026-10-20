@@ -66,7 +66,7 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     from bd.ats import AtsClient
     from bd.edgar import EdgarClient
     from bd.llm import AnthropicWebSearchClient
-    from bd.scanners import SCANNERS
+    from bd.scanners import SCAN_MODEL_SCANNERS, SCANNERS
     from bd.verify import UrlVerifier
 
     try:
@@ -81,10 +81,10 @@ def _build_scanners(names: list[str], cfg: Config, settings: Settings):
     ats = AtsClient(cfg, settings.user_agent) if "ats" in names else None
     built = [SCANNERS[n].create(cfg, web, text, verifier, edgar, ats=ats) for n in names]
     scan_model = settings.anthropic_scan_model
-    if scan_model and scan_model != model:        # the sweep may run on a cheaper model; its cost is priced by that model
+    if scan_model and scan_model != model:        # the sweep and the technology scanner run on the cheaper model; their cost is priced by that model
         cheap = AnthropicWebSearchClient(cfg, model=scan_model, api_key=key)
         for sc in built:
-            if sc.name == "sweep":
+            if sc.name in SCAN_MODEL_SCANNERS:
                 sc.llm, sc.model_name = cheap, scan_model
     return built
 
@@ -246,12 +246,17 @@ def compare(
     count: int = typer.Option(4, "--count", min=1, max=8, help="How many companies to test (those with the most stored signals)"),
     only: Optional[str] = typer.Option(None, help="Test this one company instead (exact name)"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    scanner_name: str = typer.Option("sweep", "--scanner", help="sweep (against the separate scanners it replaces) or tech_procurement (against its own stored results)"),
 ) -> None:
-    """Test the combined sweep scanner (on ANTHROPIC_SCAN_MODEL when set) against what the separate scanners already stored.
-    Stores nothing; costs a few cents a company."""
+    """Test a scanner on ANTHROPIC_SCAN_MODEL against what was already stored for the same kinds of signal.
+    Stores no signal; costs a few cents a company."""
     from bd.accounts import list_accounts
-    from bd.compare import pick_accounts, report, run_compare
+    from bd.compare import BASELINES, pick_accounts, report, run_compare
     from bd.db import connect, init_db
+
+    if scanner_name not in BASELINES:
+        _fail(f"--scanner must be one of: {', '.join(BASELINES)}")
+    baseline = BASELINES[scanner_name]
 
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
@@ -263,20 +268,20 @@ def compare(
     if only:
         accounts = [a for a in accounts if a.name.lower() == only.lower()]
     else:
-        accounts = pick_accounts(conn, accounts, run_date, cfg.scan.window_days, count)
+        accounts = pick_accounts(conn, accounts, run_date, cfg.scan.window_days, count, baseline.types)
     if not accounts:
         _fail("No company to test: " + (f"{only!r} is not on your list." if only else
                                           "none has a stored signal yet. Run an update first, so there is something to compare with."))
-    scanner = _build_scanners(["sweep"], cfg, settings)[0]
+    scanner = _build_scanners([scanner_name], cfg, settings)[0]
     model = scanner.model_name or settings.anthropic_model
-    typer.echo(f"Testing the sweep on {len(accounts)} compan{'y' if len(accounts) == 1 else 'ies'} with {model} (nothing is stored): "
+    typer.echo(f"Testing {baseline.subject} on {len(accounts)} compan{'y' if len(accounts) == 1 else 'ies'} with {model} (nothing is stored): "
                + ", ".join(a.name for a in accounts))
     rows = run_compare(conn, cfg, scanner, accounts, run_date, settings.anthropic_model, max_cost=cfg.llm.max_cost_per_run_usd, log=typer.echo)
     typer.echo("")
-    for line in report(rows, model):
+    for line in report(rows, model, baseline):
         typer.echo(line)
     if rows and all(r.error for r in rows if not r.skipped):
-        typer.echo("Every sweep call failed (does this model support web search? is the key right?).", err=True)
+        typer.echo(f"Every call failed (does {model} support web search? is the key right?).", err=True)
         raise typer.Exit(code=3)
 
 
