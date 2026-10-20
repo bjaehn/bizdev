@@ -319,6 +319,7 @@ class OpportunityModel(_Strict):
     consulting_categories: dict[str, list[str]]
     hiring_theme_categories: dict[str, str]
     owner_function: dict[str, str]
+    outside_places: list[str] = []      # place names outside the configured area: an event that names one may concern a parent or affiliate, not this company's own operations
 
     @model_validator(mode="after")
     def _weights_total(self) -> "OpportunityModel":

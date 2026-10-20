@@ -15,8 +15,9 @@ Rules this module will not bend (each is a test in tests/test_opportunity_model.
 
 from __future__ import annotations
 
+import re
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 from bd.config import Config
@@ -64,6 +65,7 @@ class Item:
     milestone: date | None = None        # a stated expected closing, never treated as a closing
     ownership_unverified: bool = False   # a deal whose ownership status is unclear, conflicting or stale
     categories: tuple[str, ...] = ()
+    places: tuple[str, ...] = ()         # configured outside places the text names (set when the item is assessed); empty = none named
 
     @property
     def domain(self) -> str:
@@ -132,6 +134,11 @@ class Assessment:
     unknowns: list[str] = field(default_factory=list)
     next_step: str = ""
     discussion_question: str = ""
+    scored_events: int = 0               # distinct scored events that bear on a need
+    outside_events: int = 0              # of those, how many name a place outside the configured area (they may concern a parent or an affiliate)
+    outside_places: list[str] = field(default_factory=list)
+    eligible_events: int = 0             # scored events specific and current enough to support Prospect now
+    eligible_outside: int = 0            # of those, how many name an outside place
     owner_function: str = ""
     named_people: list[str] = field(default_factory=list)
     events: int = 0
@@ -149,6 +156,23 @@ class Context:
     geography: str | None = None                                    # in_scope | out_of_scope | unknown
     identity_verified: bool = True
     last_scanned: str | None = None
+
+
+def outside_places(text: str, cfg: Config) -> tuple[str, ...]:
+    """The configured outside places a text names, in order of appearance. Whole words, case-sensitive; "New Mexico" is not Mexico, and "Ireland" inside
+    "Northern Ireland" is not a second place."""
+    spans: list[tuple[int, int, str]] = []
+    for name in cfg.opportunity_model.outside_places:
+        for m in re.finditer(r"(?<![A-Za-z])" + re.escape(name) + r"(?![A-Za-z])", text or ""):
+            if name == "Mexico" and text[:m.start()].endswith("New "):
+                continue
+            spans.append((m.start(), m.end(), name))
+    spans = [x for x in spans if not any(o is not x and o[0] <= x[0] and x[1] <= o[1] and (o[1] - o[0]) > (x[1] - x[0]) for o in spans)]
+    seen: list[str] = []
+    for _a, _b, name in sorted(spans):
+        if name not in seen:
+            seen.append(name)
+    return tuple(seen)
 
 
 # ---- turning items into events -----------------------------------------------------------------------------------------------------------------
@@ -251,6 +275,7 @@ def assess(items: list[Item], today: date, cfg: Config, ctx: Context) -> Assessm
             a.excluded.append((i, "Low confidence or not page-verified: stored, never scored"))
         else:
             scored.append(i)
+    scored = [replace(i, places=outside_places(i.summary, cfg)) for i in scored]
     clusters = cluster_events(scored, cfg)
     a.events = len(clusters)
 
@@ -300,6 +325,13 @@ def assess(items: list[Item], today: date, cfg: Config, ctx: Context) -> Assessm
     _confidence(a, clusters, best_need_cluster, cfg)
     a.facts = [c.rep for c in clusters if c.points["need"] is not None]
     a.named_people = sorted({i.role_or_person for c in clusters for i in c.items if i.role_or_person})
+    needed = [c for c in clusters if c.points["need"] is not None]
+    outside = [c for c in needed if any(i.places for i in c.items)]
+    a.outside_events, a.outside_places = len(outside), sorted({p for c in outside for i in c.items for p in i.places})
+    a.scored_events = len(needed)
+    pn = m.categories["prospect_now"]                    # the events that could make it Prospect now: specific enough AND current enough
+    eligible = [c for c in needed if (c.points["need"] or 0) >= pn["min_need"] and (timing_points(c, today, cfg) or 0) >= pn["min_timing"]]
+    a.eligible_events, a.eligible_outside = len(eligible), sum(any(i.places for i in c.items) for c in eligible)
     _hypotheses(a, clusters, cfg, ctx)
     _category(a, ctx, cfg, bool(countering), best_need_cluster)
     _unknowns(a, ctx)
@@ -361,6 +393,9 @@ def _hypotheses(a: Assessment, clusters: list[Cluster], cfg: Config, ctx: Contex
             owner = "Ownership of the initiative is unknown: a transaction can be run by the sponsor or by the company"
         elif any(i.kind == "pe_platform_or_sponsor_exec" and i.role_or_person for c in cs for i in c.items):
             owner = "Work potentially coordinated by the sponsor (a sponsor-linked executive is named)"
+        elif all(any(i.places for i in c.items) for c in cs):
+            where = ", ".join(sorted({p for c in cs for i in c.items for p in i.places}))
+            owner = f"Ownership of the initiative is unknown: the evidence names {where}, so it may belong to a parent or an affiliate rather than this company"
         elif all(k in COMPANY_OWN for k in kinds):
             owner = "Work likely owned by the company itself (the evidence concerns its own operations)"
         else:
@@ -387,6 +422,9 @@ def _category(a: Assessment, ctx: Context, cfg: Config, countered: bool, best: C
              Gate("coverage", a.known_dimensions >= p["min_known_dimensions"], f"{a.known_dimensions} of 5 dimensions have evidence, needs {p['min_known_dimensions']}"),
              Gate("hypothesis", bool(a.hypotheses), "a consulting category is suggested by the evidence" if a.hypotheses else "the evidence suggests no consulting category"),
              Gate("no counterevidence", not countered, "none as new as the supporting event" if not countered else "a canceled program or spending restriction is as new or newer"),
+             Gate("its own area", not (a.eligible_events and a.eligible_outside == a.eligible_events),
+                  "a specific, current event does not name a place outside the configured area" if not (a.eligible_events and a.eligible_outside == a.eligible_events)
+                  else f"every specific, current event names {', '.join(a.outside_places)}; nothing shows it involves this company's own operations (a parent or an affiliate may be the actor)"),
              Gate("ownership verified", not (best and any(i.ownership_unverified for i in best.items)),
                   "not a deal, or the deal's ownership is verified" if not (best and any(i.ownership_unverified for i in best.items))
                   else "the ownership behind the deal is unclear, conflicting or stale")]
@@ -420,6 +458,9 @@ def _unknowns(a: Assessment, ctx: Context) -> None:
         u.append("No executive is named in the evidence; the owner would be inferred from the function, not verified")
     if any(i.event_date is None for i in a.facts):
         u.append("At least one fact has no date stated by its source")
+    if a.outside_events:
+        u.append(f"{a.outside_events} of {a.scored_events} scored event{'s' if a.scored_events != 1 else ''} name{'' if a.outside_events != 1 else 's'} {', '.join(a.outside_places)}: "
+                 "nothing in the evidence shows the event involves this company's own operations rather than a parent, an affiliate or a foreign operation")
     u.extend(ctx.ownership_notes)
     if ctx.geography == "unknown":
         u.append("Geography against the configured scope is unverified")
@@ -437,6 +478,8 @@ def _next_step(a: Assessment, ctx: Context, best: Cluster | None) -> None:
         failed = {g.name for g in a.gates if not g.ok}
         if "supported" in failed or "source quality" in failed:
             steps.append("Find a second, independent source for the main event, preferably the company's own release or a filing")
+        if "its own area" in failed:
+            steps.append(f"Confirm that the events in {', '.join(a.outside_places)} involve this company's own operations, not a parent or an affiliate, before treating them as its need")
         if "ownership verified" in failed:
             steps.append("Verify the ownership relationship on the sponsor's own page or a completion notice before relying on the deal")
         if "no counterevidence" in failed:
@@ -450,8 +493,10 @@ def _next_step(a: Assessment, ctx: Context, best: Cluster | None) -> None:
         if not steps:
             steps.append("Read the cited sources in full, then decide whether a conversation about the hypothesis is warranted")
     a.next_step = ". ".join(s[0].upper() + s[1:] for s in steps[:3]) + "."
-    if a.hypotheses and a.facts:
-        f = a.facts[0]
+    support = [f for f in a.facts if a.hypotheses and f.id in a.hypotheses[0].evidence]       # the events the first hypothesis rests on, not just the newest fact
+    support.sort(key=lambda f: (f.event_date or date.min, f.id), reverse=True)
+    if a.hypotheses and support and "its own area" not in {g.name for g in a.gates if not g.ok}:
+        f = support[0]
         when = f"on {f.event_date:%B %-d, %Y}" if f.event_date else "(date not stated)"
         a.discussion_question = (f"Public sources report {when}: \"{f.summary.rstrip('.')}\". How is {ctx.name} approaching "
                                  f"{phrase(a.hypotheses[0].category)} in light of that? (A question to explore; it assumes no problem, budget or intent.)")
@@ -464,7 +509,7 @@ def rules_text(cfg: Config) -> list[str]:
     return [
         f"Prospect now: score at least {p['min_score']}, a specific need (need anchor at least {p['min_need']}), a current event (timing anchor at least {p['min_timing']}), "
         f"confidence {p['min_confidence']} or better, a source of quality at least {p['min_source_quality']} (a company release, filing or the firm's own page, or a second independent source), evidence in at least {p['min_known_dimensions']} of the 5 dimensions, a suggested consulting category, no counterevidence "
-        "as new as the supporting event, verified ownership behind any deal, and a company inside the configured geography. It means a specific, current, supported hypothesis "
+        "as new as the supporting event, verified ownership behind any deal, and a company inside the configured geography, and at least one of those specific, current events that does not name a place outside it (an event in India or England may be a parent's or an affiliate's, not this company's). It means a specific, current, supported hypothesis "
         "and a next step. It does not mean confirmed buying intent.",
         f"Validate first: a current, specific hypothesis exists (score at least {v['min_score']}, need at least {v['min_need']}, timing at least {v['min_timing']}) but at least one gate for Prospect now fails.",
         f"Nurture: the need is specific (need at least {n['min_need']}) but the evidence is not current.",

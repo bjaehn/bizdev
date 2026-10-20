@@ -446,6 +446,13 @@ opportunity_model:
     nurture:         {min_need: 40}
     monitor:         {min_score: 10}
   # Signal kinds that count against a hypothesis. Each is evidence of a canceled program or a spending restriction.
+  # Places outside the configured area (fit_gate: Illinois and its counties). An event whose text names one of these may concern a parent, a sibling or a
+  # foreign operation, not this company's own: it stays visible as a fact, but if EVERY scored event does, the company cannot be "Prospect now" until someone
+  # confirms the events involve it. Matched as whole words, case-sensitive ("India" is not "Indiana"; "New Mexico" is not "Mexico"). Edit freely.
+  outside_places: [India, England, Scotland, Wales, "Northern Ireland", Ireland, "United Kingdom", UK, Germany, France, Italy, Spain, Netherlands, Belgium, Poland, Sweden,
+                   Norway, Denmark, Switzerland, Austria, Portugal, Turkey, Israel, "Saudi Arabia", UAE, Egypt, "South Africa", Nigeria, Kenya, China, Japan, "South Korea",
+                   Singapore, Taiwan, Vietnam, Thailand, Indonesia, Malaysia, Philippines, Pakistan, Bangladesh, Australia, "New Zealand", Canada, Mexico, Brazil, Argentina,
+                   Chile, Colombia, Peru, EMEA, APAC, LATAM, Europe, Asia, Africa]
   counter_kinds: [program_canceled, spending_restriction]
   counter_need_factor: 0.4         # when a counter signal is as new as the best supporting event or newer, that need is multiplied by this
   # What a kind suggests, as general consulting categories (a hypothesis, never a finding).

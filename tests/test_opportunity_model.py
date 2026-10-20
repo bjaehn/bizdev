@@ -379,3 +379,67 @@ def test_next_steps_read_as_sentences(cfg):
     a = run(cfg, items(("platform_migration", 20)))
     assert "Identify who is responsible for this work (technology or IT leadership) from the company's own leadership page" in a.next_step
     assert a.next_step.endswith(".") and "; Identify" not in a.next_step
+
+
+# ---- events at someone else's place: a subsidiary's brief must not rest on the parent's plant in India or its factory in England -----------------------
+def mccain_like(cfg, ai_age=96):
+    """The shape of a real brief: an acquisition in India (company site) and a restructuring in England (secondary report), both recent, and an older AI program with no place."""
+    return [it("ma_divestiture", 8, st="company_site", summary="McCain has reached an agreement to take over India's Falcon Agrifriz frozen potato plant in Gujarat; financial terms were not disclosed.",
+               cats=("Acquisition integration and separation",)),
+            it("restructuring_layoffs", 4, st="secondary_report", conf="Medium", summary="Staff at McCain's Whittlesey factory in England were warned that jobs could go under a planned restructuring.",
+               cats=("Operating model and process improvement",)),
+            it("ai_commitment", ai_age, st="secondary_report", conf="Medium", summary="Pilot grower program supported by Ceres AI gives teams and North American growers shared crop insights.",
+               cats=("AI implementation and adoption",), person="Jeremy Buchman, director of agronomy")]
+
+
+def test_outside_places_are_whole_words_and_new_mexico_is_not_mexico(cfg):
+    from bd.opportunity_model import outside_places
+    assert outside_places("takes over India's plant; staff in England", cfg) == ("India", "England")
+    assert outside_places("Indiana and New Mexico and Englewood and Chinatown", cfg) == ()
+    assert outside_places("a plant in Mexico", cfg) == ("Mexico",) and outside_places("the UK and Northern Ireland", cfg) == ("UK", "Northern Ireland")
+
+
+def test_when_every_specific_current_event_is_at_a_place_outside_the_area_it_is_not_prospect_now_and_says_why(cfg):
+    a = run(cfg, mccain_like(cfg))
+    gate = {g.name: g for g in a.gates}["its own area"]
+    assert not gate.ok and "India" in gate.detail and "England" in gate.detail and "parent or an affiliate" in gate.detail
+    assert a.category == "Validate first" and "its own area" in a.rule
+    assert any(u.startswith("2 of 3 scored events name England, India:") for u in a.unknowns)
+    assert a.next_step.startswith("Confirm that the events in England, India involve this company's own operations")
+    assert a.discussion_question == ""                                                              # no question built on an event that may concern someone else
+    assert all("parent or an affiliate" in h.initiative_owner for h in a.hypotheses if h.category != "AI implementation and adoption")
+    assert a.score == run(cfg, [replace_places_none(i) for i in mccain_like(cfg)]).score             # the score itself is untouched: it is the category that changes
+
+
+def replace_places_none(i):
+    from dataclasses import replace
+    return replace(i, summary=i.summary.replace("India's", "the").replace("England", "Ohio"))
+
+
+def test_the_same_events_without_outside_places_are_prospect_now_as_before(cfg):
+    clean = [replace_places_none(i) for i in mccain_like(cfg)]
+    a = run(cfg, clean)
+    assert {g.name: g.ok for g in a.gates}["its own area"] and a.category == "Prospect now" and a.discussion_question
+
+
+def test_one_specific_current_event_at_home_is_enough(cfg):
+    from dataclasses import replace
+    its = mccain_like(cfg)
+    its.append(it("platform_migration", 12, st="company_release", summary="Acme moves its billing platform to a cloud provider.", cats=("Technology implementation and integration",)))
+    a = run(cfg, its)
+    assert {g.name: g.ok for g in a.gates}["its own area"] and a.category == "Prospect now"
+    assert any(u.startswith("2 of 4 scored events name England, India:") for u in a.unknowns)               # still said: some events name places outside
+
+
+def test_the_question_is_built_from_the_event_the_hypothesis_rests_on_not_the_newest_fact(cfg):
+    its = [it("platform_migration", 25, summary="Acme moves its billing platform to a cloud provider.", cats=("Technology implementation and integration",)),
+           it("hiring_cluster", 3, summary="Acme posts 5 data roles.", cats=("Data and analytics",), conf="High")]
+    a = run(cfg, its)
+    first = a.hypotheses[0]
+    assert first.category == "Technology implementation and integration"                                  # the strongest need leads
+    assert "billing platform" in a.discussion_question and "data roles" not in a.discussion_question        # not the newest fact (the hiring cluster)
+    assert "technology implementation and integration" in a.discussion_question.lower()
+
+
+def test_the_rules_text_names_the_new_condition(cfg):
+    assert any("place outside it" in line and "parent's or an affiliate's" in line for line in rules_text(cfg))

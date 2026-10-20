@@ -340,3 +340,18 @@ def test_a_firm_name_that_reads_like_two_firms_is_flagged_not_split(app_env):  #
     assert "may be more than one firm" in t and "does not split names by guessing" in t
     other = add_firm(e.conn, "Hellman & Friedman", url=None, domain=None)
     assert "may be more than one firm" not in show(e.get(f"/firms/{other}").body)
+
+
+def test_a_brief_whose_current_events_are_at_places_outside_the_area_is_validate_first_and_says_so(app_env):  # noqa: F811
+    import html as _h
+    e = app_env
+    acct = add_account(e.conn, "Subco USA", domain="subco.example", chicagoland="yes", hq_city="Oak Brook")
+    add_signal(e.conn, e.cfg, acct, "ma_divestiture", 8, as_of=TODAY, source_type="company_release", summary="The group has agreed to take over India's Falcon plant in Gujarat.", url="https://subco.example/news/india")
+    add_signal(e.conn, e.cfg, acct, "restructuring_layoffs", 4, conf="Medium", as_of=TODAY, source_type="secondary_report", summary="Staff at the Whittlesey factory in England were warned of job cuts.", url="https://news.example/england")
+    e.conn.execute("UPDATE accounts SET last_scanned = ? WHERE id = ?", (TODAY.isoformat(), acct))
+    e.conn.commit()
+    t = _h.unescape(show(e.get(f"/companies/{acct}").body))
+    assert "Validate first" in t and "names India: not shown to involve this company's own operations" in t and "names England: not shown to involve this company's own operations" in t
+    assert "name England, India: nothing in the evidence shows the event involves this company's own operations" in t.replace("names", "name")
+    assert "Confirm that the events in England, India involve this company's own operations" in t
+    assert "A question to explore" not in t and "may belong to a parent or an affiliate" in t
