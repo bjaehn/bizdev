@@ -21,6 +21,7 @@ from bd.cost import estimate_cost
 from bd.llm import Usage
 from bd.postings import known_accessions, learn_board, record_filings, store_postings
 from bd.scanners.base import ScanOutcome, Scanner, store_signals
+from bd.signal_coverage import SUCCESSFUL_RUN
 
 
 @dataclass
@@ -74,7 +75,7 @@ def deep_due(conn: sqlite3.Connection, accounts: list[Account], as_of: date, cfg
     due: set[int] = set()
     for name in scanner_names:
         looked = {r[0] for r in conn.execute(
-            f"SELECT DISTINCT account_id FROM runs WHERE step = ? AND run_date >= ? AND (errors IS NULL OR errors LIKE 'rejected:%') AND account_id IN ({marks})",
+            f"SELECT DISTINCT account_id FROM runs WHERE step = ? AND run_date >= ? AND {SUCCESSFUL_RUN} AND account_id IN ({marks})",
             (f"scan:{name}", since, *ids))}
         due |= {i for i in ids if i not in looked}
     return [a for a in accounts if a.id in due]

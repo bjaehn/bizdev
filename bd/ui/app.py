@@ -46,7 +46,7 @@ from bd.week import build_week, newest_signal, signs_line
 from bd.profile import brief_text, build_profile
 from bd.health import build_health
 from bd.market import build_market
-from bd.jobs import COMPARE_BUDGET, FIND_BUDGET, KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
+from bd.jobs import COMPARE_BUDGET, EXTRA_SCANNERS, FIND_BUDGET, KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.lookup import find as find_company
@@ -500,7 +500,7 @@ class App:
             step = ("Open Analysis", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
         last = self.jobs.last_job(("update",))
         return self.render("home.html", page="home", problems=problems, total=total, ready=ready, opps=opps, top=top, u=u,
-                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, coverage=signal_coverage(conn, self.cfg, date.today(), u),
+                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, coverage=signal_coverage(conn, self.cfg, date.today(), u, tuple(EXTRA_SCANNERS.split(","))),
                            last_log=self.jobs.log_tail(last.id)[-1500:] if last and last.status == "failed" else "")
 
     def update_start(self, req: Request, conn: sqlite3.Connection) -> Response:
