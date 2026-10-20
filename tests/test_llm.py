@@ -247,3 +247,52 @@ def test_after_one_repeat_fails_too_no_more_repeats_are_made_in_that_run(cfg):
     c.run("S", [{"role": "user", "content": "go"}])                       # primary rejected, the repeat rejected too: two calls
     c.run("S", [{"role": "user", "content": "go"}])                       # the next call is not repeated: one call, so the spend is not doubled again
     assert [m["tools"][0]["type"] for m in msgs.calls] == [cfg.llm.web_search_tool_type, "web_search_20250305", cfg.llm.web_search_tool_type]
+
+
+# ---- a failed search says what was asked, and whether the repeat ran ------------------------------------------------------------------------------
+def _use(id_, query):
+    return block(type="server_tool_use", id=id_, name="web_search", input={"query": query})
+
+
+def _error_for(id_, code, **extra):
+    return block(type="web_search_tool_result", tool_use_id=id_, content={"type": "web_search_tool_result_error", "error_code": code, **extra})
+
+
+def test_each_failed_search_is_described_by_its_code_what_was_asked_and_any_detail():
+    from bd.llm import search_error_details_from
+    content = [_use("a", "McCain Foods USA careers data analyst"), _error_for("a", "invalid_tool_input", message="query must be a string"),
+               _use("b", "x" * 400), _error_for("b", "invalid_tool_input"), _error_for("zz", "unavailable"),
+               block(type="web_search_tool_result", tool_use_id="ok", content=[{"type": "web_search_result", "url": "https://acme.com/a", "title": "t"}])]
+    d = search_error_details_from(content)
+    assert len(d) == 3 and d[0].startswith('invalid_tool_input asked={"query": "McCain Foods USA careers data analyst"} detail={"message": "query must be a string"}')
+    assert all(len(x) <= 160 for x in d) and d[2] == "unavailable asked=(not in the reply)"
+
+
+def test_the_failure_line_carries_the_first_failed_queries_and_what_the_repeat_did(cfg):
+    from bd.llm import search_failure
+    c, msgs = client(cfg, [resp([_use("a", "kellanova hiring"), _error_for("a", "invalid_tool_input"), block(type="text", text="x", citations=None)]),
+                           resp([_use("b", "kellanova hiring"), _error_for("b", "invalid_tool_input"), block(type="text", text="x", citations=None)])])
+    r = c.run("S", [{"role": "user", "content": "go"}])
+    msg = search_failure(r)
+    assert "repeated once with the basic search tool, which failed too" in msg and "first: first attempt, web_search_20260209: invalid_tool_input" in msg and "kellanova hiring" in msg
+    # the next call in the same run qualifies but is not repeated, and says why
+    c2, m2 = client(cfg, [resp([_error_for("a", "invalid_tool_input"), block(type="text", text="x", citations=None)])])
+    c2._fallback_failed = True
+    r2 = c2.run("S", [{"role": "user", "content": "go"}])
+    assert len(m2.calls) == 1 and r2.fallback_skipped and "not repeated with the basic search tool because an earlier repeat in this run failed" in search_failure(r2)
+
+
+def test_a_repeat_that_worked_leaves_no_failure_to_report(cfg):
+    from bd.llm import search_failure
+    c, msgs = client(cfg, [resp([_error_for("a", "invalid_tool_input"), block(type="text", text="x", citations=None)]),
+                           resp([block(type="web_search_tool_result", content=[{"type": "web_search_result", "url": "https://acme.com/a", "title": "t"}]),
+                                 block(type="text", text=GOOD, citations=None)])])
+    r = c.run("S", [{"role": "user", "content": "go"}])
+    assert r.fallback_used and search_failure(r) is None
+
+
+def test_the_details_and_flags_survive_the_json_retry(cfg):
+    c, msgs = client(cfg, [resp([_use("a", "q1"), _error_for("a", "too_many_requests"), block(type="text", text="not json", citations=None)]),
+                           resp([block(type="text", text=GOOD, citations=None)])])
+    _, res = generate_validated(c, "s", "u", ScanResponse, retries=1)
+    assert res.search_errors == ["too_many_requests"] and len(res.search_error_details) == 1 and "q1" in res.search_error_details[0]

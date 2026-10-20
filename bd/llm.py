@@ -47,6 +47,8 @@ class LLMResult:
     conversation: list[dict[str, Any]] = field(default_factory=list)  # full messages incl. final reply
     search_errors: list[str] = field(default_factory=list)   # error codes of web searches that failed (rate limit, tool unavailable...)
     fallback_used: bool = False                               # the call was repeated once with the basic search tool (see Llm.web_search_fallback_tool_type)
+    fallback_skipped: bool = False                            # it qualified for that repeat but an earlier repeat in this run had failed too, so none was made
+    search_error_details: list[str] = field(default_factory=list)   # for each failed search: its code and what was asked, so a failure can be diagnosed from the log
 
 
 class LLM(Protocol):
@@ -99,6 +101,23 @@ def search_errors_from(content: list[Any]) -> list[str]:
     return codes
 
 
+def search_error_details_from(content: list[Any], cap: int = 160) -> list[str]:
+    """For each failed web search in a reply: its error code, what the model asked (the matching tool call's input) and any other field the error carries.
+    Model-written text, shown only in logs and escaped on pages. Short, because a log line is not a place for a transcript."""
+    uses = {d.get("id"): d for d in (_dump(b) for b in content) if d.get("type") == "server_tool_use" and d.get("id")}
+    out: list[str] = []
+    for b in content:
+        d = _dump(b)
+        c = d.get("content")
+        if d.get("type") != "web_search_tool_result" or not isinstance(c, dict) or not str(c.get("type", "")).endswith("_error"):
+            continue
+        asked = (uses.get(d.get("tool_use_id")) or {}).get("input")
+        extra = {k: v for k, v in c.items() if k not in ("type", "error_code")}
+        text = str(c.get("error_code") or "unknown") + (f" asked={json.dumps(asked, ensure_ascii=False)}" if asked else " asked=(not in the reply)") + (f" detail={json.dumps(extra, ensure_ascii=False)}" if extra else "")
+        out.append(" ".join(text.split())[:cap])
+    return out
+
+
 def search_failure(result: "LLMResult") -> str | None:
     """A sentence when the search tool itself failed during the call, else None. Without it an empty answer from a rate-limited or unavailable
     search tool looks exactly like 'nothing found'. Callers use it only when nothing usable came back."""
@@ -106,7 +125,14 @@ def search_failure(result: "LLMResult") -> str | None:
     if not bad:
         return None
     counts = Counter(bad)
-    return "search tool errors: " + ", ".join(f"{c} x{n}" for c, n in sorted(counts.items())) + " (the search did not run, so an empty answer is not evidence)"
+    msg = "search tool errors: " + ", ".join(f"{c} x{n}" for c, n in sorted(counts.items())) + " (the search did not run, so an empty answer is not evidence)"
+    if result.fallback_used:
+        msg += "; repeated once with the basic search tool, which failed too" if bad else "; repeated once with the basic search tool"
+    elif result.fallback_skipped:
+        msg += "; not repeated with the basic search tool because an earlier repeat in this run failed"
+    if result.search_error_details:
+        msg += "; first: " + " | ".join(result.search_error_details[:2])
+    return msg
 
 
 def _usage_from(u: Any) -> Usage:
@@ -154,7 +180,7 @@ class AnthropicWebSearchClient:
     def run(self, system: str, messages: list[dict[str, Any]], allowed_domains: list[str] | None = None,
             max_uses: int | None = None, tool_type: str | None = None) -> LLMResult:
         convo = list(messages)
-        usage, urls, search_errors = Usage(), set(), []
+        usage, urls, search_errors, error_details = Usage(), set(), [], []
         resp = None
         for attempt in range(self._cfg.llm.max_continuations + 1):
             try:
@@ -171,6 +197,7 @@ class AnthropicWebSearchClient:
             usage.add(one.as_long() if long_over and one.prompt_tokens > long_over else one)
             urls |= retrieved_urls_from(resp.content)
             search_errors += search_errors_from(resp.content)
+            error_details += search_error_details_from(resp.content)
             if resp.stop_reason == "refusal":
                 cat = getattr(getattr(resp, "stop_details", None), "category", None)
                 raise LLMRefusal(f"model refused (category={cat})", usage)
@@ -182,19 +209,22 @@ class AnthropicWebSearchClient:
             raise LLMError("too many pause_turn continuations", usage)
         bad = {c for c in search_errors if c not in BENIGN_SEARCH_ERRORS}
         fallback = self._cfg.llm.web_search_fallback_tool_type
-        if (self._web_search and not urls and bad == {"invalid_tool_input"} and fallback and not self._fallback_failed
-                and (tool_type or self._cfg.llm.web_search_tool_type) != fallback):
+        eligible = (self._web_search and not urls and bad == {"invalid_tool_input"} and fallback and (tool_type or self._cfg.llm.web_search_tool_type) != fallback)
+        skipped = bool(eligible and self._fallback_failed)
+        if eligible and not skipped:
             # Every search in this call was rejected before it ran and nothing came back. The tokens are spent either way, so the call is repeated once
             # with the basic search tool rather than leaving the company, segment or agency unchecked until next week.
             again = self.run(system, messages, allowed_domains, max_uses, tool_type=fallback)
             again.usage.add(usage)
             again.fallback_used = True
+            again.search_error_details = [f"first attempt, {tool_type or self._cfg.llm.web_search_tool_type}: {d}" for d in error_details] + again.search_error_details
             if not again.retrieved_urls and {c for c in again.search_errors if c not in BENIGN_SEARCH_ERRORS} == {"invalid_tool_input"}:
                 self._fallback_failed = True
             return again
         text = "".join(_dump(b).get("text", "") for b in resp.content if _dump(b).get("type") == "text")
         convo = convo + [{"role": "assistant", "content": text}]
-        return LLMResult(text=text, retrieved_urls=urls, usage=usage, conversation=convo, search_errors=search_errors)
+        return LLMResult(text=text, retrieved_urls=urls, usage=usage, conversation=convo, search_errors=search_errors, fallback_skipped=skipped,
+                         search_error_details=error_details)
 
 
 def extract_json(text: str, key: str = "signals") -> Any:
@@ -223,7 +253,8 @@ def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], ret
     model plus a merged LLMResult (usage summed, retrieved URLs unioned). Raises InvalidJSON."""
     kw = llm_kwargs or {}
     result = llm.run(system, [{"role": "user", "content": user}], **kw)
-    merged = LLMResult(result.text, set(result.retrieved_urls), Usage(), result.conversation, list(result.search_errors))
+    merged = LLMResult(result.text, set(result.retrieved_urls), Usage(), result.conversation, list(result.search_errors), fallback_used=result.fallback_used,
+                       fallback_skipped=result.fallback_skipped, search_error_details=list(result.search_error_details))
     merged.usage.add(result.usage)
     last_err = ""
     for attempt in range(retries + 1):
@@ -245,5 +276,8 @@ def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], ret
             merged.text, merged.conversation = result.text, result.conversation
             merged.retrieved_urls |= result.retrieved_urls
             merged.search_errors += result.search_errors
+            merged.search_error_details += result.search_error_details
+            merged.fallback_used = merged.fallback_used or result.fallback_used
+            merged.fallback_skipped = merged.fallback_skipped or result.fallback_skipped
             merged.usage.add(result.usage)
     raise InvalidJSON(last_err, merged.usage)

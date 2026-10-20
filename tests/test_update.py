@@ -372,7 +372,7 @@ def test_the_rfp_search_can_be_switched_off_for_an_update(app_env):
     from bd.jobs import sequence_for
     on = validate("update", {**UPD, "rfps": "1"})
     off = validate("update", {**UPD, "rfps": "0"})
-    assert validate("update", UPD)[-2:] == ["--rfps", "0"]                      # off unless asked for: it has found nothing so far
+    assert validate("update", UPD)[-2:] == ["--rfps", "0"]                      # off unless asked for
     assert on[-2:] == ["--rfps", "1"] and off[-2:] == ["--rfps", "0"] and "rfps" in [s[0] for s in sequence_for("update", on, "2026-10-16")]
     assert "rfps" not in [s[0] for s in sequence_for("update", off, "2026-10-16")]
     assert [s[0] for s in sequence_for("update", off, "2026-10-16")][-2:] == ["apply-proposals", "score"]
