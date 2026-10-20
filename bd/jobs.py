@@ -50,6 +50,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "check": ("Test the model connection", False, False),
     "discover": ("Discover companies (market research)", True, False),
     "pe_sync": ("Sync PE firms from accounts", False, False),
+    "pe_collect": ("Read PE portfolio pages (free)", False, False),
     "pe_portfolio": ("Research PE portfolios", True, False),
     "pe_signals": ("Scan PE firms for signals", True, False),
     "rfps": ("Find open public RFPs", True, False),
@@ -113,6 +114,11 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 
     if kind == "pe_sync":
         return ["pe-sync"]
+    if kind == "pe_collect":
+        only = (form.get("firm") or "").strip()
+        if len(only) > 120 or any(c in only for c in "\n\r\x00"):
+            raise JobError("firm name is too long or has odd characters.")
+        return ["pe-collect"] + (["--firm", only] if only else []) + (["--force"] if form.get("force") else [])
     if kind in ("pe_portfolio", "pe_signals"):
         return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
     if kind == "check":

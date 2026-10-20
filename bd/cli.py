@@ -407,6 +407,60 @@ def pe_portfolio(
         _fail("Every portfolio call failed (bad API key or model, no network?).")
 
 
+@app.command(name="pe-collect")
+def pe_collect(
+    firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
+    force: bool = typer.Option(False, help="Read pages again even if they were read recently"),
+    locate: Optional[int] = typer.Option(None, help="Companies whose own site is read for an address (default pe_portfolio.locate_per_run)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+) -> None:
+    """Read each PE firm's own portfolio page (free, no model) and record every relationship with its evidence.
+
+    Registers each firm's portfolio URL as a source, reads it politely (timeouts, retries, rate limit, robots.txt), keeps page-verified evidence,
+    derives current / pending / historical / unclear by code, and reports per-source success, coverage and what changed since the last reading."""
+    from bd.db import connect, init_db
+    from bd.pe_collect import discover_portfolio_pages, locate_companies, register_sources, run_collect
+    from bd.pe_ownership import mirror_legacy
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+    from bd.sources import Fetcher
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    if not settings.user_agent_configured:
+        _fail("Set BD_USER_AGENT (your company name and a contact email): the firms' sites are told who is reading them.")
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    sync_from_accounts(conn)
+    mirror_legacy(conn, run_date, cfg)
+    conn.commit()
+    fetcher = Fetcher(cfg, settings.user_agent)
+    try:
+        added = register_sources(conn)
+        have = conn.execute("SELECT COUNT(*) FROM pe_sources").fetchone()[0]
+        discovered = discover_portfolio_pages(conn, fetcher, cfg, log=typer.echo)
+        total = conn.execute("SELECT COUNT(*) FROM pe_sources").fetchone()[0]
+        firms = conn.execute("SELECT COUNT(*) FROM pe_firms WHERE status = 'active'").fetchone()[0]
+        typer.echo(f"{firms} active PE firm(s); {total} portfolio source(s) ({added} newly registered from firm settings, {discovered} found on home pages).")
+        if not total:
+            typer.echo("No portfolio pages are configured. Add a firm with its portfolio URL on the Private equity firms page (or set a firm's website "
+                       "so its home page can be searched for the link). Nothing was invented.")
+            return
+        res = run_collect(conn, cfg, fetcher, run_date, firm=firm, force=force, log=typer.echo)
+        located = locate_companies(conn, cfg, fetcher, run_date, limit=locate, log=typer.echo)
+    finally:
+        fetcher.close()
+    typer.echo(f"\n{res.line()}. {located} company(ies) with a place found on their own site.")
+    for o in res.outcomes:
+        if o.status in ("failed", "blocked"):
+            typer.echo(f"  FAILED  {o.firm}: {o.error} ({o.url}). Earlier evidence is kept and shown as stale.", err=True)
+        if o.unresolved:
+            typer.echo(f"  {o.firm}: {len(o.unresolved)} entr(ies) left unresolved: {', '.join(o.unresolved[:5])}")
+    if res.sources and res.failed == res.sources:
+        raise typer.Exit(code=3)
+
+
 @app.command(name="pe-signals")
 def pe_signals(
     firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
