@@ -154,6 +154,7 @@ class Scan(_Strict):
     sweep_searches: int = 6              # web searches the combined sweep may use per company (one call)
     quiet_days: int = 60                 # a scanned company with no signal dated this recently is "quiet"...
     quiet_every_weeks: int = 4           # ...and is scanned this often instead of its tier's cadence (0 turns this off)
+    deep_every_weeks: int = 4            # the extra (deep) scanners also run for a scanned company with no successful deep scan this recently, signal or not (0 = only where a signal shows)
 
 
 class Llm(_Strict):

@@ -187,7 +187,7 @@ COMPARE_SCANNERS = ("sweep", "tech_procurement")      # the scanners `bd compare
 COMPARE_BUDGET = 3       # dollars: the most one side-by-side test of the combined scan may spend (about 4 companies cost $0.5 to $1.5)
 FIND_BUDGET = 1          # dollars: the most one signal scan of a single company, started from the viewer's Find page, may spend
 # What a scan looks for. Every company gets the core scanners: the combined sweep (leadership, press, company events and technology in one call, on
-# ANTHROPIC_SCAN_MODEL when set) and hiring. The technology scanner runs only for companies that already show a signal, because it alone finds RFP
+# ANTHROPIC_SCAN_MODEL when set) and hiring. The technology scanner runs for companies that already show a signal and, on a cycle (scan.deep_every_weeks), for every other scanned company, because it alone finds RFP
 # matches and filing risk factors. WARN notices are left to Advanced tools. On a side-by-side test of four companies the sweep on Haiku cost about
 # $0.08 a company against $0.79-1.28 for the four separate scanners it replaces, and found more signals than they had stored (missing two).
 CORE_SCANNERS = "sweep,hiring"

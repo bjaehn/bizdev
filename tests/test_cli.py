@@ -77,7 +77,7 @@ def test_scan_dry_run_names_the_extra_scanners_that_only_run_for_companies_with_
     seeded(tmp_path)
     r = runner.invoke(app, ["scan", "--dry-run", "--scanners", "leadership,press,hiring", "--extras", "events,tech_procurement,press"])
     assert r.exit_code == 0 and "2 of 2 accounts due" in r.output and "x ['leadership', 'press', 'hiring']" in r.output
-    assert "then ['events', 'tech_procurement'] for the ones that show a signal" in r.output          # press is already core: not repeated
+    assert "then ['events', 'tech_procurement'] for the ones that show a signal or have not had a deep look in 4 weeks" in r.output          # press is already core: not repeated
     assert "then [" not in runner.invoke(app, ["scan", "--dry-run", "--scanners", "leadership"]).output
 
 
@@ -97,11 +97,57 @@ def test_extra_scanners_run_only_for_scanned_companies_that_show_a_signal_and_ne
     r = runner.invoke(app, ["scan", "--scanners", "leadership", "--extras", "events"])
     assert r.exit_code == 0, r.output
     core, extra = made[("leadership",)][0], made[("events",)][0]
-    assert sorted(core.calls) == ["Acme", "Beta"] and extra.calls == ["Acme"]            # only Acme found a signal, so only Acme gets the extra look
-    assert "Extra scanners ['events'] for 1 of 2 scanned companies that already show a signal." in r.output and "Extras total:" in r.output
+    assert sorted(core.calls) == ["Acme", "Beta"] and extra.calls == ["Acme", "Beta"]    # Acme shows a signal; Beta has never had a deep look, so it is due one (signal companies first)
+    assert "Extra scanners ['events'] for 2 of 2 scanned companies: 1 already show a signal, 1 are due their periodic deep look." in r.output and "Extras total:" in r.output
     conn = connect(tmp_path / "t.sqlite")
     last = {row["name"]: row["last_scanned"] for row in conn.execute("SELECT name, last_scanned FROM accounts")}
     assert last["Acme"] and last["Beta"]                                                 # the core scan marked them; the extras did not change that
+
+
+def _deep_run(tmp_path, monkeypatch, prior):
+    """Run a core scan + extras with the given earlier rows in `runs` ({account name: (days ago, errors)}); returns the companies the extra looked at."""
+    import bd.cli as cli
+    from datetime import date, timedelta
+    from bd.db import connect
+    from tests.test_runner import FakeScanner
+    seeded(tmp_path)
+    conn = connect(tmp_path / "t.sqlite")
+    for name, (days, err) in prior.items():
+        aid = conn.execute("SELECT id FROM accounts WHERE name = ?", (name,)).fetchone()[0]
+        conn.execute("INSERT INTO runs(run_date, step, account_id, accounts_scanned, signals_found, tokens, errors) VALUES (?,?,?,?,?,?,?)",
+                     ((date.today() - timedelta(days=days)).isoformat(), "scan:events", aid, 1, 0, 0, err))
+    conn.commit()
+    made = {}
+
+    def fake_build(names, cfg, settings):
+        made[tuple(names)] = [FakeScanner(cfg, name=n, signals_for=("Acme",) if n == "leadership" else ()) for n in names]
+        return made[tuple(names)]
+
+    monkeypatch.setattr(cli, "_build_scanners", fake_build)
+    r = runner.invoke(app, ["scan", "--scanners", "leadership", "--extras", "events"])
+    assert r.exit_code == 0, r.output
+    return made[("events",)][0].calls, r.output
+
+
+def test_a_company_with_a_recent_successful_deep_look_and_no_signal_is_not_looked_at_again(tmp_path, monkeypatch):
+    calls, out = _deep_run(tmp_path, monkeypatch, {"Beta": (10, None)})
+    assert calls == ["Acme"] and "1 already show a signal, 0 are due their periodic deep look" in out
+
+
+def test_a_deep_look_older_than_four_weeks_is_due_again(tmp_path, monkeypatch):
+    calls, _ = _deep_run(tmp_path, monkeypatch, {"Beta": (40, None)})
+    assert sorted(calls) == ["Acme", "Beta"]
+
+
+def test_a_deep_look_whose_search_never_ran_does_not_count(tmp_path, monkeypatch):
+    err = "search tool errors: invalid_tool_input x2 (the search did not run, so an empty answer is not evidence)"
+    calls, _ = _deep_run(tmp_path, monkeypatch, {"Beta": (3, err)})
+    assert sorted(calls) == ["Acme", "Beta"]                                                                   # not a look: tried again next time
+
+
+def test_rejections_are_an_answer_so_a_look_that_only_rejected_things_counts(tmp_path, monkeypatch):
+    calls, _ = _deep_run(tmp_path, monkeypatch, {"Beta": (3, "rejected: 1 no_pressure_flags")})
+    assert calls == ["Acme"]
 
 
 def test_scan_requires_key_and_model_after_gate(tmp_path):

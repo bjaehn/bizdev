@@ -121,6 +121,9 @@ scan:
   # (most companies are quiet most weeks, and each check costs real money). A company that shows a signal goes back to its tier's cadence; 0 turns this off.
   quiet_days: 60
   quiet_every_weeks: 4
+  # The deep technology and procurement scan (the "extras") runs where a signal shows, AND for any scanned company that has not had a successful deep scan
+  # in this many weeks, so every company is looked at deeply on a cycle. Added cost is about $0.12 a company per cycle. 0 = only where a signal shows.
+  deep_every_weeks: 4
   tiers:
     A: {every_weeks: 1, max_searches: 6}     # deeper search for the accounts that matter most
     B: {every_weeks: 2, max_searches: 3}
