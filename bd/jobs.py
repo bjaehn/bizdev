@@ -171,12 +171,13 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 LOOKUP_BUDGET = 3        # dollars: the most one "research and scan this company" may spend, whatever the company
 COMPARE_BUDGET = 3       # dollars: the most one side-by-side test of the combined scan may spend (about 4 companies cost $0.5 to $1.5)
 FIND_BUDGET = 1          # dollars: the most one signal scan of a single company, started from the viewer's Find page, may spend
-# What a scan looks for. Every company gets the core scanners; the extras run only for companies that already show a signal (that is where
-# they pay), and WARN notices are left to Advanced tools: on the first live run events, technology and WARN were about half the spend and
-# found one signal in four companies.
-CORE_SCANNERS = "leadership,press,hiring"
-EXTRA_SCANNERS = "events,tech_procurement"
-FIND_SCANNERS = "leadership,press,hiring"      # what a signal scan of one company looks for: about $0.2-0.5 a scanner on the first live run, so these three fit the $1 cap
+# What a scan looks for. Every company gets the core scanners: the combined sweep (leadership, press, company events and technology in one call, on
+# ANTHROPIC_SCAN_MODEL when set) and hiring. The technology scanner runs only for companies that already show a signal, because it alone finds RFP
+# matches and filing risk factors. WARN notices are left to Advanced tools. On a side-by-side test of four companies the sweep on Haiku cost about
+# $0.08 a company against $0.79-1.28 for the four separate scanners it replaces, and found more signals than they had stored (missing two).
+CORE_SCANNERS = "sweep,hiring"
+EXTRA_SCANNERS = "tech_procurement"
+FIND_SCANNERS = "sweep,hiring"      # what a signal scan of one company looks for: the sweep and hiring, well inside the $1 cap
 _NAME = re.compile(r"[A-Za-z0-9 .,&'()/-]+")
 
 
