@@ -273,6 +273,8 @@ class PePortfolio(_Strict):
     text_cap_bytes: int
     scope_cities: list[str]               # optional: cities treated as inside the configured geography when a company's HQ is shown to be in fit_gate.state; empty = not configured
     locate_per_run: int                   # companies per run whose own site is read (free) to find a headquarters the listing does not show
+    deal_window_days: int                 # transactions dated within this many days are looked for
+    deals_max_per_firm: int
     research_unresolved: int              # per run, portfolio companies whose location the listing does not show that are sent to the existing fact research (paid); 0 = none
 
 

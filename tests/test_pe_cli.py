@@ -78,3 +78,22 @@ def test_the_job_is_whitelisted_and_needs_no_paid_confirmation():
     assert KINDS["pe_collect"][1] is False and KINDS["pe_collect"][2] is False                # free; can be run by a person, not only on a schedule
     with pytest.raises(JobError):
         validate("pe_collect", {"firm": "x" * 200})
+
+
+def test_the_paid_pe_jobs_validate_and_get_the_run_date():
+    from bd.jobs import KINDS, sequence_for
+    assert validate("pe_deals", {"limit": "3"}) == ["pe-deals", "--limit", "3"] and validate("pe_promote", {"limit": "5"}) == ["pe-promote", "--limit", "5"]
+    for k in ("pe_deals", "pe_promote"):
+        assert KINDS[k][1] is True                                                                 # they spend model tokens, so the page asks for confirmation
+        for bad in ({}, {"limit": "0"}, {"limit": "51"}):
+            with pytest.raises(JobError):
+                validate(k, bad)
+    assert sequence_for("pe_collect", ["pe-collect"], "2026-01-05") == [["pe-collect", "--as-of", "2026-01-05"]] and sequence_for("pe_deals", ["pe-deals", "--limit", "3"], "2026-01-05")[0][-2:] == ["--as-of", "2026-01-05"]
+
+
+def test_dry_runs_list_what_would_happen_and_call_nothing(tmp_path):
+    add_firm(tmp_path)
+    r = runner.invoke(app, ["pe-deals", "--dry-run"])
+    assert r.exit_code == 0 and "would research: Alpha Capital" in r.output
+    r2 = runner.invoke(app, ["pe-promote", "--limit", "5", "--dry-run"])
+    assert r2.exit_code == 0 and "0 portfolio company(ies) eligible" in r2.output

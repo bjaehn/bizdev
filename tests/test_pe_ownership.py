@@ -215,6 +215,14 @@ def test_one_reading_that_shows_it_in_two_sections_is_a_conflict(conn, cfg):
     assert o["status"] == "unclear" and o["basis"] == "conflict"
 
 
+def test_an_announced_sale_is_noted_but_does_not_make_it_historical(conn, cfg):
+    oid = rel(conn)
+    ev(conn, oid, "completed", PR, st="company_release", event="2022-02-01")
+    ev(conn, oid, "exit_announced", "https://firm.example/news/sale-agreed", st="company_release", event="2026-09-20", h="h2")
+    o = status(conn, cfg, oid)
+    assert o["status"] == "current" and o["exit_date"] is None and "a sale was announced on 2026-09-20; no source states that it closed" in o["conflict_note"]
+
+
 def test_unchecked_snippets_never_support_a_status(conn, cfg):
     oid = rel(conn)
     ev(conn, oid, "completed", "https://news.example/x", st="search_snippet", ver="snippet_only", event="2025-01-01")

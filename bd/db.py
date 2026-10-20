@@ -362,7 +362,7 @@ CREATE TABLE IF NOT EXISTS pe_evidence (
     id             INTEGER PRIMARY KEY,
     subject_type   TEXT NOT NULL CHECK (subject_type IN ('ownership','link','company','firm','fund')),
     subject_id     INTEGER NOT NULL,
-    claim          TEXT NOT NULL CHECK (claim IN ('listed','listed_current','listed_historical','announced','completed','exited','expected_close',
+    claim          TEXT NOT NULL CHECK (claim IN ('listed','listed_current','listed_historical','announced','completed','exited','exit_announced','expected_close',
                                                   'location','add_on','fund','name_change','stake')),
     url            TEXT NOT NULL,
     publisher      TEXT,
@@ -455,7 +455,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         if col not in cols:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")
     firm_cols = {r[1] for r in conn.execute("PRAGMA table_info(pe_firms)")}
-    for col in ("hq_state", "hq_source_url"):
+    for col in ("hq_state", "hq_source_url", "last_deals"):
         if col not in firm_cols:
             conn.execute(f"ALTER TABLE pe_firms ADD COLUMN {col} TEXT")
     if "client" not in {r[1] for r in conn.execute("PRAGMA table_info(lead_state)")}:

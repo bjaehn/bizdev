@@ -23,7 +23,7 @@ from bd.pe_store import norm_name
 
 SOURCE_TYPES = ("firm_site", "company_site", "company_release", "sec_filing", "secondary_report", "search_snippet")
 AUTHORITATIVE = frozenset({"firm_site", "company_site", "company_release", "sec_filing"})   # the parties to the event, or a regulator
-CLAIMS = ("listed", "listed_current", "listed_historical", "announced", "completed", "exited", "expected_close", "location", "add_on", "fund",
+CLAIMS = ("listed", "listed_current", "listed_historical", "announced", "completed", "exited", "exit_announced", "expected_close", "location", "add_on", "fund",
           "name_change", "stake")
 STATUSES = ("current", "pending", "historical", "unclear")
 EXCERPT_MAX = 400
@@ -295,6 +295,7 @@ class Facts:
     announced: list[str | None] = field(default_factory=list)      # event dates ('' kept as None: stated but undated)
     completed: list[str | None] = field(default_factory=list)
     exited: list[str | None] = field(default_factory=list)
+    exit_announced: list[str | None] = field(default_factory=list)
     expected_close: str | None = None
     completed_authoritative: bool = False
     exited_authoritative: bool = False
@@ -341,6 +342,8 @@ def facts_from_evidence(rows: list[sqlite3.Row], listing_absent_since: str | Non
         elif c == "exited":
             f.exited.append(r["event_date"])
             f.exited_authoritative |= auth
+        elif c == "exit_announced":
+            f.exit_announced.append(r["event_date"])
         elif c == "expected_close" and r["event_date"]:
             f.expected_close = max(filter(None, [f.expected_close, r["event_date"]]))
     states = set().union(*(v[1] for v in latest.values())) if latest else set()
@@ -358,7 +361,16 @@ def _earliest(dates: list[str | None]) -> str | None:
 
 
 def derive_status(f: Facts, today: date, cfg: Config) -> StatusResult:
-    """The status rules, in order. See the module docstring for what they refuse to assume."""
+    """The status rules, in order (see the module docstring for what they refuse to assume). A sale that was announced but not stated to have
+    closed changes nothing about the status; it is noted."""
+    res = _derive_core(f, today, cfg)
+    if f.exit_announced and not f.exited and res.status != "historical":
+        d = _earliest(f.exit_announced)
+        res.conflict = "; ".join(filter(None, [res.conflict, f"a sale was announced{' on ' + d if d else ''}; no source states that it closed"]))
+    return res
+
+
+def _derive_core(f: Facts, today: date, cfg: Config) -> StatusResult:
     comp_day, exit_day, ann_day = _earliest(f.completed), _earliest(f.exited), _earliest(f.announced)
     base = dict(closed_date=comp_day, exit_date=exit_day, announced_date=ann_day)
     # 1. a stated exit
@@ -444,19 +456,23 @@ def is_stale(o: sqlite3.Row, today: date, cfg: Config) -> bool:
 
 # ---- add-ons ----------------------------------------------------------------------------------------------------------------------------
 def record_add_on(conn: sqlite3.Connection, parent_id: int, child_id: int, today: date, *, announced: date | str | None = None,
-                  closed: date | str | None = None, expected_close: date | str | None = None) -> int:
-    """A platform company's acquisition of another business. 'completed' needs a stated closing date or a completion evidence the caller passes
-    as `closed`; an announcement alone stays 'announced'."""
+                  closed: date | str | None = None, expected_close: date | str | None = None, completed: bool = False,
+                  kind: str = "add_on") -> int:
+    """A platform company's acquisition of another business. 'completed' needs a source that says it completed (`completed`, with a closing date
+    when the source states one); an announcement alone stays 'announced'. A completion is never walked back by a later announcement-only read."""
     if parent_id == child_id:
         raise ValueError("a company cannot be its own add-on")
-    status = "completed" if closed else ("announced" if announced else "unclear")
-    row = conn.execute("SELECT id, status FROM pe_company_links WHERE parent_company_id=? AND child_company_id=? AND kind='add_on'",
-                       (parent_id, child_id)).fetchone()
+    if kind not in ("add_on", "merger"):
+        raise ValueError(f"unknown link kind {kind!r}")
+    done = bool(completed or closed)
+    status = "completed" if done else ("announced" if announced else "unclear")
+    row = conn.execute("SELECT id, status FROM pe_company_links WHERE parent_company_id=? AND child_company_id=? AND kind=?",
+                       (parent_id, child_id, kind)).fetchone()
     if row is None:
         return conn.execute(
             "INSERT INTO pe_company_links(parent_company_id, child_company_id, kind, status, announced_date, closed_date, expected_close, last_checked) "
-            "VALUES (?,?,?,?,?,?,?,?)", (parent_id, child_id, "add_on", status, _iso(announced), _iso(closed), _iso(expected_close), today.isoformat())).lastrowid
-    keep = "completed" if row["status"] == "completed" else status          # a completion is never walked back by a later announcement-only read
+            "VALUES (?,?,?,?,?,?,?,?)", (parent_id, child_id, kind, status, _iso(announced), _iso(closed), _iso(expected_close), today.isoformat())).lastrowid
+    keep = "completed" if row["status"] == "completed" else status
     conn.execute("UPDATE pe_company_links SET status=?, announced_date=COALESCE(announced_date, ?), closed_date=COALESCE(closed_date, ?), "
                  "expected_close=COALESCE(?, expected_close), last_checked=? WHERE id=?",
                  (keep, _iso(announced), _iso(closed), _iso(expected_close), today.isoformat(), row["id"]))

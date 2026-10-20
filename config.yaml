@@ -320,4 +320,6 @@ pe_portfolio:
   # the state counted as in scope without fact research, list them here. Empty means not configured, and the page says so.
   scope_cities: []
   locate_per_run: 25                     # free: reads a company's own site for an address shown on it
+  deal_window_days: 730                  # transaction research (paid): deals dated this far back
+  deals_max_per_firm: 10
   research_unresolved: 0                 # paid fact research of portfolio companies whose HQ the listing does not show (0 = off; set a cap to enable)

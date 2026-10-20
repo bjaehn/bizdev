@@ -52,6 +52,8 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "pe_sync": ("Sync PE firms from accounts", False, False),
     "pe_collect": ("Read PE portfolio pages (free)", False, False),
     "pe_portfolio": ("Research PE portfolios", True, False),
+    "pe_deals": ("Research PE transactions (acquisitions, add-ons, exits)", True, False),
+    "pe_promote": ("Research portfolio companies for the target list", True, False),
     "pe_signals": ("Scan PE firms for signals", True, False),
     "rfps": ("Find open public RFPs", True, False),
     "ask": ("Ask a question about your data", True, False),
@@ -119,6 +121,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         if len(only) > 120 or any(c in only for c in "\n\r\x00"):
             raise JobError("firm name is too long or has odd characters.")
         return ["pe-collect"] + (["--firm", only] if only else []) + (["--force"] if form.get("force") else [])
+    if kind in ("pe_deals", "pe_promote"):
+        return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
     if kind in ("pe_portfolio", "pe_signals"):
         return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
     if kind == "check":
@@ -264,7 +268,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
         return [["scan", "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
-    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "rfps", "sec-fill") else [args]
+    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "pe-collect", "pe-deals", "pe-promote", "rfps", "sec-fill") else [args]
 
 
 def redact(text: str, env: dict[str, str] | None = None) -> str:

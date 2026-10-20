@@ -461,6 +461,83 @@ def pe_collect(
         raise typer.Exit(code=3)
 
 
+@app.command(name="pe-deals")
+def pe_deals(
+    firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
+    limit: Optional[int] = typer.Option(None, help="At most N firms (least recently researched first)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List the firms that would be researched; no API calls"),
+) -> None:
+    """Research each PE firm's transactions (acquisitions, add-ons, exits). The model reports each with a quote; code retrieves the page, checks the
+    quote and the wording, and records announced and completed deals separately with the page as evidence."""
+    from bd.db import connect, init_db
+    from bd.pe_deals import DealResearcher, run_deals
+    from bd.pe_firms import select_firms
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+    from bd.sources import Fetcher
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    sync_from_accounts(conn)
+    firms = select_firms(conn, firm, limit or cfg.pe_firms.max_firms_per_run, "last_deals")
+    typer.echo(f"{len(firms)} PE firm(s) to research.")
+    if dry_run or not firms:
+        for f in firms:
+            typer.echo(f"  would research: {f['name']}")
+        return
+    if not settings.user_agent_configured:
+        _fail("Set BD_USER_AGENT (your company name and a contact email): the pages that support each deal are read by code.")
+    web, _verifier, _enricher, model = _pe_deps(settings, cfg)
+    fetcher = Fetcher(cfg, settings.user_agent)
+    try:
+        s = run_deals(conn, cfg, DealResearcher(cfg, web, fetcher), firms, run_date, model, workers, log=typer.echo)
+    finally:
+        fetcher.close()
+    rej = ", ".join(f"{k} {v}" for k, v in s.rejected.most_common()) or "none"
+    typer.echo(f"\n{s.found} deal(s) reported, {s.verified} verified and recorded; dropped: {rej}.")
+    for n in s.notes[:10]:
+        typer.echo(f"  not recorded: {n}")
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.errors} call errors.")
+    if s.firms and s.errors == s.firms:
+        typer.echo("Every firm call failed (bad API key or model, no network?).", err=True)
+        raise typer.Exit(code=3)
+
+
+@app.command(name="pe-promote")
+def pe_promote(
+    limit: int = typer.Option(..., help="At most N portfolio companies to research (paid)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="List the companies that would be researched; no API calls"),
+) -> None:
+    """Send portfolio companies that are still held (or pending or unclear) and not shown to be outside the configured geography through the
+    existing fact research and fit gate. Only those that pass become accounts, and only then are they scanned for signals."""
+    from bd.db import connect, init_db
+    from bd.pe_promote import promotable, run_promote
+    from bd.settings_store import apply_overrides
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    rows = promotable(conn, cfg, limit)
+    typer.echo(f"{len(rows)} portfolio company(ies) eligible for fact research.")
+    if dry_run or not rows:
+        for c, f in rows:
+            typer.echo(f"  would research: {c['name']} (listed by {f})")
+        return
+    web, verifier, enricher, model = _pe_deps(settings, cfg)
+    s = run_promote(conn, cfg, verifier, enricher, run_date, model, limit, workers, log=typer.echo)
+    typer.echo(f"\nResearched {s.researched}: {len(s.added)} auto-added, {len(s.queued)} queued, {len(s.rejected)} rejected; {s.skipped_source} skipped (no retrievable page).")
+    typer.echo(f"Total: {s.tokens:,} tokens, ${s.est_cost:.4f} estimated, {s.errors} call errors.")
+
+
 @app.command(name="pe-signals")
 def pe_signals(
     firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),
