@@ -27,6 +27,7 @@ ranking and lets an admin run updates. Deployed on Railway from `main`.
 - **Priority is not a score of the firm and not a probability** (`bd/opportunity_model.py`, `opportunity_model` in `config.yaml`): anchored dimensions 30/25/20/15/10,
   unknown is not zero and is never rescaled, one event counts once, no input for size, news volume, job count, portfolio size or PE ownership, a model never sets it.
   Facts, hypotheses, unknowns and next steps stay separate on every brief. It lives beside the older Hot/Warm/Watch score; neither feeds the other.
+- `ats-find --soft` (a company's own job board, found on its own careers page, never guessed from its name) runs in Update and the Monday run like `pe-collect --soft` and must never fail them.
 - `pe-collect --soft` is a step of Update and the Monday run: it must never fail those jobs (a failing step stops the job). A search that fails with `invalid_tool_input` on every search is repeated once with the basic search tool; `sponsor_splits` in config is the only way a sponsor name is split.
 - **No synthetic data outside tests.** PE pages show real collected rows or an honest empty/failed/partial state. Tests use `tests/pe_fakes.py`.
 

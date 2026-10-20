@@ -30,16 +30,17 @@ def test_update_job_is_validated_and_runs_the_steps_in_order():
     assert args == ["update", "--research", "25", "--segments", "2", "--scan", "25", "--budget", "8", "--rfps", "0"]
     steps = sequence_for("update", args, "2026-10-16")
     # signals first: free sources, then the paid scan; company facts (research) and new companies only after, with what is left of the limit
-    assert [s[0] for s in steps] == ["check", "sec-fill", "pe-sync", "pe-collect", "scan", "scan", "discover", "enrich", "apply-proposals", "score"]
+    assert [s[0] for s in steps] == ["check", "sec-fill", "pe-sync", "pe-collect", "ats-find", "scan", "scan", "discover", "enrich", "apply-proposals", "score"]
     assert steps[1] == ["sec-fill", "--as-of", "2026-10-16"]
     assert steps[3] == ["pe-collect", "--soft", "--as-of", "2026-10-16"]                                         # free; soft, so it can never stop the Update
-    assert steps[7] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
-    assert "--light" in steps[4] and "--light" not in steps[5] and steps[5][:3] == ["scan", "--limit", "25"]
-    assert steps[5][steps[5].index("--scanners") + 1] == "sweep,hiring" and steps[5][steps[5].index("--extras") + 1] == "tech_procurement"
-    assert "warn" not in " ".join(steps[5]) and "leadership" not in steps[5] and "press" not in steps[5]       # WARN notices are left to Advanced tools; the sweep covers leadership, press and events
-    assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[5]
+    assert steps[4] == ["ats-find", "--soft", "--as-of", "2026-10-16"]                                          # before the free scan, so a board found now is read now
+    assert steps[8] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
+    assert "--light" in steps[5] and "--light" not in steps[6] and steps[6][:3] == ["scan", "--limit", "25"]
+    assert steps[6][steps[6].index("--scanners") + 1] == "sweep,hiring" and steps[6][steps[6].index("--extras") + 1] == "tech_procurement"
+    assert "warn" not in " ".join(steps[6]) and "leadership" not in steps[6] and "press" not in steps[6]       # WARN notices are left to Advanced tools; the sweep covers leadership, press and events
+    assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[6]
     skip = sequence_for("update", validate("update", {**UPD, "research": "0", "segments": "0"}), "2026-10-16")
-    assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "pe-collect", "scan", "scan", "score"]
+    assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "pe-collect", "ats-find", "scan", "scan", "score"]
     for bad in ({**UPD, "budget": "0"}, {**UPD, "budget": "101"}, {**UPD, "scan": "0"}, {**UPD, "research": "x"}, {}):
         with pytest.raises(JobError):
             validate("update", bad)
@@ -94,7 +95,7 @@ def test_one_spending_limit_covers_the_whole_update(fake, monkeypatch):
     assert "enrich" not in by                                                                    # 5.5 spent: limit used up, fact research skipped
     free = [c for c in calls(tmp) if c["step"] == "scan" and "--light" in c["args"]]
     assert len(free) == 1 and free[0]["budget"] is None                                          # the free sources run first, with no limit applied
-    assert "apply-proposals" in by and "pe-sync" in by and "pe-collect" in by and "score" in by                         # the free steps still run
+    assert "apply-proposals" in by and "pe-sync" in by and "pe-collect" in by and "ats-find" in by and "score" in by                         # the free steps still run
     assert job.status == "ok" and "Spent about $5.50 of the $5 limit" in job.note and "skipped" in job.note
     assert "spending limit for this update is used up" in runner_.log_tail(jid)
 

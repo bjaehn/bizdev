@@ -220,6 +220,8 @@ class Hiring(_Strict):
     theme_keywords: dict[str, list[str]]
     theme_title_gates: dict[str, list[str]] = {}
     interim_words: list[str]
+    ats_find_every_weeks: int = 8        # a company whose careers page was looked at for a job board is not looked at again for this long (0 = never look)
+    ats_find_per_run: int = 25           # companies whose careers page is read per run (free, polite)
 
 
 class Edgar(_Strict):

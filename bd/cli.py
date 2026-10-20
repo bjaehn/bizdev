@@ -360,6 +360,44 @@ def _pe_deps(settings, cfg):
     return web, verifier, Enricher(cfg, web, verifier, edgar), model
 
 
+@app.command(name="ats-find")
+def ats_find(
+    limit: Optional[int] = typer.Option(None, help="Companies whose careers page is read (default hiring.ats_find_per_run)"),
+    only: Optional[str] = typer.Option(None, help="Only companies whose name contains this text"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    soft: bool = typer.Option(False, "--soft", help="Never fail the caller (used inside Update): a missing setting or an error is reported and the exit code stays 0"),
+) -> None:
+    """Find each company's own job board (Greenhouse, Lever, Ashby) by reading its careers page (free, no model). A board found on the company's own
+    site, whose public feed answers, is saved; the company then gets the free complete feed instead of a model search for postings."""
+    from bd.ats import AtsClient
+    from bd.ats_find import run_find
+    from bd.db import connect, init_db
+    from bd.settings_store import apply_overrides
+    from bd.sources import Fetcher
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    if not settings.user_agent_configured:
+        if soft:
+            typer.echo("Job boards were not looked for: set BD_USER_AGENT (your company name and a contact email) so the sites are told who is reading them.")
+            return
+        _fail("Set BD_USER_AGENT (your company name and a contact email): the sites are told who is reading them.")
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    fetcher = Fetcher(cfg, settings.user_agent)
+    try:
+        looked, saved = run_find(conn, cfg, fetcher, AtsClient(cfg, settings.user_agent), run_date, limit=limit, only=only, log=typer.echo)
+    except Exception as e:      # noqa: BLE001
+        if not soft:
+            raise
+        typer.echo(f"Job board search stopped: {type(e).__name__}: {e}.")
+        return
+    finally:
+        fetcher.close()
+    typer.echo(f"{looked} compan{'y' if looked == 1 else 'ies'} looked at; {saved} job board(s) saved. Companies with a board are read for free by the ats scanner from now on.")
+
+
 @app.command(name="pe-sync")
 def pe_sync() -> None:
     """Derive PE firms and portfolio links from accounts that have a sponsor (no API calls)."""

@@ -238,6 +238,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         # with whatever is left of the limit. Facts never delay or use up the money for signals.
         steps = [["check"], ["sec-fill", "--as-of", as_of],                  # free: gives public companies the SEC id that the filing scanners need
                  ["pe-sync"], ["pe-collect", "--soft", "--as-of", as_of],        # free: each firm's own portfolio page, read politely; never stops the Update
+                 ["ats-find", "--soft", "--as-of", as_of],           # free: a company's own job board, found on its careers page, so the free complete feed can read it
                  ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
                  ["scan", "--limit", a["--scan"], "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--allow-empty", "--as-of", as_of]]
         if int(a["--segments"]):
@@ -267,7 +268,7 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
-        return [["pe-sync"], ["pe-collect", "--soft", "--as-of", as_of],        # free and soft: portfolios refresh every Monday without anyone clicking
+        return [["pe-sync"], ["pe-collect", "--soft", "--as-of", as_of], ["ats-find", "--soft", "--as-of", as_of],   # free and soft: portfolios and job boards refresh every Monday
                 ["scan", "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
     return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "pe-collect", "pe-deals", "pe-promote", "rfps", "sec-fill") else [args]

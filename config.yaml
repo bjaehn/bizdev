@@ -196,6 +196,8 @@ hiring:
   cluster_min: 3                # hiring_cluster = this many related postings
   senior_levels: [c_suite, svp_vp, director]
   leadership_levels: [c_suite, svp_vp]   # a posting at these levels is a hiring_leadership signal
+  ats_find_every_weeks: 8       # `bd ats-find` reads a company's own careers page for a link to its Greenhouse, Lever or Ashby board, then at most this often again
+  ats_find_per_run: 25
   # Posting theme -> service lines (code, not the model, assigns these).
   theme_service_lines:
     ai_technology: [AI & Technology]

@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import httpx2 as httpx
 
@@ -50,7 +50,13 @@ def board_from_url(url: str) -> tuple[str, str] | None:
     parts = [p for p in u.path.split("/") if p]
     token = None
     if host in ("boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io") and parts:
-        provider, token = "greenhouse", parts[0]
+        provider = "greenhouse"
+        if parts[0] == "embed":                                            # the widget a careers page embeds: /embed/job_board[/js]?for=<board>
+            token = (parse_qs(u.query).get("for") or [None])[0]
+        else:
+            token = parts[0]
+    elif host == "boards-api.greenhouse.io" and len(parts) >= 3 and parts[:2] == ["v1", "boards"]:
+        provider, token = "greenhouse", parts[2]
     elif host == "jobs.lever.co" and parts:
         provider, token = "lever", parts[0]
     elif host == "jobs.ashbyhq.com" and parts:
