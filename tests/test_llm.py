@@ -167,3 +167,42 @@ def test_a_request_over_the_models_long_prompt_threshold_is_counted_in_the_long_
     msgs = FakeMessages([first, small])
     c = AnthropicWebSearchClient(cfg, model="claude-sonnet-5-5", client=SimpleNamespace(messages=msgs))
     assert c.run("S", [{"role": "user", "content": "go"}]).usage.long_input_tokens == 0
+
+
+# ---- a failed search is not "found nothing" -------------------------------------------------------------------------------------------
+def _search_error(code):
+    return block(type="web_search_tool_result", content={"type": "web_search_tool_result_error", "error_code": code})
+
+
+def test_failed_searches_are_recorded_by_code_and_good_ones_are_not():
+    from bd.llm import search_errors_from
+    content = [block(type="web_search_tool_result", content=[{"type": "web_search_result", "url": "https://sec.gov/a", "title": "t"}]),
+               _search_error("too_many_requests"), _search_error("unavailable"), block(type="text", text="x", citations=None)]
+    assert search_errors_from(content) == ["too_many_requests", "unavailable"]
+    assert search_errors_from([block(type="web_search_tool_result", content={"type": "web_search_tool_result_error"})]) == ["unknown"]
+
+
+def test_the_client_returns_the_error_codes_across_continuations(cfg):
+    c, _ = client(cfg, [resp([_search_error("too_many_requests")], stop="pause_turn"),
+                        resp([_search_error("too_many_requests"), block(type="text", text=GOOD, citations=None)])])
+    r = c.run("S", [{"role": "user", "content": "go"}])
+    assert r.search_errors == ["too_many_requests", "too_many_requests"]
+
+
+def test_a_search_failure_is_reported_unless_the_only_error_is_running_out_of_allowed_searches():
+    from bd.llm import LLMResult, search_failure
+    assert search_failure(LLMResult("x")) is None
+    assert search_failure(LLMResult("x", search_errors=["max_uses_exceeded"])) is None             # the model searched as much as it was allowed
+    msg = search_failure(LLMResult("x", search_errors=["too_many_requests", "unavailable", "too_many_requests", "max_uses_exceeded"]))
+    assert msg.startswith("search tool errors: too_many_requests x2, unavailable x1") and "not evidence" in msg and "max_uses" not in msg
+
+
+def test_generate_validated_keeps_the_error_codes_from_the_first_call_and_the_retry():
+    class Twice(FakeLLM):
+        def run(self, system, messages, **kw):
+            r = super().run(system, messages, **kw)
+            r.search_errors = ["unavailable"]
+            return r
+    llm = Twice(["not json", GOOD])
+    _, res = generate_validated(llm, "s", "u", ScanResponse, retries=1)
+    assert res.search_errors == ["unavailable", "unavailable"]

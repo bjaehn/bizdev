@@ -36,8 +36,9 @@ from bd.verify import VerifyResult  # noqa: E402
 class FakeLLM:
     """Returns canned replies in order; records every call."""
 
-    def __init__(self, replies, urls=(), usage=None):
+    def __init__(self, replies, urls=(), usage=None, search_errors=()):
         self.replies = list(replies)
+        self.search_errors = list(search_errors)       # error codes the search tool "returned" on every call
         from bd.urls import normalize_url
         self.urls = {normalize_url(u) for u in urls}  # real client stores normalized URLs
         self.usage = usage or Usage(input_tokens=100, output_tokens=50, web_searches=1)
@@ -49,7 +50,7 @@ class FakeLLM:
         u = Usage()
         u.add(self.usage)
         return LLMResult(text=text, retrieved_urls=set(self.urls), usage=u,
-                         conversation=list(messages) + [{"role": "assistant", "content": text}])
+                         conversation=list(messages) + [{"role": "assistant", "content": text}], search_errors=list(self.search_errors))
 
 
 class FakeVerifier:

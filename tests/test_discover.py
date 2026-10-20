@@ -256,3 +256,14 @@ def test_migration_adds_discovery_columns_to_an_old_database(tmp_path):
     init_db(c)
     r = c.execute("SELECT origin, reviewed FROM accounts").fetchone()
     assert (r["origin"], r["reviewed"]) == ("seed", 1)
+
+
+def test_a_segment_the_search_tool_could_not_search_is_an_error_not_an_empty_segment(cfg, conn):
+    class Failing(RoutingLLM):
+        def run(self, system, messages, **kw):
+            r = super().run(system, messages, **kw)
+            r.search_errors = ["too_many_requests"]
+            return r
+    out = go(cfg, conn, Failing([], {}, []), segments=("manufacturing",))
+    assert out.errors == 1 and out.found == 0
+    assert "search tool errors: too_many_requests" in conn.execute("SELECT errors FROM runs WHERE step = 'discover'").fetchone()[0]

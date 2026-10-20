@@ -29,7 +29,7 @@ from bd.cost import estimate_cost
 from bd.curate import create_account
 from bd.enrich import Enricher
 from bd.fit_gate import check_fit, load_exclusions
-from bd.llm import LLM, LLMError, Usage, generate_validated
+from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from bd.models import SourceType
 from bd.urls import host_in, hostname, normalize_url
 from bd.verify import UrlVerifier
@@ -113,6 +113,8 @@ class Discoverer:
                                            DiscoverResponse, retries=self.cfg.llm.json_retries, key="companies")
         except LLMError as e:
             return [], set(), e.usage, f"{type(e).__name__}: {e}"
+        if not resp.companies and (failed := search_failure(res)):       # a segment the search tool could not search is not an empty segment
+            return [], res.retrieved_urls, res.usage, failed
         return resp.companies[: self.cfg.discovery.per_segment], res.retrieved_urls, res.usage, None
 
     def source_ok(self, c: Company, retrieved: set[str]) -> str | None:

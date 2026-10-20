@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
 
@@ -44,6 +45,7 @@ class LLMResult:
     retrieved_urls: set[str] = field(default_factory=set)  # normalized (bd.urls.normalize_url)
     usage: Usage = field(default_factory=Usage)
     conversation: list[dict[str, Any]] = field(default_factory=list)  # full messages incl. final reply
+    search_errors: list[str] = field(default_factory=list)   # error codes of web searches that failed (rate limit, tool unavailable...)
 
 
 class LLM(Protocol):
@@ -80,6 +82,30 @@ def retrieved_urls_from(content: list[Any]) -> set[str]:
         elif t == "text":
             _collect_urls(d.get("citations") or [], urls)
     return urls
+
+
+BENIGN_SEARCH_ERRORS = frozenset({"max_uses_exceeded"})      # the model asked for more searches than it was allowed: it has searched, so not a failure
+
+
+def search_errors_from(content: list[Any]) -> list[str]:
+    """Error codes of the web searches in a reply that failed. A failed search returns an error object instead of results, so it adds no URLs."""
+    codes: list[str] = []
+    for b in content:
+        d = _dump(b)
+        c = d.get("content")
+        if d.get("type") == "web_search_tool_result" and isinstance(c, dict) and str(c.get("type", "")).endswith("_error"):
+            codes.append(str(c.get("error_code") or "unknown"))
+    return codes
+
+
+def search_failure(result: "LLMResult") -> str | None:
+    """A sentence when the search tool itself failed during the call, else None. Without it an empty answer from a rate-limited or unavailable
+    search tool looks exactly like 'nothing found'. Callers use it only when nothing usable came back."""
+    bad = [c for c in result.search_errors if c not in BENIGN_SEARCH_ERRORS]
+    if not bad:
+        return None
+    counts = Counter(bad)
+    return "search tool errors: " + ", ".join(f"{c} x{n}" for c, n in sorted(counts.items())) + " (the search did not run, so an empty answer is not evidence)"
 
 
 def _usage_from(u: Any) -> Usage:
@@ -126,7 +152,7 @@ class AnthropicWebSearchClient:
     def run(self, system: str, messages: list[dict[str, Any]], allowed_domains: list[str] | None = None,
             max_uses: int | None = None) -> LLMResult:
         convo = list(messages)
-        usage, urls = Usage(), set()
+        usage, urls, search_errors = Usage(), set(), []
         resp = None
         for attempt in range(self._cfg.llm.max_continuations + 1):
             try:
@@ -142,6 +168,7 @@ class AnthropicWebSearchClient:
             long_over = price.long_over_tokens if price else None
             usage.add(one.as_long() if long_over and one.prompt_tokens > long_over else one)
             urls |= retrieved_urls_from(resp.content)
+            search_errors += search_errors_from(resp.content)
             if resp.stop_reason == "refusal":
                 cat = getattr(getattr(resp, "stop_details", None), "category", None)
                 raise LLMRefusal(f"model refused (category={cat})", usage)
@@ -153,7 +180,7 @@ class AnthropicWebSearchClient:
             raise LLMError("too many pause_turn continuations", usage)
         text = "".join(_dump(b).get("text", "") for b in resp.content if _dump(b).get("type") == "text")
         convo = convo + [{"role": "assistant", "content": text}]
-        return LLMResult(text=text, retrieved_urls=urls, usage=usage, conversation=convo)
+        return LLMResult(text=text, retrieved_urls=urls, usage=usage, conversation=convo, search_errors=search_errors)
 
 
 def extract_json(text: str, key: str = "signals") -> Any:
@@ -182,7 +209,7 @@ def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], ret
     model plus a merged LLMResult (usage summed, retrieved URLs unioned). Raises InvalidJSON."""
     kw = llm_kwargs or {}
     result = llm.run(system, [{"role": "user", "content": user}], **kw)
-    merged = LLMResult(result.text, set(result.retrieved_urls), Usage(), result.conversation)
+    merged = LLMResult(result.text, set(result.retrieved_urls), Usage(), result.conversation, list(result.search_errors))
     merged.usage.add(result.usage)
     last_err = ""
     for attempt in range(retries + 1):
@@ -203,5 +230,6 @@ def generate_validated(llm: LLM, system: str, user: str, model_cls: type[M], ret
                 raise
             merged.text, merged.conversation = result.text, result.conversation
             merged.retrieved_urls |= result.retrieved_urls
+            merged.search_errors += result.search_errors
             merged.usage.add(result.usage)
     raise InvalidJSON(last_err, merged.usage)

@@ -24,7 +24,7 @@ from pydantic import BaseModel, field_validator
 from bd.accounts import Account
 from bd.ats import board_from_url
 from bd.hashing import signal_hash
-from bd.llm import LLMError, generate_validated
+from bd.llm import LLMError, generate_validated, search_failure
 from bd.models import SignalExtract
 from bd.scanners.base import AcceptedSignal, Rejection, ScanOutcome, Scanner, reconcile_source_type
 from bd.urls import host_in, hostname, normalize_url
@@ -115,6 +115,8 @@ class HiringScanner(Scanner):
         out.signals = self._build(account, verified)
         out.postings = [v.p for v in verified]
         out.learned_board = next((b for b in (board_from_url(v.p.url) for v in verified) if b), None)
+        if not out.postings and not out.signals and (failed := search_failure(result)):      # a failed search tool is not "no postings"
+            out.error = failed
         return out
 
     # -- verification (per posting) ---------------------------------------------------------------

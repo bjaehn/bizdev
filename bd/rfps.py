@@ -22,7 +22,7 @@ from pydantic import BaseModel
 from bd.budget import Reserve
 from bd.config import Config, RfpGroup
 from bd.cost import estimate_cost
-from bd.llm import LLM, LLMError, Usage, generate_validated
+from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from bd.rfp_store import RfpExtract, store_rfps
 from bd.urls import host_in, hostname, normalize_url
 from bd.verify import UrlVerifier
@@ -66,6 +66,9 @@ class RfpFinder:
             return out
         out.usage = res.usage
         out.note = " ".join(resp.notes.split())[:200] if resp.notes else None
+        if not resp.rfps and (failed := search_failure(res)):        # the group's sites could not be searched: say so instead of "no RFPs"
+            out.error = failed
+            return out
         seen: set[str] = set()
         canon = {s.lower(): s for s in self.cfg.service_lines}
         for r in resp.rfps:

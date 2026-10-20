@@ -22,7 +22,7 @@ from typing import ClassVar
 from bd.accounts import Account
 from bd.config import Config
 from bd.hashing import signal_hash
-from bd.llm import LLM, LLMError, Usage, generate_validated
+from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from pydantic import BaseModel
 
 from bd.models import ScanResponse, SignalExtract
@@ -153,6 +153,8 @@ class Scanner:
         out.usage = result.usage
         out.candidates = len(resp.signals)
         out.signals, out.rejections = self._accept(account, as_of, resp.signals, result.retrieved_urls)
+        if not out.signals and (failed := search_failure(result)):      # nothing found AND the search tool failed: not a quiet company, a failed scan
+            out.error = failed
         return out
 
     def date_problem(self, c: SignalExtract, as_of: date) -> str | None:
