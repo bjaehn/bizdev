@@ -153,17 +153,19 @@ class Fetcher:
             return Fetched(url, current, status, ctype, body, truncated, hashlib.sha256(bytes(raw)).hexdigest(), now_iso(),
                            {k: headers[k] for k in ("x-wp-total", "x-wp-totalpages", "etag", "last-modified") if k in headers})
 
-    def get(self, url: str) -> Fetched:
-        """Fetch one URL with retries on timeouts, connection errors, 429 and 5xx (never on other 4xx). Raises FetchError."""
+    def get(self, url: str, retries: int | None = None) -> Fetched:
+        """Fetch one URL with retries on timeouts, connection errors, 429 and 5xx (never on other 4xx). Raises FetchError.
+        `retries` overrides the configured count (0 for a URL that is only a guess: a host that does not exist is an answer)."""
         self._allowed(url)
         last: FetchError | None = None
-        for attempt in range(self.f.max_retries + 1):
+        attempts = self.f.max_retries if retries is None else retries
+        for attempt in range(attempts + 1):
             try:
                 got = self._raw(url)
             except FetchError as e:
                 last = e
                 retryable = e.reason in ("timeout", "http_429") or e.reason.startswith("connect_error") or (e.status is not None and e.status >= 500)
-                if retryable and attempt < self.f.max_retries:
+                if retryable and attempt < attempts:
                     self._sleep(self.f.retry_backoff_seconds * (2 ** attempt))
                     continue
                 raise

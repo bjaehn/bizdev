@@ -46,6 +46,7 @@ class LLMResult:
     usage: Usage = field(default_factory=Usage)
     conversation: list[dict[str, Any]] = field(default_factory=list)  # full messages incl. final reply
     search_errors: list[str] = field(default_factory=list)   # error codes of web searches that failed (rate limit, tool unavailable...)
+    fallback_used: bool = False                               # the call was repeated once with the basic search tool (see Llm.web_search_fallback_tool_type)
 
 
 class LLM(Protocol):
@@ -131,15 +132,16 @@ class AnthropicWebSearchClient:
         self._cfg = cfg
         self._model = model
         self._web_search = web_search  # False = plain text call (used by the briefer)
+        self._fallback_failed = False   # the repeat with the basic search tool failed too: stop repeating for the rest of this run (it would only double the spend)
         # An API key that is not scoped to one workspace needs the workspace named on every request. Environment only
         # (ANTHROPIC_WORKSPACE_ID); a key that is already workspace-scoped needs nothing.
         ws = workspace_id if workspace_id is not None else os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
         headers = {"anthropic-workspace-id": ws} if ws else None
         self._client = client or anthropic.Anthropic(api_key=api_key, default_headers=headers)
 
-    def _tools(self, allowed_domains: list[str] | None = None, max_uses: int | None = None) -> list[dict[str, Any]]:
+    def _tools(self, allowed_domains: list[str] | None = None, max_uses: int | None = None, tool_type: str | None = None) -> list[dict[str, Any]]:
         tool: dict[str, Any] = {
-            "type": self._cfg.llm.web_search_tool_type,
+            "type": tool_type or self._cfg.llm.web_search_tool_type,
             "name": "web_search",
             "max_uses": max_uses or self._cfg.llm.web_search_max_uses,
         }
@@ -150,13 +152,13 @@ class AnthropicWebSearchClient:
         return [tool]
 
     def run(self, system: str, messages: list[dict[str, Any]], allowed_domains: list[str] | None = None,
-            max_uses: int | None = None) -> LLMResult:
+            max_uses: int | None = None, tool_type: str | None = None) -> LLMResult:
         convo = list(messages)
         usage, urls, search_errors = Usage(), set(), []
         resp = None
         for attempt in range(self._cfg.llm.max_continuations + 1):
             try:
-                extra: dict[str, Any] = {"tools": self._tools(allowed_domains, max_uses)} if self._web_search else {}
+                extra: dict[str, Any] = {"tools": self._tools(allowed_domains, max_uses, tool_type)} if self._web_search else {}
                 resp = self._client.messages.create(
                     model=self._model, max_tokens=self._cfg.llm.max_tokens,
                     system=system, messages=convo, **extra,
@@ -178,6 +180,18 @@ class AnthropicWebSearchClient:
             convo = convo + [{"role": "assistant", "content": resp.content}]
         else:
             raise LLMError("too many pause_turn continuations", usage)
+        bad = {c for c in search_errors if c not in BENIGN_SEARCH_ERRORS}
+        fallback = self._cfg.llm.web_search_fallback_tool_type
+        if (self._web_search and not urls and bad == {"invalid_tool_input"} and fallback and not self._fallback_failed
+                and (tool_type or self._cfg.llm.web_search_tool_type) != fallback):
+            # Every search in this call was rejected before it ran and nothing came back. The tokens are spent either way, so the call is repeated once
+            # with the basic search tool rather than leaving the company, segment or agency unchecked until next week.
+            again = self.run(system, messages, allowed_domains, max_uses, tool_type=fallback)
+            again.usage.add(usage)
+            again.fallback_used = True
+            if not again.retrieved_urls and {c for c in again.search_errors if c not in BENIGN_SEARCH_ERRORS} == {"invalid_tool_input"}:
+                self._fallback_failed = True
+            return again
         text = "".join(_dump(b).get("text", "") for b in resp.content if _dump(b).get("type") == "text")
         convo = convo + [{"role": "assistant", "content": text}]
         return LLMResult(text=text, retrieved_urls=urls, usage=usage, conversation=convo, search_errors=search_errors)

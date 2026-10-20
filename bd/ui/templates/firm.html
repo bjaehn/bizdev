@@ -12,7 +12,7 @@
 
 <h2>Firm details</h2>
 <div class="card"><p class="meta">What the product knows about the firm itself. A blank is "not known", not a guess. The website domain lets <b>Read PE portfolio pages</b> look for a Portfolio link on the firm's own home page; a portfolio page URL is read directly. The headquarters is the firm's, as entered: it is never used as a portfolio company's location.</p>
-{% if ' and ' in d.firm['name']|lower or ';' in d.firm['name'] %}<p class="meta">This name may be more than one firm. It is kept as one sponsor, because the product does not split names by guessing. To follow them separately, add each firm below on the <a href="/firms">directory</a> and exclude this one.</p>{% endif %}
+{% if ' and ' in d.firm['name']|lower or ';' in d.firm['name'] %}<p class="meta">This name may be more than one firm. It is kept as one sponsor, because the product does not split names by guessing. To follow them separately, list the name and the firms it stands for under <code>pe_portfolio.sponsor_splits</code> in <code>config.yaml</code>, or add each firm on the <a href="/firms">directory</a> and exclude this one.</p>{% endif %}
 <form method="post" action="/firms/{{ d.firm['id'] }}/edit"><input type="hidden" name="csrf" value="{{ csrf }}">
 <div class="grid">
 <div><label for="domain">Website domain</label><input id="domain" type="text" name="domain" value="{{ d.firm['domain'] or '' }}" placeholder="examplecapital.com"></div>

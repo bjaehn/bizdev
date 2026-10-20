@@ -413,6 +413,7 @@ def pe_collect(
     force: bool = typer.Option(False, help="Read pages again even if they were read recently"),
     locate: Optional[int] = typer.Option(None, help="Companies whose own site is read for an address (default pe_portfolio.locate_per_run)"),
     as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    soft: bool = typer.Option(False, "--soft", help="Never fail the caller: a missing setting or a failed read is reported and the exit code stays 0 (used inside Update)"),
 ) -> None:
     """Read each PE firm's own portfolio page (free, no model) and record every relationship with its evidence.
 
@@ -420,6 +421,7 @@ def pe_collect(
     derives current / pending / historical / unclear by code, and reports per-source success, coverage and what changed since the last reading."""
     from bd.db import connect, init_db
     from bd.pe_collect import discover_portfolio_pages, locate_companies, register_sources, run_collect
+    from bd.pe_sites import locate_firm_sites
     from bd.pe_ownership import mirror_legacy
     from bd.pe_store import sync_from_accounts
     from bd.settings_store import apply_overrides
@@ -428,6 +430,9 @@ def pe_collect(
     run_date = _parse_date(as_of)
     cfg, settings = load_config(), Settings.from_env()
     if not settings.user_agent_configured:
+        if soft:
+            typer.echo("PE portfolio pages were not read: set BD_USER_AGENT (your company name and a contact email) so the firms' sites are told who is reading them.")
+            return
         _fail("Set BD_USER_AGENT (your company name and a contact email): the firms' sites are told who is reading them.")
     conn = connect(settings.db_path)
     init_db(conn)
@@ -437,18 +442,24 @@ def pe_collect(
     conn.commit()
     fetcher = Fetcher(cfg, settings.user_agent)
     try:
+        sites = locate_firm_sites(conn, fetcher, log=typer.echo, only=firm)
         added = register_sources(conn)
         have = conn.execute("SELECT COUNT(*) FROM pe_sources").fetchone()[0]
         discovered = discover_portfolio_pages(conn, fetcher, cfg, log=typer.echo)
         total = conn.execute("SELECT COUNT(*) FROM pe_sources").fetchone()[0]
         firms = conn.execute("SELECT COUNT(*) FROM pe_firms WHERE status = 'active'").fetchone()[0]
-        typer.echo(f"{firms} active PE firm(s); {total} portfolio source(s) ({added} newly registered from firm settings, {discovered} found on home pages).")
+        typer.echo(f"{firms} active PE firm(s); {total} portfolio source(s) ({sites} firm website(s) confirmed, {added} newly registered from firm settings, {discovered} found on the firms' own sites).")
         if not total:
             typer.echo("No portfolio pages are configured. Add a firm with its portfolio URL on the Private equity firms page (or set a firm's website "
                        "so its home page can be searched for the link). Nothing was invented.")
             return
         res = run_collect(conn, cfg, fetcher, run_date, firm=firm, force=force, log=typer.echo)
         located = locate_companies(conn, cfg, fetcher, run_date, limit=locate, log=typer.echo)
+    except Exception as e:      # noqa: BLE001  (inside Update a PE reading must never stop the signal scan that follows)
+        if not soft:
+            raise
+        typer.echo(f"PE portfolio reading stopped: {type(e).__name__}: {e}. Evidence read earlier is unchanged.")
+        return
     finally:
         fetcher.close()
     typer.echo(f"\n{res.line()}. {located} company(ies) with a place found on their own site.")
@@ -457,7 +468,7 @@ def pe_collect(
             typer.echo(f"  FAILED  {o.firm}: {o.error} ({o.url}). Earlier evidence is kept and shown as stale.", err=True)
         if o.unresolved:
             typer.echo(f"  {o.firm}: {len(o.unresolved)} entr(ies) left unresolved: {', '.join(o.unresolved[:5])}")
-    if res.sources and res.failed == res.sources:
+    if res.sources and res.failed == res.sources and not soft:
         raise typer.Exit(code=3)
 
 

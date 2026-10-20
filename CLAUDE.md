@@ -27,6 +27,7 @@ ranking and lets an admin run updates. Deployed on Railway from `main`.
 - **Priority is not a score of the firm and not a probability** (`bd/opportunity_model.py`, `opportunity_model` in `config.yaml`): anchored dimensions 30/25/20/15/10,
   unknown is not zero and is never rescaled, one event counts once, no input for size, news volume, job count, portfolio size or PE ownership, a model never sets it.
   Facts, hypotheses, unknowns and next steps stay separate on every brief. It lives beside the older Hot/Warm/Watch score; neither feeds the other.
+- `pe-collect --soft` is a step of Update and the Monday run: it must never fail those jobs (a failing step stops the job). A search that fails with `invalid_tool_input` on every search is repeated once with the basic search tool; `sponsor_splits` in config is the only way a sponsor name is split.
 - **No synthetic data outside tests.** PE pages show real collected rows or an honest empty/failed/partial state. Tests use `tests/pe_fakes.py`.
 
 ## Design system (one stylesheet, defined once, applied globally)
@@ -58,7 +59,7 @@ To change the look of the whole app: edit the tokens or one component in `design
   **PE portfolio**: `bd/pe_ownership.py` the ledger and status rules; `bd/sources.py` (bounded, polite reader: robots, per-host rate limit, retries, size cap, challenge-page detection),
   `bd/pe_listing.py` (portfolio page parser: sections, pagination, WordPress API fallback, coverage claims), `bd/pe_collect.py` (`bd pe-collect`, free, idempotent, failure-isolated, snapshots and diffs),
   `bd/pe_deals.py` (`bd pe-deals`: the model reports a deal with a quote, **code** verifies the page), `bd/pe_promote.py` (`bd pe-promote`: through the existing fit gate, no second target list),
-  `bd/opportunity_model.py` (priority and action categories), `bd/pe_view.py` (data for `/firms`, `/firms/<id>`, `/firms/runs/<id>`, `/ownership/<id>`, `/portfolio/<id>` and the company brief). The UI process
+  `bd/pe_sites.py` (a firm's website and portfolio page found and confirmed by code, never guessed), `bd/opportunity_model.py` (priority and action categories), `bd/pe_view.py` (data for `/firms`, `/firms/<id>`, `/firms/runs/<id>`, `/ownership/<id>`, `/portfolio/<id>` and the company brief). The UI process
   must not import the network or model modules (`tests/test_ui.py`).
 - **Analysis is one page**, `/opportunities` (top three, "Is it heating up?" chart, numbered ranked list, tracked, Hiring at the bottom); the nav is Analysis and Admin. `/week`, `/leadership` and `/hiring` redirect to it; the Signals feed (`/signals`) is reached from it. The matrix, priority chart and card views were removed on purpose, so do not bring them back without asking. Reports live under Admin. `ADMIN_GROUPS` in `app.py` lists the Admin pages.
 - A web search that errors (rate limit, unavailable) must never read as "found nothing": `bd/llm.py` records the codes (`search_failure`) and scanners, discovery and RFPs turn "nothing found and the tool failed" into an error, so the company is not marked scanned or taken for quiet.

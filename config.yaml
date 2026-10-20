@@ -129,6 +129,7 @@ llm:
   max_tokens: 16000
   web_search_max_uses: 4          # web searches per model call (a scan tier can override: scan.tiers.*.max_searches)
   web_search_tool_type: web_search_20260209   # check Anthropic docs if the model changes
+  web_search_fallback_tool_type: web_search_20250305   # a call whose searches ALL failed with invalid_tool_input (nothing came back) is tried once with this basic search tool; null = never
   max_continuations: 5            # pause_turn resumes per call
   json_retries: 1                 # one retry on invalid JSON
   concurrency: 4                  # max simultaneous scanner calls
@@ -323,6 +324,10 @@ pe_portfolio:
   deal_window_days: 730                  # transaction research (paid): deals dated this far back
   deals_max_per_firm: 10
   research_unresolved: 0                 # paid fact research of portfolio companies whose HQ the listing does not show (0 = off; set a cap to enable)
+  # An account stores its sponsor as one string. When that string is really several firms, list them here (the string exactly as the account has it).
+  # The product never splits a name by guessing: "Hellman & Friedman" is one firm, and so is any name not listed here.
+  sponsor_splits:
+    "Charlesbank Capital Partners and Partners Group": ["Charlesbank Capital Partners", "Partners Group"]
 
 # Evidence-based priority (bd/opportunity_model.py). Deterministic: structured evidence in, a breakdown out. Priority is NOT the Hot/Warm/Watch score above
 # and is NOT a probability of purchase or win. Confidence (how well the hypothesis is supported) is reported separately.

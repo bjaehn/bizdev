@@ -118,8 +118,15 @@ def test_old_filing_healthy_company_and_missing_data_give_no_signal(cfg):
 
 
 def test_edgar_failure_is_an_error_not_an_empty_result(cfg):
-    out = FinancialsScanner(cfg, FakeEdgar(error=EdgarError("HTTP 404"))).scan(acct(), AS_OF)
-    assert out.error == "EdgarError: HTTP 404" and not out.signals
+    for failure in ("HTTP 503", "HTTP 429", "HTTP 403", "response was not JSON"):
+        out = FinancialsScanner(cfg, FakeEdgar(error=EdgarError(failure))).scan(acct(), AS_OF)
+        assert out.error == f"EdgarError: {failure}" and not out.signals
+
+
+def test_a_cik_the_sec_has_no_data_for_is_a_definite_answer_not_a_weekly_error(cfg):
+    out = FinancialsScanner(cfg, FakeEdgar(error=EdgarError("HTTP 404"))).scan(acct(), AS_OF)       # e.g. a subsidiary that reports inside its parent's filing
+    assert out.error is None and not out.signals and out.rejections[0].reason == "no_company_facts"
+    assert "check the CIK" in out.rejections[0].detail
 
 
 def test_the_signal_scores_in_its_own_family(cfg):

@@ -1,6 +1,6 @@
 import json
 import threading
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 
@@ -293,4 +293,49 @@ def test_pe_jobs_validate_and_pe_sync_needs_no_confirmation():
             with pytest.raises(JobError):
                 validate(kind, bad)
     assert sequence_for("pe_signals", ["pe-signals", "--limit", "5"], "2026-01-05") == [["pe-signals", "--limit", "5", "--as-of", "2026-01-05"]]
-    assert [s[0] for s in sequence_for("weekly", [], "2026-01-05")] == ["scan", "pe-signals", "rfps", "score", "card"]
+    assert [s[0] for s in sequence_for("weekly", [], "2026-01-05")] == ["pe-sync", "pe-collect", "scan", "pe-signals", "rfps", "score", "card"]
+    assert sequence_for("weekly", [], "2026-01-05")[1] == ["pe-collect", "--soft", "--as-of", "2026-01-05"]
+
+
+# ---- a sponsor string that is really several firms: explicit, never guessed -----------------------------------------------------------------------
+SPLIT = {"Charlesbank Capital Partners and Partners Group": ["Charlesbank Capital Partners", "Partners Group"]}
+COMBINED = "Charlesbank Capital Partners and Partners Group"
+
+
+def test_a_listed_combined_sponsor_becomes_each_firm_with_its_own_relationship_and_the_combined_firm_goes_away(conn):
+    a = add_account(conn, "Sharedco", ownership="pe-backed", sponsor=COMBINED)
+    add_account(conn, "Soloco", ownership="pe-backed", sponsor="Hellman & Friedman")
+    sync_from_accounts(conn, splits={})                                         # before the mapping existed: one firm called by the whole string
+    assert {r["name"] for r in conn.execute("SELECT name FROM pe_firms")} == {COMBINED, "Hellman & Friedman"}
+    sync_from_accounts(conn, splits=SPLIT)
+    assert {r["name"] for r in conn.execute("SELECT name FROM pe_firms")} == {"Charlesbank Capital Partners", "Partners Group", "Hellman & Friedman"}   # an unlisted name is never split
+    own = conn.execute("SELECT f.name, o.status, o.basis FROM pe_ownership o JOIN pe_firms f ON f.id = o.firm_id JOIN pe_companies c ON c.id = o.company_id WHERE c.name = 'Sharedco' ORDER BY f.name").fetchall()
+    assert [tuple(r) for r in own] == [("Charlesbank Capital Partners", "unclear", "legacy_unverified"), ("Partners Group", "unclear", "legacy_unverified")]
+    assert conn.execute("SELECT COUNT(*) FROM pe_companies WHERE name = 'Sharedco'").fetchone()[0] == 1            # one company, two sponsors
+    assert conn.execute("SELECT COUNT(*) FROM portfolio_links l JOIN pe_firms f ON f.id = l.firm_id WHERE f.name LIKE '%and Partners Group'").fetchone()[0] == 0
+    n = conn.execute("SELECT COUNT(*) FROM pe_ownership").fetchone()[0]
+    sync_from_accounts(conn, splits=SPLIT)
+    assert conn.execute("SELECT COUNT(*) FROM pe_ownership").fetchone()[0] == n and conn.execute("SELECT COUNT(*) FROM pe_firms").fetchone()[0] == 3     # idempotent
+    assert a
+
+
+def test_a_combined_firm_with_evidence_read_from_a_page_is_excluded_not_deleted(conn):
+    from bd.pe_ownership import add_evidence, ensure_ownership, resolve_company
+    add_account(conn, "Sharedco", ownership="pe-backed", sponsor=COMBINED)
+    sync_from_accounts(conn, splits={})
+    fid = find_firm(conn, COMBINED)["id"]
+    with conn:
+        m = resolve_company(conn, "Readco", "readco.example", today=date(2026, 10, 20))
+        oid, _ = ensure_ownership(conn, fid, m.id, date(2026, 10, 20), "unspecified", "portfolio_page")
+        add_evidence(conn, "ownership", oid, "listed_current", "https://x.example/p", retrieved_at="2026-10-20T00:00:00+00:00", source_type="firm_site",
+                     verification="page_verified", content_hash="h", excerpt="Readco")
+    sync_from_accounts(conn, splits=SPLIT)
+    assert find_firm(conn, COMBINED)["status"] == "excluded"
+    assert conn.execute("SELECT COUNT(*) FROM pe_ownership WHERE firm_id = ?", (fid,)).fetchone()[0] >= 1       # what was read is kept
+
+
+def test_the_repository_config_lists_the_split_it_was_given_and_loads(cfg):
+    assert cfg.pe_portfolio.sponsor_splits == SPLIT
+    from bd.pe_store import split_sponsor
+    assert split_sponsor("charlesbank capital partners  AND Partners Group", SPLIT) == ["Charlesbank Capital Partners", "Partners Group"]
+    assert split_sponsor("Hellman & Friedman", SPLIT) == ["Hellman & Friedman"]
