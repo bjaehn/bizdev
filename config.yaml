@@ -239,6 +239,23 @@ sec_events:
   items:
     "2.05": {type: restructuring_layoffs, label: "costs associated with exit or disposal activities", service_lines: [Strategy & Operations]}
     "2.01": {type: ma_divestiture, label: "completion of an acquisition or disposition of assets", service_lines: [Strategy & Operations]}
+    # Item 5.02 is where a public company reports an officer joining or leaving. It also covers directors and pay, so the item's own text is read: a
+    # change is reported only when one of the titles below sits within officer_window_chars of a change word. The summary is a fixed sentence naming the
+    # title; no person is named and the wording is not interpreted beyond that. These signals are Medium confidence.
+    "5.02": {type: leadership_change, label: "departure or appointment of certain officers", service_lines: [Strategy & Operations], officers: true}
+  officer_titles:
+    leadership_transformation_ai_data: ["Chief Transformation Officer", "Chief AI Officer", "Chief Artificial Intelligence Officer", "Chief Data Officer", "Chief Digital Officer",
+                                        "Chief Analytics Officer", "Chief Data and Analytics Officer", "Head of AI"]
+    leadership_change: ["Chief Executive Officer", "Chief Financial Officer", "Chief Operating Officer", "Chief Information Officer", "Chief Technology Officer",
+                        "Chief Human Resources Officer", "Chief People Officer", "Chief Product Officer", "Chief Strategy Officer", "Chief Administrative Officer",
+                        "President", "Executive Vice President", "Senior Vice President"]
+  # Verbs and the noun "resignation" only: nouns such as appointment, promotion, retirement and termination turn up in pay and background text.
+  officer_change_words: [appointed, appoints, "has named", "has been named", "was named", "is named", promoted, elected, resigned, resigns, resignation, retire, retires,
+                         "step down", "steps down", "stepping down", departs, "will depart", terminated, succeed, succeeds, "will serve as", "assume the role",
+                         "assumed the role", interim]
+  officer_window_chars: 140
+  officer_service_lines:
+    leadership_transformation_ai_data: [AI & Technology, Data & Analytics, Strategy & Operations]
 
 # Open public RFPs / RFQs / RFIs from Chicago-area agencies. One search per group, restricted to that group's own domains, so
 # every result is an official page. Not tied to a company and never scored; shown on the Open RFPs page.
@@ -446,6 +463,13 @@ opportunity_model:
     nurture:         {min_need: 40}
     monitor:         {min_score: 10}
   # Signal kinds that count against a hypothesis. Each is evidence of a canceled program or a spending restriction.
+  # Places outside the configured area (fit_gate: Illinois and its counties). An event whose text names one of these may concern a parent, a sibling or a
+  # foreign operation, not this company's own: it stays visible as a fact, but if EVERY scored event does, the company cannot be "Prospect now" until someone
+  # confirms the events involve it. Matched as whole words, case-sensitive ("India" is not "Indiana"; "New Mexico" is not "Mexico"). Edit freely.
+  outside_places: [India, England, Scotland, Wales, "Northern Ireland", Ireland, "United Kingdom", UK, Germany, France, Italy, Spain, Netherlands, Belgium, Poland, Sweden,
+                   Norway, Denmark, Switzerland, Austria, Portugal, Turkey, Israel, "Saudi Arabia", UAE, Egypt, "South Africa", Nigeria, Kenya, China, Japan, "South Korea",
+                   Singapore, Taiwan, Vietnam, Thailand, Indonesia, Malaysia, Philippines, Pakistan, Bangladesh, Australia, "New Zealand", Canada, Mexico, Brazil, Argentina,
+                   Chile, Colombia, Peru, EMEA, APAC, LATAM, Europe, Asia, Africa]
   counter_kinds: [program_canceled, spending_restriction]
   counter_need_factor: 0.4         # when a counter signal is as new as the best supporting event or newer, that need is multiplied by this
   # What a kind suggests, as general consulting categories (a hypothesis, never a finding).

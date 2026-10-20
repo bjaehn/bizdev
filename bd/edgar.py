@@ -204,8 +204,22 @@ class EdgarClient:
 
     def filing_items(self, filing: Filing, items: set[str]) -> set[str]:
         """Which of `items` have their "Item x.xx" heading in the filing document itself (fetches the document once)."""
+        return set(self.filing_sections(filing, items))
+
+    def filing_sections(self, filing: Filing, items: set[str], cap: int = 6000) -> dict[str, str]:
+        """For each of `items` whose "Item x.xx" heading is in the filing document: that item's own text, from its heading to the next item's heading
+        (capped). One fetch."""
         text = html_to_text(self._get(filing.url).text)
-        return {i for i in items if re.search(r"item\s*" + re.escape(i), text, re.I)}
+        heads = [(m.start(), m.group(1)) for m in re.finditer(r"item\s*(\d\.\d\d)", text, re.I)]
+        out: dict[str, str] = {}
+        for i in items:
+            starts = [pos for pos, num in heads if num == i]
+            if not starts:
+                continue
+            start = starts[0]
+            end = min((pos for pos, num in heads if pos > start and num != i), default=len(text))
+            out[i] = text[start:end][:cap]
+        return out
 
     def filing_text(self, filing: Filing) -> str:
         return excerpt(html_to_text(self._get(filing.url).text), self._cfg.edgar.max_chars)

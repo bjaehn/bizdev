@@ -18,7 +18,7 @@
 <h3>Confirmed facts</h3>
 {% if a.facts %}<div class="card"><ul class="plain">
 {% for f in a.facts %}<li><span class="meta">{{ f.event_date|fdate if f.event_date else 'date not stated' }}</span> · <b>{{ kind_label(f.kind) }}</b>{% if f.confidence != 'High' %} <span class="meta">· {{ f.confidence }} confidence</span>{% endif %}<br>
-{{ f.summary }}{% if f.role_or_person %} <span class="meta">({{ f.role_or_person }})</span>{% endif %} {{ src_link(f.url) }} <span class="meta">{{ f.source_type|replace('_', ' ') }}</span></li>{% endfor %}
+{{ f.summary }}{% if f.role_or_person %} <span class="meta">({{ f.role_or_person }})</span>{% endif %} {{ src_link(f.url) }} <span class="meta">{{ f.source_type|replace('_', ' ') }}{% if f.places %} · names {{ f.places|join(', ') }}: not shown to involve this company's own operations{% endif %}</span></li>{% endfor %}
 </ul></div>{% else %}<div class="card empty">No scored evidence of a need yet.</div>{% endif %}
 {% if a.counter %}<h3>Counterevidence</h3><div class="card"><ul class="plain">{% for f in a.counter %}<li><span class="meta">{{ f.event_date|fdate if f.event_date else 'date not stated' }}</span> · <b>{{ kind_label(f.kind) }}</b><br>{{ f.summary }} {{ src_link(f.url) }}</li>{% endfor %}</ul></div>{% endif %}
 

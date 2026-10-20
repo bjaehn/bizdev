@@ -94,3 +94,32 @@ def test_admin_home_shows_the_deep_scan_numbers_and_the_honest_empty_state(app_e
     e.conn.commit()
     t = text()
     assert "1 of 1 companies had a deep look in the last 4 weeks" in t and "stored 1 new signal" in t and "Estimated cost $0.12" in t
+
+
+# ---- leadership signals: from filings read by code, or from searches ------------------------------------------------------------------------------
+def test_leadership_signals_are_counted_by_where_they_came_from(cfg, tmp_path):
+    conn = make_db(tmp_path)
+    a, b, c_, d = (add_account(conn, n) for n in ("A", "B", "C", "D"))
+    conn.execute("UPDATE accounts SET cik = '0000001234' WHERE id IN (?, ?)", (a, b))
+    add_signal(conn, cfg, a, "leadership_change", 10, source_type="sec_filing", conf="Medium")           # only a filing found it
+    add_signal(conn, cfg, b, "leadership_change", 12, source_type="sec_filing", conf="Medium")
+    add_signal(conn, cfg, b, "leadership_transformation_ai_data", 20, source_type="company_release")    # a filing and a search
+    add_signal(conn, cfg, c_, "leadership_change", 30, source_type="secondary_report", conf="Medium")    # a search only
+    add_signal(conn, cfg, c_, "leadership_change", 40, conf="Low", source_type="rumor")                  # Low: stored, never counted
+    add_signal(conn, cfg, d, "leadership_change", 200, source_type="sec_filing")                         # outside the window
+    add_signal(conn, cfg, d, "restructuring_layoffs", 5, source_type="sec_filing")                       # not leadership
+    conn.commit()
+    l = signal_coverage(conn, cfg, AS_OF, {"scan": 25}).leadership
+    assert (l.from_filings, l.from_search, l.companies, l.companies_from_filings, l.filing_companies) == (2, 2, 3, 1, 2)
+
+
+def test_admin_home_shows_the_leadership_line(app_env):  # noqa: F811
+    import re
+    e = app_env
+    a = add_account(e.conn, "Leadco")
+    e.conn.execute("UPDATE accounts SET cik = '0000001234' WHERE id = ?", (a,))
+    add_signal(e.conn, e.cfg, a, "leadership_change", 3, source_type="sec_filing", conf="Medium", as_of=date.today())
+    e.conn.commit()
+    t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", e.get("/").body))
+    assert "Leadership changes" in t and "1 company has a leadership signal in the last 90 days: 1 read from SEC 8-K filings by code" in t and "0 found by searches" in t
+    assert "1 company was found only through a filing" in t and "only for the 1 company on the list with an SEC id" in t
