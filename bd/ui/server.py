@@ -63,6 +63,13 @@ def build_hosted(cfg: Config, db_path: str, data_dir: str, password: str, port: 
     from bd.ui.auth import Hosted
 
     hosted = Hosted(password)                       # raises AuthConfigError for a weak/missing password
+    from bd.db import connect, init_db
+    from bd.settings_store import apply_release_changes
+
+    boot = connect(db_path)                         # a release may change a saved setting once; it is audited and shown on Admin Home and Settings
+    init_db(boot)
+    apply_release_changes(boot)
+    boot.close()
     runner = JobRunner(db_path, data_dir)
     app = App(cfg, db_path, root=Path(data_dir), hosted=hosted, jobs=runner)
     httpd = make_server(host, port, app, server_class=_Server, handler_class=_HostedHandler)

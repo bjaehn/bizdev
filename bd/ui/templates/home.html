@@ -2,6 +2,7 @@
 {% block title %}Home{% endblock %}
 {% block body %}
 <h1>Home</h1>
+{% if release_changes %}<div class="flash">Settings changed by a release: {% for c in release_changes %}<b>{{ c.label }}</b> {{ c.old }} &rarr; {{ c.new }} ({{ c.when }}){{ '; ' if not loop.last }}{% endfor %}. <a href="/settings">Settings</a> shows them and you can change them back.</div>{% endif %}
 <div class="card">
 <div class="row"><div>
 <h2>{{ step[0] }}</h2>
@@ -34,8 +35,9 @@
 <p>One press does all of this, in order, and stops at the spending limit. Signals come first; facts and new companies get what is left:</p>
 <ol>
 <li>Reads the SEC's own data for public companies (free), so the filing scanners know which company is which.</li>
+<li>Reads each private equity firm's own portfolio page (free), and looks on each company's own careers page for its job board, so its postings come from the free complete feed (free).</li>
 <li>Reads every company's public job board and SEC event filings (free).</li>
-<li>Scans up to <b>{{ u.scan }}</b> companies for leadership changes, hiring, press and company events. This is where most of the money goes.</li>
+<li>Scans up to <b>{{ u.scan }}</b> companies for leadership changes, hiring, press and company events. This is where most of the money goes.{% if coverage.deep.cycle_weeks %} Each scanned company that shows a signal, or has had no deep technology and procurement look in {{ coverage.deep.cycle_weeks }} weeks, also gets that deeper look.{% endif %}</li>
 <li>Searches <b>{{ u.segments }}</b> industry segments for new Chicagoland companies, with what is left of the limit.</li>
 <li>Researches up to <b>{{ u.research }}</b> companies whose location or size is unconfirmed, and fills in the ones with a source that checked out.</li>
 {% if u.rfps %}<li>Searches Chicago-area agency sites for open public RFPs (Open RFPs page).</li>{% endif %}

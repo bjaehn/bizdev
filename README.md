@@ -230,6 +230,8 @@ database the Monday run uses. This is the clean setup for the database-as-master
 
 ## Configuration
 
+**Admin values.** Admin, *Settings* holds the numbers you can change without a deploy: the Update numbers (companies researched, segments searched, companies scanned, spending limit, RFPs), the new **Scan cycles** (how often the deep technology and procurement scan repeats for every company, how often a company's own job board is looked for, and how many careers pages are read per run), and the discovery settings. A value saved there overrides `config.yaml` for every run, and every change is on the Change log. A release can raise a saved number **once**, and says so: it is audited under the actor `release`, shown on Admin Home and on Settings for 30 days, applied only when the saved number is lower than the new floor, and never touched again (so if you set it lower afterwards it stays). The first one raised *Companies to research per update* to 25 (the unconfirmed-company backlog). Settings also shows how many updates one full pass over the list takes at your scan number, and whether that is enough for the deep cycle.
+
 Everything tunable is in `config.yaml`: base points and families, recency bands, confidence and service
 multipliers, bands and post gate, counties, size floors, exclusion industries, scan window and cadence,
 concurrency and budget, blocked domains, pricing. Edit it, not the code. The **database** is the master copy of accounts and exclusions;

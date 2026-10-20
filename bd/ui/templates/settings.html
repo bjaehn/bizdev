@@ -9,7 +9,19 @@
 <p class="meta">What the Update button does each time you press it. The spending limit is a hard stop for the whole update, not per step.</p>
 <form method="post" action="/settings/update"><input type="hidden" name="csrf" value="{{ csrf }}">
 <div class="grid">{% for name, (label, lo, hi) in update_fields.items() %}<div><label for="u_{{ name }}">{{ label }} ({{ lo }}-{{ hi }})</label><input id="u_{{ name }}" type="number" name="{{ name }}" min="{{ lo }}" max="{{ hi }}" value="{{ update[name] }}" required></div>{% endfor %}</div>
-<p><button type="submit">Save</button></p></form></div>{% endif %}
+<p><button type="submit">Save</button></p></form>
+{% if on_list %}<p class="meta">At {{ update['scan'] }} compan{{ 'y' if update['scan'] == 1 else 'ies' }} scanned per update, one full pass over the {{ on_list }} compan{{ 'y' if on_list == 1 else 'ies' }} on the list takes at least <b>{{ pass_updates }}</b> update{{ '' if pass_updates == 1 else 's' }}.{% if scan_needed and scan_needed > update['scan'] %} The deep technology scan gives every company a look every {{ cycles['deep_every_weeks'][0] }} weeks only if each is scanned that often, which needs about <b>{{ scan_needed }}</b> companies per update; at {{ update['scan'] }} a company waits longer. Raising it costs more per update (the spending limit still stops the whole update).{% endif %}</p>{% endif %}
+{% if release_changes %}<h3>Changed by a release</h3>
+<ul class="plain">{% for c in release_changes %}<li><b>{{ c.label }}</b>: {{ c.old }} &rarr; {{ c.new }} <span class="meta">on {{ c.when }}; change it above any time and it stays</span></li>{% endfor %}</ul>{% endif %}</div>{% endif %}
+<div class="card">
+<h2>Scan cycles</h2>
+<p class="meta">How often the free and deep looks repeat. Saved here, they override <code>config.yaml</code> for every run. The deep technology and procurement scan covers RFP matches, filing risk factors and extra searches; the job-board search reads each company's own careers page for a Greenhouse, Lever or Ashby board so its postings come from the free complete feed.</p>
+<form method="post" action="/settings/cycles"><input type="hidden" name="csrf" value="{{ csrf }}">
+<div class="grid">{% for name, (label, lo, hi, _sec) in cycle_fields.items() %}<div><label for="c_{{ name }}">{{ label }} ({{ lo }}-{{ hi }})</label><input id="c_{{ name }}" type="number" name="{{ name }}" min="{{ lo }}" max="{{ hi }}" value="{{ cycles[name][0] }}" required>
+<span class="meta">config.yaml default {{ cycles[name][1] }}{% if cycles[name][2] %}; saved here{% endif %}</span></div>{% endfor %}</div>
+<p><button type="submit">Save</button></p></form>
+{% if cycles.values()|selectattr(2)|list %}<form method="post" action="/settings/cycles/reset"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Reset to config.yaml defaults</button></form>{% endif %}
+</div>
 <div class="card">
 <h2>Finding new companies (advanced)</h2>
 <form method="post" action="/settings/discovery"><input type="hidden" name="csrf" value="{{ csrf }}">

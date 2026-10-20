@@ -60,7 +60,7 @@ from bd.opportunities import build_opportunities, filter_opportunities, score_da
 from bd.opportunity_model import assess_account, kind_label, rules_text
 from bd.pe_view import GEO, collection_status, company_pe, firm_detail, firm_directory, fmt_ts, ownership_detail, run_detail, run_history as pe_run_history
 from bd.setup_check import static_problems
-from bd.settings_store import (UPDATE_FIELDS, load_update, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
+from bd.settings_store import (CYCLE_FIELDS, UPDATE_FIELDS, cycle_values, load_update, recent_release_changes, reset_cycles, save_cycles, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
                                refresh_enabled, reset_discovery, save_discovery, save_refresh)
 from bd.shortlist import ShortlistError, build_shortlist
 
@@ -425,6 +425,8 @@ class App:
             ("GET", "/firms"): lambda: self.firms(conn),
             ("POST", "/firms/add"): lambda: self.firm_add(req, conn),
             ("GET", "/settings"): lambda: self.settings_page(conn),
+            ("POST", "/settings/cycles"): lambda: self.cycles_save(req, conn),
+            ("POST", "/settings/cycles/reset"): lambda: self.cycles_reset(conn),
             ("POST", "/settings/discovery"): lambda: self.settings_save(req, conn),
             ("POST", "/settings/discovery/reset"): lambda: self.settings_reset(conn),
             ("POST", "/accounts/reviewed-all"): lambda: self.reviewed(conn, None),
@@ -500,7 +502,7 @@ class App:
             step = ("Open Analysis", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
         last = self.jobs.last_job(("update",))
         return self.render("home.html", page="home", problems=problems, total=total, ready=ready, opps=opps, top=top, u=u,
-                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, coverage=signal_coverage(conn, self.cfg, date.today(), u, tuple(EXTRA_SCANNERS.split(","))),
+                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, coverage=signal_coverage(conn, apply_overrides(self.cfg, conn), date.today(), u, tuple(EXTRA_SCANNERS.split(","))), release_changes=recent_release_changes(conn),
                            last_log=self.jobs.log_tail(last.id)[-1500:] if last and last.status == "failed" else "")
 
     def update_start(self, req: Request, conn: sqlite3.Connection) -> Response:
@@ -902,10 +904,30 @@ class App:
     def settings_page(self, conn: sqlite3.Connection, form: dict[str, str] | None = None, errors: list[str] | None = None) -> Response:
         d = apply_overrides(self.cfg, conn).discovery
         form = form or {"segments": "\n".join(d.segments), **{k: str(getattr(d, k)) for k in INT_FIELDS}}
+        update = load_update(conn)
+        on_list = conn.execute("SELECT COUNT(*) FROM accounts WHERE status != 'excluded'").fetchone()[0]
+        cycles = cycle_values(self.cfg, conn)
+        deep = cycles["deep_every_weeks"][0]
+        pass_updates = -(-on_list // update["scan"]) if on_list else 0                       # ceiling: updates for one full pass at this many companies per update
+        needed = -(-on_list // deep) if on_list and deep else 0                              # companies per update that a full pass inside the deep cycle needs
         return self.render("settings.html", page="settings", form=form, errors=errors or [], fields=INT_FIELDS,
                            customized=bool(load_discovery_overrides(conn)), max_segments=MAX_SEGMENTS,
                            refresh_on=refresh_enabled(conn), can_schedule=self.jobs is not None,
-                           update=load_update(conn), update_fields=UPDATE_FIELDS)
+                           update=update, update_fields=UPDATE_FIELDS, cycles=cycles, cycle_fields=CYCLE_FIELDS,
+                           on_list=on_list, pass_updates=pass_updates, scan_needed=needed, release_changes=recent_release_changes(conn))
+
+    def cycles_save(self, req: Request, conn: sqlite3.Connection) -> Response:
+        errs = save_cycles(conn, {k: req.f(k) for k in CYCLE_FIELDS})
+        if errs:
+            self.say("err", "Not saved: " + "; ".join(errs))
+        else:
+            self.say("ok", "Scan cycles saved. They apply to the next run.")
+        return self.redirect("/settings")
+
+    def cycles_reset(self, conn: sqlite3.Connection) -> Response:
+        reset_cycles(conn)
+        self.say("ok", "Scan cycles reset to the defaults in config.yaml.")
+        return self.redirect("/settings")
 
     def refresh_save(self, req: Request, conn: sqlite3.Connection) -> Response:
         save_refresh(conn, bool(req.f("enabled")))
