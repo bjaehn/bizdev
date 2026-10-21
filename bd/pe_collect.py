@@ -132,6 +132,9 @@ def _apply(conn: sqlite3.Connection, cfg: Config, firm: sqlite3.Row, src: sqlite
     for e in res.entries:
         conn.execute("INSERT INTO pe_listing_entries(source_id, run_id, name, href, domain, section, state, location, excerpt) VALUES (?,?,?,?,?,?,?,?,?)",
                      (src["id"], run_id, e.name, e.href, e.domain, e.section, e.state, e.location, e.excerpt))
+        if not norm_name(e.name):                        # nothing to match on (empty, or only a legal suffix): kept as read, never a company
+            out.unresolved.append(f"{e.name.strip() or '(no name)'} (a name with nothing to match on)")
+            continue
         try:
             m = resolve_company(conn, e.name, e.domain if e.domain and domain_use[e.domain] == 1 else None, source_url=e.page_url, today=today)
         except AmbiguousCompany:

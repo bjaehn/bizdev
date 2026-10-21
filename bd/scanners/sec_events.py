@@ -85,6 +85,7 @@ class SecEventsScanner(Scanner):
         seen: set[str] = set()
         for f in filings:
             if f.accession in known_accessions:           # read on an earlier run
+                out.already_read += 1
                 continue
             if f.form in forms:
                 self._schedule_13d(account, f, out, seen)

@@ -9,7 +9,8 @@ import json
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from urllib.parse import urljoin
+
+from bd.urls import safe_urljoin
 
 VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
 SKIP_TEXT = frozenset({"script", "style", "noscript", "template", "svg", "head", "iframe"})
@@ -133,7 +134,9 @@ def links(node: Node, base_url: str) -> list[tuple[str, str, Node]]:
             if not text:
                 img = next((i for i in n.walk() if i.tag == "img" and i.attrs.get("alt")), None)
                 text = img.attrs["alt"] if img else ""
-            out.append((urljoin(base_url, h), _WS.sub(" ", text).strip(), n))
+            href = safe_urljoin(base_url, h)
+            if href:                                                                       # a link that is not a URL (a template placeholder) is left out
+                out.append((href, _WS.sub(" ", text).strip(), n))
     return out
 
 

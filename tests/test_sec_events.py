@@ -351,3 +351,28 @@ def test_config_rejects_a_13d_with_a_bad_service_line_or_a_name_that_makes_the_s
         mutate(bad)
         with pytest.raises(Exception, match=msg):
             Config.model_validate(bad)
+
+
+# ---- the run log tells a quiet company from a skipped one -------------------------------------------------------------------------------------------
+def test_the_run_log_says_whether_filings_were_read_skipped_as_already_read_or_not_there_at_all(cfg, tmp_path):
+    """Live: every public company showed "0 new, 0 known, 0 rejected", which reads the same whether nothing was filed, everything was read on an earlier run, or nothing was read."""
+    conn = connect(tmp_path / "n.sqlite")
+    init_db(conn)
+    conn.execute("INSERT INTO accounts(name, domain, tier, status, cik) VALUES ('Filer Corp','filer.com','A','active',?)", (CIK,))
+    conn.commit()
+    accts = list_accounts(conn)
+
+    def run(site):
+        lines: list[str] = []
+        run_scans(conn, cfg, [scanner(cfg, site)], accts, AS_OF, None, workers=1, force=True, log=lines.append)
+        return next(x for x in lines if "[sec_events]" in x)
+
+    first = run(Site())
+    assert "3 matching filings: 3 read now, 0 read on an earlier run" in first and "2 new" in first
+    second = run(Site())
+    assert "0 new, 0 known, 0 rejected" in second and "3 matching filings: 0 read now, 3 read on an earlier run" in second
+    conn.execute("DELETE FROM filings_read")
+    conn.commit()
+    assert "no matching filings in the window" in run(Site(rows=ROWS[3:]))
+    err = run(Site(subs_status=503))
+    assert "ERROR" in err and "matching filing" not in err                    # a failed read is reported as an error, never as a quiet company

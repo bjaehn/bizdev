@@ -176,7 +176,7 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
                 conn.execute("UPDATE accounts SET last_scanned = ? WHERE id = ?", (as_of.isoformat(), acc.id))
         log(f"  {acc.name} [{sc.name}]: {ins} new, {known} known, {len(out.rejections)} rejected, "
             f"{out.usage.total_tokens:,} tokens, " + ("unpriced" if cost is None else f"${cost:.4f}")
-            + (f"  ERROR {out.error}" if out.error else ""))
+            + (f"  ERROR {out.error}" if out.error else (f"  [{out.filings_note()}]" if sc.reads_filings else "")))
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         while queue or inflight:

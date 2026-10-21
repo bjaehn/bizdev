@@ -75,8 +75,10 @@ def due_accounts(conn: sqlite3.Connection, cfg: Config, today: date, only: str |
         return []
     since = (today - timedelta(days=weeks * 7)).isoformat()
     looked = {r[0] for r in conn.execute("SELECT DISTINCT account_id FROM runs WHERE step = ? AND run_date >= ? AND errors IS NULL", (STEP, since))}
+    failed = {r[0] for r in conn.execute("SELECT DISTINCT account_id FROM runs WHERE step = ? AND run_date >= ? AND errors IS NOT NULL", (STEP, since))}
     out = [a for a in list_accounts(conn, status=None) if a.domain and not a.ats_board and a.status != "excluded" and a.id not in looked
            and (not only or only.lower() in a.name.lower())]
+    out.sort(key=lambda a: a.id in failed)                       # a company whose pages could not be read goes last, so it cannot keep the others from their turn
     return out
 
 
@@ -86,7 +88,10 @@ def run_find(conn: sqlite3.Connection, cfg: Config, fetcher: Fetcher, ats: AtsCl
     todo = due_accounts(conn, cfg, today, only)[: cfg.hiring.ats_find_per_run if limit is None else limit]
     saved = 0
     for a in todo:
-        boards, note = find_board(fetcher, a.domain)
+        try:
+            boards, note = find_board(fetcher, a.domain)
+        except Exception as e:      # noqa: BLE001  one company's surprise must not stop the search for the rest
+            boards, note = set(), f"unexpected {type(e).__name__}: {str(e)[:120]}"
         err = note or None
         if len(boards) == 1:
             provider, token = next(iter(boards))

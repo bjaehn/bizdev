@@ -11,14 +11,14 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass, field
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlunparse
 
 from bd.accounts import is_valid_domain, normalize_domain
 from bd.config import Config
 from bd.htmltext import Node, Page, ld_objects, links, node_text, parse_html
 from bd.pe_store import norm_name
 from bd.sources import Fetched, Fetcher, FetchError, store_snapshot, visible_text
-from bd.urls import host_in, hostname, normalize_url
+from bd.urls import host_in, hostname, normalize_url, safe_urljoin, safe_urlparse
 
 HIST = re.compile(r"\b(exit(ed|s)?|realized|realised|former|past|previous|prior|historical|divest(ed|ments?)?|sold|alumni)\b", re.I)
 CURR = re.compile(r"\b(current|active|existing)\b", re.I)
@@ -260,7 +260,7 @@ def _anchor_cards(root: Node, url: str) -> list[tuple[Node, str]]:
     for href, text, a in links(root, url):
         if _ancestors_navish(a):
             continue
-        h, p = hostname(href), urlparse(href).path.lower()
+        h, p = hostname(href), safe_urlparse(href).path.lower()
         internal = h == host and re.search(r"/(compan|portfolio|investment|holding)[a-z-]*/[^/]+", p)
         external = h != host and not host_in(h, SOCIAL)
         nm = _clean_name(text)
@@ -271,12 +271,12 @@ def _anchor_cards(root: Node, url: str) -> list[tuple[Node, str]]:
 
 
 def _next_links(root: Node, url: str) -> list[str]:
-    base = urlparse(url)
+    base = safe_urlparse(url)
     out: list[str] = []
 
     def add(h: str) -> None:
-        u = urljoin(url, h.strip())
-        p = urlparse(u)
+        u = safe_urljoin(url, h.strip())
+        p = safe_urlparse(u)
         if p.hostname and hostname(u) == hostname(url) and normalize_url(u) != normalize_url(url) and u not in out and p.scheme in ("http", "https"):
             out.append(u)
 
@@ -288,7 +288,7 @@ def _next_links(root: Node, url: str) -> list[str]:
         if NEXT_TEXT.match(text) or re.search(r"\bnext\b", a.attrs.get("aria-label", ""), re.I) or any(c.lower() in ("next", "next-page") for c in a.classes()):
             add(href)
         elif any(re.search(r"(pagination|pager|page-numbers|paging)", c, re.I) for p in _chain(a)[1:] for c in p.classes()):
-            q = dict(parse_qsl(urlparse(href).query))
+            q = dict(parse_qsl(safe_urlparse(href).query))
             if any(k in q for k in ("page", "paged", "pg", "p")) or re.search(r"/page/\d+", href):
                 add(href)
         del label

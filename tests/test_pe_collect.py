@@ -263,3 +263,23 @@ def test_a_companys_own_page_can_show_where_it_is_and_unseen_structured_data_is_
     assert conn.execute("SELECT kind FROM pe_locations WHERE entity_id = ?", (a,)).fetchone()[0] == "headquarters"
     ev = evidence_for(conn, "company", a)[0]
     assert ev["verification"] == "page_verified" and ev["source_type"] == "company_site" and "Chicago, IL" in ev["excerpt"]
+
+
+def test_a_company_named_only_with_suffix_words_is_kept_and_a_nameless_entry_never_fails_the_source(conn, cfg, monkeypatch):
+    """Live: "The Limited" normalised to nothing ("the" and "limited" are both stripped as legal suffixes), which raised and failed the whole source."""
+    from bd.pe_listing import Entry
+    from bd.pe_store import norm_name
+    import bd.pe_collect as pc
+    assert norm_name("The Limited") == "the limited" and norm_name("Belk Inc") == "belk" and norm_name("--") == ""
+    firm(conn)
+    real = pc.collect_listing
+
+    def with_a_nameless_entry(conn_, fetcher, cfg_, sid, url):
+        res = real(conn_, fetcher, cfg_, sid, url)
+        res.entries.append(Entry(name="--", page_url=url))
+        return res
+    monkeypatch.setattr(pc, "collect_listing", with_a_nameless_entry)
+    res, _client, _c = collect(conn, cfg, {A: listing(current=("The Limited", "Two Co", "Three Co"), realized=())})
+    assert res.failed == 0 and res.ok == 1 and rels(conn)["The Limited"]["status"] == "current"
+    assert any("nothing to match on" in u for u in res.outcomes[0].unresolved)
+    assert conn.execute("SELECT COUNT(*) FROM pe_companies WHERE name_key = ''").fetchone()[0] == 0
