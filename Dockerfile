@@ -7,7 +7,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY bd ./bd
 RUN pip install '.[ui]'
-COPY config.yaml accounts.csv exclusions.csv ./
+COPY config.yaml accounts.csv exclusions.csv pe_firms.csv pe_companies.csv pe_relationships.csv ./
 COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh && useradd --system --uid 10001 --home-dir /app bd
 

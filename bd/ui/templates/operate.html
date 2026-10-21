@@ -40,6 +40,7 @@
 <h2>Private equity firms</h2>
 <p class="meta">Firms come from accounts that have a PE sponsor. <b>Sync</b> is free. <b>Portfolio research</b> reads each firm's own site and adds its Chicagoland companies (same rules as Discover). <b>Firm signals</b> look for a new fund, an exit or an operating-partner hire; they lift the owner's portfolio companies a little. The two research buttons use paid model calls.</p>
 <form class="inline" method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="pe_sync"><button class="ghost" type="submit">Sync firms from accounts (free)</button></form>
+<form class="inline" method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="kind" value="pe_import"><button class="ghost" type="submit" title="The 27 Chicago PE firms, their portfolio companies and the Chicago companies from the researched workbook, loaded as leads that no page has confirmed yet">Load Chicago PE firms from the workbook (free)</button></form>
 <form method="post" action="/operate/run"><input type="hidden" name="csrf" value="{{ csrf }}">
 <div class="grid"><div><label>How many firms (1-50)</label><input type="number" name="limit" value="5" min="1" max="50" required></div>
 <div><label>What to run</label><select name="kind"><option value="pe_portfolio">Portfolio research</option><option value="pe_signals">Firm signals</option></select></div></div>

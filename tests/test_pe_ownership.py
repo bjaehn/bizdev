@@ -372,6 +372,7 @@ def test_a_firms_headquarters_is_not_its_portfolio_companys(conn, cfg):
 
 
 def test_company_geography_follows_the_configured_state_and_says_what_is_missing(conn, cfg):
+    cfg.pe_portfolio.scope_cities = []                                                         # the shipped config lists Chicago-area cities; here none are configured
     with conn:
         out = resolve_company(conn, "Texas Co", None, today=TODAY).id
         inn = resolve_company(conn, "Illinois Co", None, today=TODAY).id
@@ -386,6 +387,30 @@ def test_company_geography_follows_the_configured_state_and_says_what_is_missing
     assert company_geography(conn, inn, cfg).status == "in_scope"
     cfg.pe_portfolio.scope_cities = ["Chicago"]
     assert company_geography(conn, inn, cfg).status == "unknown" and "county not verified" in company_geography(conn, inn, cfg).reason
+
+
+def test_the_shipped_city_list_puts_a_confirmed_chicago_area_headquarters_in_scope_and_an_unlisted_city_still_needs_a_county(conn, cfg):
+    with conn:
+        ev, _ = add_evidence(conn, "company", resolve_company(conn, "Naper Co", None, today=TODAY).id, "location", "https://naper.example/about",
+                             retrieved_at="2026-10-01T00:00:00+00:00", source_type="company_site", verification="page_verified", content_hash="h", excerpt="HQ Naperville, IL")
+        naper = conn.execute("SELECT id FROM pe_companies WHERE name = 'Naper Co'").fetchone()[0]
+        record_location(conn, "company", naper, "headquarters", "Naperville", "IL", ev, TODAY)
+        rock = resolve_company(conn, "Rock Co", None, today=TODAY).id
+        record_location(conn, "company", rock, "headquarters", "Rockford", "IL", ev, TODAY)
+    assert "Naperville" in cfg.pe_portfolio.scope_cities
+    assert company_geography(conn, naper, cfg).status == "in_scope"
+    assert company_geography(conn, rock, cfg).status == "unknown" and "county not verified" in company_geography(conn, rock, cfg).reason
+
+
+def test_a_place_tied_to_unverified_evidence_never_places_a_company(conn, cfg):
+    """The researched workbook says where a company is; only a page that code read may put it in `pe_locations`."""
+    with conn:
+        cid = resolve_company(conn, "Wb Co", None, today=TODAY).id
+        snippet, _ = add_evidence(conn, "company", cid, "location", "https://wb.example/x", retrieved_at="2026-10-19T12:00:00+00:00", source_type="workbook",
+                                  verification="snippet_only", value="Chicago")
+        record_location(conn, "company", cid, "headquarters", "Chicago", "IL", snippet, TODAY)
+    g = company_geography(conn, cid, cfg)
+    assert g.status == "unknown" and "no headquarters shown by a retrieved page" in g.reason
 
 
 def test_an_accounts_verified_facts_decide_geography(conn, cfg):

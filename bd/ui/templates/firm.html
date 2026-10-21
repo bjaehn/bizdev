@@ -3,6 +3,7 @@
 {% block title %}{{ d.firm['name'] }}{% endblock %}
 {% block hero %}<p class="meta"><a href="/firms">← PE firms</a></p>
 <h1>{{ d.firm['name'] }}</h1>
+{% if d.firm['scope'] == 'chicago' %}<p class="meta"><span class="badge accent">Chicago</span> {{ d.firm['presence'] or 'Chicago-area firm' }}{% if d.firm['local_city'] %} · office in {{ d.firm['local_city'] }}{% endif %}{% if d.firm['focus'] %} · focus: {{ d.firm['focus'] }}{% endif %} (from the researched Chicago PE workbook; the office is not necessarily the firm's headquarters)</p>{% endif %}
 <p class="sub">{{ d.firm['domain'] or 'website not recorded' }}{% if d.firm['hq_city'] %} · firm headquarters {{ d.firm['hq_city'] }}{% if d.firm['hq_state'] %}, {{ d.firm['hq_state'] }}{% endif %} (as entered; not a portfolio company's location){% endif %} · <span class="badge {{ 'good' if d.firm['status'] == 'active' else 'bad' }}">{{ d.firm['status'] }}</span></p>{% endblock %}
 {% block body %}
 <div class="row end"><form method="post" action="/firms/{{ d.firm['id'] }}/status"><input type="hidden" name="csrf" value="{{ csrf }}">

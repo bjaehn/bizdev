@@ -492,10 +492,15 @@ def init_db(conn: sqlite3.Connection) -> None:
                      ("reviewed", "INTEGER NOT NULL DEFAULT 1"), ("discovered_at", "TEXT")):
         if col not in cols:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")
-    firm_cols = {r[1] for r in conn.execute("PRAGMA table_info(pe_firms)")}
-    for col in ("hq_state", "hq_source_url", "last_deals"):
-        if col not in firm_cols:
-            conn.execute(f"ALTER TABLE pe_firms ADD COLUMN {col} TEXT")
+    # `scope` is 'chicago' (a Chicago-based firm from the researched list) or 'investor' (a sponsor of a company on our list); `local_city` is where its Chicago
+    # office is, which is NOT its headquarters; `seed_ref` ties a row to the seed CSVs `bd pe-import` loads. All nullable text: no CHECK, because a table with
+    # foreign keys cannot be rebuilt in place.
+    for table, cols in (("pe_firms", ("hq_state", "hq_source_url", "last_deals", "scope", "presence", "presence_note", "local_city", "focus", "seed_ref")),
+                        ("pe_companies", ("industry", "seed_ref")), ("pe_ownership", ("seed_ref",))):
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col in cols:
+            if col not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
     if "author" not in {r[1] for r in conn.execute("PRAGMA table_info(lead_notes)")}:
         conn.execute("ALTER TABLE lead_notes ADD COLUMN author TEXT")
     if "client" not in {r[1] for r in conn.execute("PRAGMA table_info(lead_state)")}:

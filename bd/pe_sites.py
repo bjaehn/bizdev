@@ -81,7 +81,8 @@ def find_firm_domain(fetcher: Fetcher, name: str, log: Callable[[str], None] = l
 def locate_firm_sites(conn: sqlite3.Connection, fetcher: Fetcher, log: Callable[[str], None] = lambda s: None, only: str | None = None) -> int:
     """Set the domain of active firms that have none, when a candidate is confirmed by its own page. Returns firms updated."""
     n = 0
-    for f in conn.execute("SELECT id, name FROM pe_firms WHERE status = 'active' AND (domain IS NULL OR trim(domain) = '') ORDER BY id").fetchall():
+    for f in conn.execute("SELECT id, name FROM pe_firms WHERE status = 'active' AND (domain IS NULL OR trim(domain) = '') "
+                          "AND COALESCE(scope, '') != 'investor' ORDER BY id").fetchall():     # an investor-only firm's site is not guessed from its name; add it under Firm details
         if only and only.lower() not in f["name"].lower():
             continue
         dom = find_firm_domain(fetcher, f["name"], log)

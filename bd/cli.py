@@ -414,6 +414,54 @@ def pe_sync() -> None:
     typer.echo(f"{n} PE firm(s) known: {r.firms_added} added, {r.links_added} portfolio link(s) added, {r.links_exited} marked exited.")
 
 
+@app.command(name="pe-import")
+def pe_import(
+    directory: Optional[str] = typer.Option(None, "--dir", help="Folder holding pe_firms.csv, pe_companies.csv and pe_relationships.csv (default: the repository root)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    soft: bool = typer.Option(False, "--soft", help="Never fail the caller: a missing or inconsistent seed is reported and the exit code stays 0 (used inside Update)"),
+) -> None:
+    """Load the researched Chicago PE firms, companies and relationships into the ownership ledger as leads (free, no model, no network).
+
+    Every relationship starts unclear, with unverified evidence that cites the workbook; nothing becomes current until a page that code has read says so.
+    Idempotent: the database wins, so a second run adds nothing and never overwrites what the app learned."""
+    from pathlib import Path
+
+    from bd.db import connect, init_db
+    from bd.pe_import import SEED_DIR, SEED_FILES, SeedError, import_seed
+    from bd.settings_store import apply_overrides
+
+    run_date = _parse_date(as_of)
+    folder = Path(directory) if directory else SEED_DIR
+    if not all((folder / name).exists() for name in SEED_FILES):
+        msg = f"The PE seed files ({', '.join(SEED_FILES)}) were not found in {folder}."
+        if soft:
+            typer.echo(msg + " Nothing was loaded.")
+            return
+        _fail(msg)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    try:
+        res = import_seed(conn, cfg, folder, run_date)
+    except SeedError as e:
+        if not soft:
+            _fail(f"The PE seed was not loaded: {e}")
+        typer.echo(f"The PE seed was not loaded: {e}. Nothing was changed.")
+        return
+    except Exception as e:      # noqa: BLE001  (inside Update this free step must never stop the signal scan that follows)
+        if not soft:
+            raise
+        typer.echo(f"The PE seed was not loaded: {type(e).__name__}: {e}. Nothing was changed.")
+        return
+    typer.echo(res.line())
+    if res.peers_unlisted:
+        typer.echo(f"  WARNING: {', '.join(res.peers_unlisted)} {'is' if len(res.peers_unlisted) == 1 else 'are'} peers in the seed but not on fit_gate.competitors, "
+                   "so they could be scanned and researched. Add them there.", err=True)
+    if res.unresolved:
+        typer.echo(f"  {len(res.unresolved)} name(s) could not be told apart from another company and were left out: {', '.join(res.unresolved[:5])}")
+
+
 @app.command(name="pe-portfolio")
 def pe_portfolio(
     firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),

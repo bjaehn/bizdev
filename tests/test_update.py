@@ -30,17 +30,18 @@ def test_update_job_is_validated_and_runs_the_steps_in_order():
     assert args == ["update", "--research", "25", "--segments", "2", "--scan", "25", "--budget", "8", "--rfps", "0"]
     steps = sequence_for("update", args, "2026-10-16")
     # signals first: free sources, then the paid scan; company facts (research) and new companies only after, with what is left of the limit
-    assert [s[0] for s in steps] == ["check", "sec-fill", "pe-sync", "pe-collect", "ats-find", "scan", "scan", "discover", "enrich", "apply-proposals", "score"]
+    assert [s[0] for s in steps] == ["check", "sec-fill", "pe-sync", "pe-import", "pe-collect", "ats-find", "scan", "scan", "discover", "enrich", "apply-proposals", "score"]
     assert steps[1] == ["sec-fill", "--as-of", "2026-10-16"]
-    assert steps[3] == ["pe-collect", "--soft", "--as-of", "2026-10-16"]                                         # free; soft, so it can never stop the Update
-    assert steps[4] == ["ats-find", "--soft", "--as-of", "2026-10-16"]                                          # before the free scan, so a board found now is read now
-    assert steps[8] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
-    assert "--light" in steps[5] and "--light" not in steps[6] and steps[6][:3] == ["scan", "--limit", "25"]
-    assert steps[6][steps[6].index("--scanners") + 1] == "sweep,hiring" and steps[6][steps[6].index("--extras") + 1] == "tech_procurement"
-    assert "warn" not in " ".join(steps[6]) and "leadership" not in steps[6] and "press" not in steps[6]       # WARN notices are left to Advanced tools; the sweep covers leadership, press and events
-    assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[6]
+    assert steps[3] == ["pe-import", "--soft", "--as-of", "2026-10-16"]                                          # free; soft, the Chicago PE seed (leads only) right after the sync
+    assert steps[4] == ["pe-collect", "--soft", "--as-of", "2026-10-16"]                                         # free; soft, so it can never stop the Update
+    assert steps[5] == ["ats-find", "--soft", "--as-of", "2026-10-16"]                                          # before the free scan, so a board found now is read now
+    assert steps[9] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
+    assert "--light" in steps[6] and "--light" not in steps[7] and steps[7][:3] == ["scan", "--limit", "25"]
+    assert steps[7][steps[7].index("--scanners") + 1] == "sweep,hiring" and steps[7][steps[7].index("--extras") + 1] == "tech_procurement"
+    assert "warn" not in " ".join(steps[7]) and "leadership" not in steps[7] and "press" not in steps[7]       # WARN notices are left to Advanced tools; the sweep covers leadership, press and events
+    assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[7]
     skip = sequence_for("update", validate("update", {**UPD, "research": "0", "segments": "0"}), "2026-10-16")
-    assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "pe-collect", "ats-find", "scan", "scan", "score"]
+    assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "pe-import", "pe-collect", "ats-find", "scan", "scan", "score"]
     for bad in ({**UPD, "budget": "0"}, {**UPD, "budget": "101"}, {**UPD, "scan": "0"}, {**UPD, "research": "x"}, {}):
         with pytest.raises(JobError):
             validate("update", bad)

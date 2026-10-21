@@ -19,9 +19,10 @@ from datetime import date, datetime, timedelta, timezone
 
 from bd.accounts import is_valid_domain, log_audit, normalize_domain
 from bd.config import Config
+from bd.fit_gate import is_competitor
 from bd.pe_store import norm_name
 
-SOURCE_TYPES = ("firm_site", "company_site", "company_release", "sec_filing", "secondary_report", "search_snippet")
+SOURCE_TYPES = ("firm_site", "company_site", "company_release", "sec_filing", "secondary_report", "search_snippet", "workbook")
 AUTHORITATIVE = frozenset({"firm_site", "company_site", "company_release", "sec_filing"})   # the parties to the event, or a regulator
 CLAIMS = ("listed", "listed_current", "listed_historical", "announced", "completed", "exited", "exit_announced", "expected_close", "location", "add_on", "fund",
           "name_change", "stake")
@@ -172,6 +173,16 @@ def resolve_company(conn: sqlite3.Connection, name: str, domain: str | None = No
     return CompanyMatch(cid, False, how)
 
 
+def is_peer_company(conn: sqlite3.Connection, company_id: int, cfg: Config) -> bool:
+    """The company competes with the client (fit_gate.competitors), by its name, any other name it is known by, or its domain. A peer is shown as one and
+    is never researched, promoted or recommended as a prospect."""
+    co = conn.execute("SELECT name, domain FROM pe_companies WHERE id = ?", (company_id,)).fetchone()
+    if co is None:
+        return False
+    names = [co["name"]] + [r["alias"] for r in conn.execute("SELECT alias FROM pe_aliases WHERE entity_type='company' AND entity_id = ?", (company_id,))]
+    return any(is_competitor(n, co["domain"], cfg) for n in names)
+
+
 def _account_taken(conn: sqlite3.Connection, account_id: int) -> bool:
     return conn.execute("SELECT 1 FROM pe_companies WHERE account_id = ?", (account_id,)).fetchone() is not None
 
@@ -252,10 +263,14 @@ def company_geography(conn: sqlite3.Connection, company_id: int, cfg: Config) ->
             return Geography("in_scope", "its account facts say Chicagoland", a["hq_city"], cfg.fit_gate.state)
         if a and a["chicagoland"] == "no":
             return Geography("out_of_scope", "its account facts say not Chicagoland", a["hq_city"], None)
-    hq = conn.execute("SELECT city, state FROM pe_locations WHERE entity_type='company' AND entity_id=? AND kind='headquarters' "
-                      "ORDER BY id LIMIT 1", (company_id,)).fetchone()
+    # A place tied to evidence that code did not verify against a retrieved page (a search snippet, the researched workbook) never places a company, even if
+    # one is recorded by mistake. Every real writer (bd.pe_collect) passes the page-verified evidence it read the place from.
+    verified = "LEFT JOIN pe_evidence e ON e.id = l.evidence_id WHERE (l.evidence_id IS NULL OR e.verification = 'page_verified') AND "
+    hq = conn.execute("SELECT l.city, l.state FROM pe_locations l " + verified + "l.entity_type='company' AND l.entity_id=? AND l.kind='headquarters' "
+                      "ORDER BY l.id LIMIT 1", (company_id,)).fetchone()
     if hq is None:
-        other = conn.execute("SELECT kind, city, state FROM pe_locations WHERE entity_type='company' AND entity_id=? ORDER BY id LIMIT 1", (company_id,)).fetchone()
+        other = conn.execute("SELECT l.kind, l.city, l.state FROM pe_locations l " + verified + "l.entity_type='company' AND l.entity_id=? ORDER BY l.id LIMIT 1",
+                             (company_id,)).fetchone()
         if other is not None:
             where = ", ".join(x for x in (other["city"], other["state"]) if x)
             return Geography("unknown", f"{where} is shown by a retrieved page, but no page says it is the headquarters", other["city"], other["state"])
@@ -310,6 +325,7 @@ class Facts:
     announced_authoritative: bool = False
     listing_absent_since: str | None = None
     listing_by_contrast: bool = False             # current only because the page has a separate exited section it is not in
+    workbook_lead: bool = False                   # the relationship is known only from the researched workbook, which code has not checked against a page
 
 
 @dataclass
@@ -329,6 +345,7 @@ def facts_from_evidence(rows: list[sqlite3.Row], listing_absent_since: str | Non
     by_contrast = False
     for r in rows:
         if r["verification"] != "page_verified":
+            f.workbook_lead |= r["source_type"] == "workbook"
             continue                                         # a snippet never supports a status
         auth = r["source_type"] in AUTHORITATIVE
         c = r["claim"]
@@ -424,7 +441,7 @@ def _derive_core(f: Facts, today: date, cfg: Config) -> StatusResult:
         return StatusResult("unclear", "announcement_only", "Low", **base,
                             conflict="announced; no source states that it closed, and the announcement is older than the pending window"
                             if ref else "announced on an unstated date; no source states that it closed")
-    return StatusResult("unclear", "listing_absent" if f.listing_absent_since else "none", "Low", **base)
+    return StatusResult("unclear", "listing_absent" if f.listing_absent_since else ("workbook_lead" if f.workbook_lead else "none"), "Low", **base)
 
 
 def recompute(conn: sqlite3.Connection, ownership_id: int, today: date, cfg: Config, verified: bool = False) -> StatusResult:
