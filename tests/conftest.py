@@ -61,7 +61,9 @@ class FakeVerifier:
     def verify(self, url):
         self.checked.append(url)
         if url in self.bad:
-            return VerifyResult(False, self.bad[url], final_url=url)
+            reason = self.bad[url]
+            status = int(reason.removeprefix("http_")) if reason.removeprefix("http_").isdigit() else None       # the real verifier sets the status on every HTTP answer
+            return VerifyResult(False, reason, status=status, final_url=url)
         return VerifyResult(True, "ok", status=200, final_url=url)
 
 

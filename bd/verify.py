@@ -21,12 +21,20 @@ from bd.urls import host_in, safe_urljoin, safe_urlparse
 Resolver = Callable[[str], list[str]]
 
 
+READER_BLOCKED = (401, 403, 429)      # the page answered, but not to our reader: bot protection, a login wall or a rate limit. It is not a missing page.
+
+
 @dataclass(frozen=True)
 class VerifyResult:
     ok: bool
     reason: str  # "ok" or a short machine-readable reason
     status: int | None = None
     final_url: str | None = None
+
+    @property
+    def blocks_reader(self) -> bool:
+        """The server answered 401, 403 or 429. Only a caller that has other proof the page exists (the search tool returned it) may treat this as acceptable."""
+        return not self.ok and self.status in READER_BLOCKED
 
 
 def _system_resolver(host: str) -> list[str]:

@@ -11,7 +11,7 @@ ranking and lets an admin run updates. Deployed on Railway from `main`.
 - Everything the app can run is a whitelisted `python -m bd.cli` subprocess (see `bd/jobs.py`).
 
 ## Hard rules (do not break)
-- **Do not invent data.** Every sentence on a page is built from stored, sourced signals or counts. Every source URL must have been retrieved and resolve.
+- **Do not invent data.** Every sentence on a page is built from stored, sourced signals or counts. Every source URL must have been retrieved and resolve. One exception, for **discovery sources only** (`Discoverer.source_ok`): a source that answers 401, 403 or 429 to our reader is kept when the search tool itself returned it (and it is not on a blocked domain); it carries the note "source blocks our reader" in its candidate row and on the account page and is never shown as page-checked. Anything else that fails to resolve (404, 5xx, timeout, DNS) still drops, and signal, evidence and PE sources are unchanged.
 - **Scoring is deterministic code** (`bd/scoring.py`, weights in `config.yaml`); a model never sets a score.
 - **Signals first, facts second.** Everything not *known* out of scope is scanned (`bd/fit_gate.py`: only an exclusion, a known non-Chicagoland location or a known
   below-floor size skips a company; unknown facts mean "unverified", never "held"). The paid signal scan comes before facts research and discovery in Update,
