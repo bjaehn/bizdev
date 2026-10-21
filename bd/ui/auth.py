@@ -1,6 +1,10 @@
 """Password login for the hosted UI: signed, expiring session cookies and a login-attempt throttle.
 
-Design notes (single shared password, one user):
+Two kinds of sign-in. The shared password (BD_UI_PASSWORD) is the owner's: cookie `s1.<expiry>.<sig>`. A person added under Admin has their own password
+(bd/users.py): cookie `s2.<id>.<expiry>.<sig>`, signed over a per-person key stored with the person, so changing their password, making a new sign-up link or
+removing them ends their sessions at once. Changing BD_UI_PASSWORD ends every session of both kinds (both are signed with a key derived from it).
+
+Design notes for the shared password (the owner):
   * the password never leaves the environment (BD_UI_PASSWORD) and must be at least 16 characters, or the hosted
     server refuses to start - there is no default and no way to run it open;
   * the session cookie is `s1.<expiry>.<HMAC-SHA256(secret, "s1." + expiry)>`: nothing secret inside, tamper-proof,
@@ -61,6 +65,26 @@ class Hosted:
 
     def _sig(self, expiry: int) -> str:
         return hmac.new(self.secret, f"s1.{expiry}".encode(), hashlib.sha256).hexdigest()
+
+    # ---- people with their own login ----------------------------------------------------------------------------------------------------------------
+    def make_user_session(self, user_id: int, key: str, now: float | None = None) -> str:
+        expiry = int((time.time() if now is None else now) + self.session_hours * 3600)
+        return f"s2.{user_id}.{expiry}.{self._user_sig(user_id, expiry, key)}"
+
+    def parse_user_session(self, value: str, now: float | None = None) -> tuple[int, int, str] | None:
+        """(person id, expiry, signature) of an unexpired cookie of the right shape. The signature still has to be checked against the person's own key."""
+        parts = (value or "").split(".")
+        if len(parts) != 4 or parts[0] != "s2" or not parts[1].isdigit() or not parts[2].isdigit() or len(parts[1]) > 12:
+            return None
+        if int(parts[2]) < (time.time() if now is None else now):
+            return None
+        return int(parts[1]), int(parts[2]), parts[3]
+
+    def user_session_ok(self, user_id: int, expiry: int, sig: str, key: str) -> bool:
+        return hmac.compare_digest(sig, self._user_sig(user_id, expiry, key))
+
+    def _user_sig(self, user_id: int, expiry: int, key: str) -> str:
+        return hmac.new(self.secret, f"s2.{user_id}.{expiry}.{key}".encode(), hashlib.sha256).hexdigest()
 
 
 class Throttle:

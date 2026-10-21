@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Choose your password{% endblock %}
+{% set auth = true %}
+{% block body %}
+<div class="card card--narrow">
+<h1>{% if person_name %}Welcome, {{ person_name }}{% else %}Sign-up link{% endif %}</h1>
+{% if error %}<div class="errors">{{ error }}</div>{% endif %}
+{% if token %}
+<p class="sub">Choose your own password for SEI Chicago BD Signals. It is only used to sign you in, and nobody else can see it.</p>
+<form class="stack" method="post" action="/join/{{ token }}">
+<label for="password">New password</label>
+<input id="password" type="password" name="password" autocomplete="new-password" minlength="{{ min_password }}" autofocus required>
+<p class="meta">At least {{ min_password }} characters. A few words together work well.</p>
+<label for="password2">Type it again</label>
+<input id="password2" type="password" name="password2" autocomplete="new-password" minlength="{{ min_password }}" required>
+<p><button type="submit">Set my password and sign in</button></p>
+</form>
+{% else %}<p><a href="/login">Go to sign in</a></p>{% endif %}
+</div>
+{% endblock %}

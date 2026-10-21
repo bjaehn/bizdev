@@ -151,6 +151,14 @@ confirmation tick. The **Existing clients** flag is pipeline bookkeeping (audite
 removes a company from scanning. The Operate page
 shows whether each secret is set, never its value. The container drops root before serving.
 
+**People.** `BD_UI_PASSWORD` is the owner's sign-in. Others are added on the Users page (any signed-in person can add or remove people: access is
+equal by design). A person is added with a one-time sign-up link whose token is shown once and stored only as a SHA-256 hash (7 days, single use,
+never in the audit log, jobs or request log; `/join/<token>` is redacted there and the page sends `Referrer-Policy: no-referrer`). They choose a
+password of 12+ characters, kept as a scrypt hash with a per-password salt; an unknown sign-in name still costs one hash check, so timing does not
+reveal which names exist. A session cookie is signed over the person's `session_key`, which changes on a new link, a password set or removal, so those end
+that person's sessions at once; changing `BD_UI_PASSWORD` ends every session. Failed sign-ins are throttled per client and per sign-in name. The
+app sends no email: the link is passed on by hand, so send it over a channel you trust. Changes, notes and jobs record who made them.
+
 ## 5. Known gaps and limits
 
 1. **Not yet exercised live.** The code was built and tested offline (fake LLM, fake HTTP). It has not yet

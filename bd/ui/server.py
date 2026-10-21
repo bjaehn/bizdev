@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import secrets
 import webbrowser
 from socketserver import ThreadingMixIn
@@ -13,10 +14,14 @@ from bd.ui.app import App
 HOST = "127.0.0.1"   # not configurable on purpose: this UI must never listen on the network
 
 
+def request_line_for_log(requestline: str) -> str:
+    """The request line without its query string (the local login token) and without a sign-up token (/join/<token>), so neither reaches a log."""
+    return re.sub(r"(/join/)[^\s?]+", r"\1…", (requestline or "").split("?")[0])
+
+
 class _Quiet(WSGIRequestHandler):
     def log_message(self, format, *args):   # noqa: A002  - log the request line WITHOUT its query string (the login token)
-        line = (self.requestline or "").split("?")[0]
-        print(f"  {line} -> {args[1] if len(args) > 1 else ''}")
+        print(f"  {request_line_for_log(self.requestline)} -> {args[1] if len(args) > 1 else ''}")
 
 
 class _Server(ThreadingMixIn, WSGIServer):
@@ -50,8 +55,7 @@ class _HostedHandler(WSGIRequestHandler):
     timeout = 30            # per-connection socket timeout: a stalled client cannot hold a thread forever
 
     def log_message(self, format, *args):   # noqa: A002
-        line = (self.requestline or "").split("?")[0]
-        print(f"  {line} -> {args[1] if len(args) > 1 else ''}", flush=True)
+        print(f"  {request_line_for_log(self.requestline)} -> {args[1] if len(args) > 1 else ''}", flush=True)
 
 
 def build_hosted(cfg: Config, db_path: str, data_dir: str, password: str, port: int, host: str = "0.0.0.0"):

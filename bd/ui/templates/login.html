@@ -6,7 +6,10 @@
 <h1>Sign in</h1>
 <p class="sub">SEI Chicago BD Signals</p>
 {% if error %}<div class="errors">{{ error }}</div>{% endif %}
-<form method="post" action="/login">
+<form class="stack" method="post" action="/login">
+<label for="login">Your sign-in name</label>
+<input id="login" type="text" name="login" autocomplete="username" autocapitalize="none" spellcheck="false">
+<p class="meta">Leave this empty if you use the shared password.</p>
 <label for="password">Password</label>
 <input id="password" type="password" name="password" autocomplete="current-password" autofocus required>
 <p><button type="submit">Sign in</button></p>

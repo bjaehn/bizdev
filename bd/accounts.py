@@ -82,6 +82,8 @@ def log_audit(conn: sqlite3.Connection, actor: str, action: str, account_id: int
     """Append to the audit log (the caller owns the transaction)."""
     from datetime import datetime, timezone
 
+    from bd.actor import resolve
+    actor = resolve(actor)                       # a signed-in person's name when the caller only said "ui"
     conn.execute("INSERT INTO audit_log(ts, actor, action, account_id, field, old, new) VALUES (?,?,?,?,?,?,?)",
                  (datetime.now(timezone.utc).isoformat(timespec="seconds"), actor, action, account_id, field,
                   None if old is None else str(old), None if new is None else str(new)))

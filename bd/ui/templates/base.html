@@ -20,6 +20,7 @@
 {% else %}<a class="top {{ 'on' if page in ('opportunities', 'company', 'signals', 'help', 'find') else '' }}" href="/opportunities">Analysis</a>{% endif %}
 </nav>
 <div class="right">{% if not is_admin %}<a class="adminlink" href="/admin">Admin</a>{% endif %}
+{% if hosted and who %}<span class="who" title="Signed in as {{ who }}">{{ who }}</span>{% endif %}
 {% if hosted %}<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost" type="submit">Sign out</button></form>{% endif %}</div>
 {% endif %}
 </div></header>

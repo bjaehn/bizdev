@@ -38,6 +38,8 @@
      charts                                           SVG charts sit in a recessed .chart well; their marks are gradient-filled with a soft group shadow (drawn in bd/charts.py from these tokens) and take a ring on hover (.mark)
      depth                                            cards, tiles, stats, badges, buttons and bars take a layered shadow (--shadow, --shadow-2, --shadow-3), a top highlight (--hl)
                                                       and a gradient (--grad-panel, --g-accent, --g-hot, --g-warm, --g-good) from the tokens; nothing else sets its own
+     .who                                             the signed-in person's name in the header
+     table.stackable                                  a table whose rows become labelled blocks on a phone (each td carries data-label; a td without one, such as the buttons, spans the row)
      .stack                                           vertical rhythm container (use instead of margins)
      .meta .sub .why .name .rank .center .end .inline .shrink .pre .noprint   text and small utilities */
 
@@ -116,6 +118,7 @@ header a:focus-visible,header button:focus-visible,.hero a:focus-visible,.hero b
 .right{margin-left:auto;display:flex;gap:var(--s4);align-items:center}
 .adminlink{font-size:var(--fs-sm);color:var(--on-band-nav);text-decoration:none}
 .adminlink:hover{color:var(--on-band)}
+.who{max-width:14rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px var(--s3);border-radius:999px;background:var(--glass);border:1px solid var(--glass-line);font-size:var(--fs-sm);font-weight:600;color:var(--on-band)}
 header button.ghost{color:var(--on-band);border:1px solid var(--glass-line);background:transparent;padding:6px var(--s3)}
 .hero{background:var(--glow),linear-gradient(135deg,var(--hdr-1) 0%,var(--hdr-2) 62%,var(--hdr-3) 135%);color:var(--on-band);padding:26px max(var(--s4),calc((100% - var(--w)) / 2 + var(--s4))) 34px}
 .hero:empty{display:none}
@@ -257,6 +260,7 @@ a.pill:hover{transform:translateY(-2px);box-shadow:var(--shadow-2),var(--hl)}
 .wrap>table{background:transparent;box-shadow:none;border-radius:0}
 .wrap td:first-child{min-width:150px}
 .wrap.wide>table{min-width:34rem}
+td .filters button{white-space:nowrap}
 .matrix{table-layout:auto}
 .matrix th{white-space:normal;line-height:1.25;font-size:10.5px;letter-spacing:.05em;padding:6px 3px;text-align:center}
 .matrix th:first-child,.matrix th.left{text-align:left}
@@ -329,7 +333,7 @@ body.auth footer{color:var(--on-band-nav)}
 .full{width:100%}
 
 /* ---------- 6. phone ---------- */
-@media (max-width:640px){.dim-row,dl.kv{grid-template-columns:1fr}.dim-row .num{text-align:left}.chart--wide{display:none}.chart--phone{display:block;overflow:visible}.rank-row{grid-template-columns:1.75rem minmax(0,1fr)}.rank-score{grid-column:2}h1,.hero h1{font-size:28px}.hero{padding-top:var(--s4);padding-bottom:var(--s5)}.hero.tall{padding-bottom:64px}.tiles,.tiles--3{grid-template-columns:repeat(2,1fr);gap:10px;margin-top:-46px}.tile b{font-size:26px}
+@media (max-width:640px){table.stackable,table.stackable tbody,table.stackable tr,table.stackable td{display:block}table.stackable th{display:none}table.stackable td{display:grid;grid-template-columns:7.5rem minmax(0,1fr);gap:var(--s2);padding:var(--s2) var(--s4);border-bottom:0;background:none;box-shadow:none}table.stackable tr:nth-child(even) td,table.stackable tr:hover td{background:none}table.stackable tr:has(td){padding:var(--s2) 0;border-bottom:1px solid var(--line)}table.stackable tr:last-child{border-bottom:0}table.stackable td::before{content:attr(data-label);font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding-top:2px}table.stackable td:not([data-label]){grid-template-columns:1fr}table.stackable td:not([data-label])::before{display:none}table.stackable td.empty{display:block}.dim-row,dl.kv{grid-template-columns:1fr}.dim-row .num{text-align:left}.chart--wide{display:none}.chart--phone{display:block;overflow:visible}.rank-row{grid-template-columns:1.75rem minmax(0,1fr)}.rank-score{grid-column:2}h1,.hero h1{font-size:28px}.hero{padding-top:var(--s4);padding-bottom:var(--s5)}.hero.tall{padding-bottom:64px}.tiles,.tiles--3{grid-template-columns:repeat(2,1fr);gap:10px;margin-top:-46px}.tile b{font-size:26px}
 .brand{flex:1;padding:var(--s2) 0 0;margin:0}header .right{order:2;margin:var(--s1) 0 0}header .right button{padding:4px 10px;font-size:var(--fs-sm)}nav{order:3;width:100%;padding-bottom:var(--s1)}nav a.top{padding:6px 10px;font-size:var(--fs-sm)}
 body.admin .shell{display:block}.adminnav{width:auto;padding-top:var(--s4)}.cols--2{grid-template-columns:1fr}.feed li{grid-template-columns:1fr;gap:0}.stats{grid-template-columns:repeat(2,1fr)}.ring{width:50px;height:50px}.ring::before{inset:5px}}
 

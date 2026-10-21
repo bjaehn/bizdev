@@ -199,6 +199,14 @@ built in, all on one database. It refuses to start without `BD_UI_PASSWORD` (16+
 deploy it (Dockerfile, `railway.json`) is in the repo; the steps and variables are in [docs/DEPLOY.md](docs/DEPLOY.md).
 `bd ui` remains the local, loopback-only variant.
 
+**People.** `BD_UI_PASSWORD` is the **Owner**'s sign-in: leave the sign-in name empty and type the password. Admin, *Users* adds everyone else:
+type a name and a sign-in name and the page shows a **one-time sign-up link, once** (the app stores only a hash of it; it expires after 7 days and works once).
+The person opens it and chooses their own password (12+ characters, kept only as a scrypt hash). The app sends no email, so you pass the link on yourself.
+Everyone has the same access (Analysis and Admin); the point is names, not roles. Each change, note, stage move and job records who did it
+("Ana Cruz", or "Owner"), the header shows who is signed in, and a message shown after an action goes only to the person who made it.
+*New link* (or *Reset password*) ends that person's sessions and gives a fresh link; *Remove* ends them and frees the sign-in name; you cannot remove yourself.
+Changing `BD_UI_PASSWORD` signs everyone out, owner and people alike. Wrong attempts are throttled per client and per sign-in name. `bd ui` (local) has no Users page.
+
 ## Weekly schedule: Monday 05:00 America/Chicago
 
 (If you use the hosted app, the schedule is already built in and you can skip this section.)

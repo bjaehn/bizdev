@@ -210,9 +210,26 @@ CREATE TABLE IF NOT EXISTS lead_notes (
     kind       TEXT NOT NULL CHECK (kind IN ('note','stage')),
     stage      TEXT,
     score_at   INTEGER,
-    body       TEXT NOT NULL DEFAULT ''
+    body       TEXT NOT NULL DEFAULT '',
+    author     TEXT                          -- who wrote it (a signed-in person's name); NULL for rows from before people had logins
 );
 CREATE INDEX IF NOT EXISTS ix_lead_notes_account ON lead_notes(account_id, id);
+
+-- People who sign in to the hosted app (bd/users.py). The shared password is not a row: it is the owner's sign-in. A password is only ever a salted hash,
+-- a sign-up link is only ever a hash of its token, and session_key changes whenever the password does, which ends the person's sessions.
+CREATE TABLE IF NOT EXISTS users (
+    id             INTEGER PRIMARY KEY,
+    login          TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    name           TEXT NOT NULL,
+    status         TEXT NOT NULL CHECK (status IN ('invited','active','removed')),
+    pw_hash        TEXT,
+    session_key    TEXT NOT NULL,
+    invite_hash    TEXT,
+    invite_expires TEXT,
+    created        TEXT NOT NULL,
+    created_by     TEXT NOT NULL,
+    last_login     TEXT
+);
 
 -- Open public solicitations (RFP / RFQ / RFI) from Chicago-area agencies (bd/rfps.py). Market-level: not tied to an account, so
 -- they are shown on their own page and never scored. `url` is the page the search returned and code verified.
@@ -470,6 +487,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     for col in ("hq_state", "hq_source_url", "last_deals"):
         if col not in firm_cols:
             conn.execute(f"ALTER TABLE pe_firms ADD COLUMN {col} TEXT")
+    if "author" not in {r[1] for r in conn.execute("PRAGMA table_info(lead_notes)")}:
+        conn.execute("ALTER TABLE lead_notes ADD COLUMN author TEXT")
     if "client" not in {r[1] for r in conn.execute("PRAGMA table_info(lead_state)")}:
         conn.execute("ALTER TABLE lead_state ADD COLUMN client INTEGER NOT NULL DEFAULT 0")
     conn.commit()

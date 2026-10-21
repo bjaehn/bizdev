@@ -4,7 +4,7 @@
 {% block body %}
 <h1>Job #{{ job.id }}: {{ label }}</h1>
 <p class="sub"><span class="badge {{ 'good' if job.status == 'ok' else ('bad' if job.status in ('failed','interrupted') else '') }}">{{ job.status }}</span>
- {% if running %}refreshing every 5 seconds{% endif %}{% if company %} · <a href="/accounts/{{ company['id'] }}">open {{ company['name'] }}</a>{% endif %} · <a href="/operate">back to Operate</a> · <a href="/runs">cost on Runs</a></p>
+ {% if job.actor %}started by {{ job.actor }} · {% endif %}{% if running %}refreshing every 5 seconds{% endif %}{% if company %} · <a href="/accounts/{{ company['id'] }}">open {{ company['name'] }}</a>{% endif %} · <a href="/operate">back to Operate</a> · <a href="/runs">cost on Runs</a></p>
 {% if job.note %}<div class="flash err">{{ job.note }}</div>{% endif %}
 <p class="meta">{% if cut_kb %}This log is long, so only its last {{ cut_kb[0] }} KB of {{ cut_kb[1] }} KB are shown here. {% endif %}<a href="/jobs/{{ job.id }}/log">The whole log as plain text</a></p>
 <div class="card"><pre class="pre">{{ log or '(no output yet)' }}</pre></div>

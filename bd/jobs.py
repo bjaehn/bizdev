@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from bd.actor import current as current_actor
+
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
 PAID_STEPS = frozenset({"enrich", "discover", "scan", "compare", "pe-portfolio", "pe-signals", "rfps", "ask", "card"})
 SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials", "sec_events", "sweep")
@@ -41,7 +43,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     started   TEXT,
     finished  TEXT,
     exit_code INTEGER,
-    note      TEXT
+    note      TEXT,
+    actor     TEXT                 -- who pressed the button (a signed-in person's name); NULL for scheduled runs and rows from before people had logins
 );
 """
 
@@ -88,6 +91,7 @@ class Job:
     finished: str | None
     exit_code: int | None
     note: str | None
+    actor: str | None = None
 
 
 def _now() -> str:
@@ -299,6 +303,8 @@ class JobRunner:
         self._threads: list[threading.Thread] = []
         with self._conn() as c:
             c.executescript(JOBS_SCHEMA)
+            if "actor" not in {r[1] for r in c.execute("PRAGMA table_info(jobs)")}:
+                c.execute("ALTER TABLE jobs ADD COLUMN actor TEXT")
             c.execute("UPDATE jobs SET status='interrupted', finished=?, note='server restarted while this was running' "
                       "WHERE status IN ('running','queued')", (_now(),))
 
@@ -334,7 +340,7 @@ class JobRunner:
     def _row(r: sqlite3.Row) -> Job:
         import json
         return Job(r["id"], r["kind"], json.loads(r["args_json"]), r["status"], r["created"], r["started"],
-                   r["finished"], r["exit_code"], r["note"])
+                   r["finished"], r["exit_code"], r["note"], r["actor"] if "actor" in r.keys() else None)
 
     def log_view(self, job_id: int, limit: int = LOG_PAGE_BYTES) -> tuple[str, int]:
         """The end of a job's log, at most `limit` bytes, with secrets hidden, and the log's whole size in bytes. A cut log starts at a line, not mid-line."""
@@ -368,8 +374,8 @@ class JobRunner:
             self._busy = True
         try:
             with self._conn() as c:
-                cur = c.execute("INSERT INTO jobs(kind,args_json,status,created) VALUES (?,?,?,?)",
-                                (kind, json.dumps(args), "queued", _now()))
+                cur = c.execute("INSERT INTO jobs(kind,args_json,status,created,actor) VALUES (?,?,?,?,?)",
+                                (kind, json.dumps(args), "queued", _now(), None if scheduled else current_actor()))
                 job_id = cur.lastrowid
         except Exception:
             self._busy = False
