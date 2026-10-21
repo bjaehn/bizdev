@@ -1,0 +1,17 @@
+<h2>Hiring picture</h2>
+{% if hp.has_board and hp.total is not none %}
+<div class="card">
+<div class="stats">
+<div class="stat"><b>{{ hp.total }}</b><span>open roles on the company's own {{ hp.provider|title }} board</span></div>
+<div class="stat accent"><b>{{ hp.relevant }}</b><span>match AI, data, strategy, transformation or product</span></div>
+<div class="stat warm"><b>{{ hp.recent }}</b><span>of those dated in the last 30 days</span></div>
+</div>
+<p>{{ hp.change_text }} <span class="meta">Read {{ hp.read_date|fdate }}.</span></p>
+{% if hp.themes %}<div class="wrap"><table><tr><th>Area of the open roles</th><th class="num">Open</th><th class="num">Director or above</th></tr>
+{% for label, n, senior in hp.themes %}<tr><td>{{ label[:1]|upper }}{{ label[1:] }}</td><td class="num">{{ n }}</td><td class="num">{{ senior }}</td></tr>{% endfor %}</table></div>{% endif %}
+{% if hp.programs %}<h3>Programs named in job titles</h3>
+<ul class="plain">{% for p in hp.programs %}<li><b>{{ p.name }}</b> <span class="meta">· {{ p.n }} {{ 'posting' if p.n == 1 else 'postings' }} dated in the last {{ cfg_hiring_days }} days</span><br>
+{% for e in p.examples[:3] %}{% if e.url|safe_url %}<a href="{{ e.url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ e.title }}</a>{% else %}{{ e.title }}{% endif %}{{ ' · ' if not loop.last }}{% endfor %}</li>{% endfor %}</ul>
+<p class="meta">A program is shown when a posting's title names it. Three or more postings naming the same one become a hiring signal.</p>{% endif %}
+</div>
+{% else %}<div class="card"><p class="meta">{{ hp.note }}</p></div>{% endif %}

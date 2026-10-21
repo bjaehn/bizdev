@@ -1,0 +1,27 @@
+{% from "_ui.html" import pe_calls, pe_feed %}
+<h2 id="pe">Private equity</h2>
+{% if pe.empty %}<div class="card empty">{{ pe.empty }}</div>
+{% else %}
+<div class="stats">
+<div class="stat"><b>{{ pe.backed }}</b><span>{{ 'company is' if pe.backed == 1 else 'companies are' }} owned by a sponsor, in your area</span></div>
+<div class="stat accent"><b>{{ pe.by_category.get('Prospect now', 0) }}</b><span>Prospect now</span></div>
+<div class="stat warm"><b>{{ pe.by_category.get('Validate first', 0) }}</b><span>Validate first</span></div>
+<div class="stat"><b>{{ pe.feed_total }}</b><span>sponsor and portfolio events, last 90 days</span></div>
+</div>
+<div class="card">
+<h3>PE-backed companies worth a call</h3>
+{% if pe.calls %}
+<p class="meta">Ranked by the evidence-based priority, which is not a score of the sponsor and not a probability. Each fact links to the page it came from.</p>
+{{ pe_calls(pe.calls) }}
+{% elif pe.backed %}<p class="meta">None of the {{ pe.backed }} sponsor-owned {{ 'company' if pe.backed == 1 else 'companies' }} has enough evidence yet to be worth a call.</p>
+{% else %}<p class="meta">No company is shown by a source as owned by a sponsor yet. The portfolio pages are read in every Update.</p>{% endif %}
+{% if pe.unclear_leads %}<p class="meta">{{ pe.unclear_leads }} more {{ 'company on your list is' if pe.unclear_leads == 1 else 'companies on your list are' }} said to be sponsor-backed, but no source confirms it, so {{ 'it is' if pe.unclear_leads == 1 else 'they are' }} not listed here.</p>{% endif %}
+{% if pe.out_of_area %}<p class="meta">{{ pe.out_of_area }} sponsor-owned {{ 'company is' if pe.out_of_area == 1 else 'companies are' }} shown to be outside the area and left out.</p>{% endif %}
+</div>
+<div class="card">
+<h3>Recent sponsor and portfolio activity</h3>
+{% if pe.feed %}{{ pe_feed(pe.feed) }}{% if pe.feed_total > pe.feed|length %}<p class="meta">The newest {{ pe.feed|length }} of {{ pe.feed_total }}.</p>{% endif %}{% else %}<p class="meta">Nothing dated in the last 90 days has been found.</p>{% endif %}
+{% if pe.coverage %}<p class="notice {{ pe.coverage_class }}">{{ pe.coverage }}</p>{% endif %}
+<p class="meta"><a href="/firms">All private equity firms</a></p>
+</div>
+{% endif %}

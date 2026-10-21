@@ -55,6 +55,8 @@
 {% else %}<p class="meta">No signals were found in the last {{ tr.weeks|length }} weeks.</p>{% endif %}
 </div>
 
+{% include "_pe_home.html" %}
+
 {% if not w.problem %}
 <h2 id="ranked">Ranked</h2>
 {% if family or industry %}<p class="meta">Only {% if industry %}{{ industry }} companies{% else %}companies{% endif %}{% if family %} with {{ family_labels[family]|lower }} signals{% endif %}. <a href="/opportunities{{ '?tracked=1' if everything else '' }}#ranked">Show everyone</a></p>{% endif %}

@@ -32,7 +32,7 @@ from bd.models import SIGNAL_TYPES
 
 LEADERSHIP = frozenset({"leadership_change", "leadership_transformation_ai_data", "open_exec_search", "pe_platform_or_sponsor_exec"})
 HIRING = frozenset({"hiring_cluster", "hiring_leadership", "hiring_interim", "hiring_single"})
-PRESSURE = frozenset({"restructuring_layoffs", "cost_program", "financial_pressure", "ops_failure", "activist"})
+PRESSURE = frozenset({"restructuring_layoffs", "cost_program", "financial_pressure", "financial_distress", "ops_failure", "activist"})
 DEALS = frozenset({"ma_divestiture", "pe_addon", "pe_hold_2_4"})
 TECHNOLOGY = frozenset({"platform_migration", "vendor_deal", "rfp_match", "ai_commitment"})
 STRATEGY = frozenset({"strategy_rebrand"})

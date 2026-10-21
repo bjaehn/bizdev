@@ -24,6 +24,7 @@ from pydantic import BaseModel, field_validator
 from bd.accounts import Account
 from bd.ats import board_from_url
 from bd.hashing import signal_hash
+from bd.labels import THEME_LABEL
 from bd.llm import LLMError, generate_validated, search_failure
 from bd.models import SignalExtract
 from bd.scanners.base import AcceptedSignal, Rejection, ScanOutcome, Scanner, reconcile_source_type
@@ -31,9 +32,6 @@ from bd.urls import host_in, hostname, normalize_url
 
 Theme = Literal["ai_technology", "data_analytics", "strategy_operations", "transformation_change", "product_engineering"]
 Seniority = Literal["c_suite", "svp_vp", "director", "other"]
-THEME_LABEL = {"ai_technology": "AI and technology", "data_analytics": "data and analytics",
-               "strategy_operations": "strategy and operations", "transformation_change": "transformation and change",
-               "product_engineering": "product and engineering"}
 _RANK = {"Low": 0, "Medium": 1, "High": 2}
 
 

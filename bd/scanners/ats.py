@@ -11,9 +11,12 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from bd.accounts import Account
-from bd.ats import AtsClient, AtsError, classify
-from bd.scanners.base import Rejection, ScanOutcome
-from bd.scanners.hiring import HiringScanner, Posting, _Verified
+from bd.ats import AtsClient, AtsError, classify, programs_in
+from bd.postings import BoardReading
+from bd.hashing import signal_hash
+from bd.models import SignalExtract
+from bd.scanners.base import AcceptedSignal, Rejection, ScanOutcome
+from bd.scanners.hiring import HiringScanner, Posting, _short, _Verified
 from bd.urls import host_in, hostname, normalize_url
 
 MAX_POSTINGS_KEPT = 200
@@ -49,7 +52,12 @@ class AtsScanner(HiringScanner):
         verified: list[_Verified] = []
         seen: set[str] = set()
         every: list[Posting] = []
+        named: dict[str, list[Posting]] = {}
         for r in sorted(raw, key=lambda r: (r.posted, r.url), reverse=True):
+            if lo <= r.posted <= hi and (host_in(hostname(r.url), cfg.sources.ats_domains) or host_in(hostname(r.url), own)):
+                for program in programs_in(r.title, cfg):
+                    named.setdefault(program, []).append(Posting(title=r.title, url=r.url, posted_date=r.posted, theme="ai_technology", seniority="other",
+                                                                 source_type="company_site"))
             c = classify(r.title, cfg)
             if c is None:
                 continue
@@ -68,6 +76,25 @@ class AtsScanner(HiringScanner):
                 verified.append(_Verified(p, "company_site", cfg.sources.confidence_by_source_type["company_site"]))
             else:
                 out.rejections.append(Rejection("date_out_of_window", None, r.url, r.posted.isoformat()))
-        out.signals = self._build(account, verified)
+        out.signals = self._build(account, verified) + self._program_signals(account, named)
         out.postings, out.postings_complete = every, True
+        out.board = BoardReading(total=len(raw), relevant=sum(1 for r in raw if classify(r.title, cfg) is not None),
+                                 programs={n: [(p.title, p.url, p.posted_date.isoformat()) for p in ps] for n, ps in named.items()})
+        return out
+
+    def _program_signals(self, account: Account, named: dict[str, list[Posting]]) -> list[AcceptedSignal]:
+        """One hiring_cluster per program that program_min or more postings inside the window name in their titles (the biggest first, at most
+        program_signals_max). Dated by the posting that completed the cluster, so the same surge keeps its date week to week."""
+        cfg = self.cfg
+        out: list[AcceptedSignal] = []
+        big = sorted(((n, ps) for n, ps in named.items() if len(ps) >= cfg.hiring.program_min), key=lambda x: (-len(x[1]), x[0]))
+        for program, ps in big[: cfg.hiring.program_signals_max]:
+            ps = sorted(ps, key=lambda p: (p.posted_date, p.url))
+            formed_by = ps[cfg.hiring.program_min - 1]
+            v = _Verified(formed_by, "company_site", cfg.sources.confidence_by_source_type["company_site"])
+            summary = f"{len(ps)} job postings name {program} in their titles within {cfg.hiring.window_days} days, including {_short(formed_by.title, 6)}."
+            e = SignalExtract(type="hiring_cluster", event_date=formed_by.posted_date, summary=summary, source_url=formed_by.url, source_type="company_site",
+                              confidence=v.confidence, service_lines=self._canonical_lines(cfg.hiring.program_service_lines), role_or_person=_short(formed_by.title, 12))
+            out.append(AcceptedSignal(e, cfg.scoring.family_of("hiring_cluster"), signal_hash(account.id, "hiring_cluster", formed_by.posted_date, formed_by.url),
+                                      [f"{len(ps)} postings name {program}, cluster formed {formed_by.posted_date.isoformat()}"]))
         return out

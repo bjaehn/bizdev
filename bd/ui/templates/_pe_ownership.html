@@ -2,14 +2,14 @@
 {% from "_ui.html" import status_badge, src_link %}
 <div class="card">
 {% if pe.relationships %}
-<table><tr><th>Sponsor</th><th>Status</th><th>As of</th><th>Closing</th><th>Evidence</th></tr>
+<div class="wrap wide"><table><tr><th>Sponsor</th><th>Status</th><th>As of</th><th>Closing</th><th>Evidence</th></tr>
 {% for r in pe.relationships %}{% set o = r.o %}<tr>
 <td><a href="/firms/{{ o['firm_id'] }}">{{ o['firm_name'] }}</a><br><span class="meta">{{ o['relationship']|replace('unspecified', 'role not stated') }}{% if o['stake'] != 'unspecified' %} · {{ o['stake'] }}{% endif %}</span></td>
 <td>{{ status_badge(o['status']) }} {% if r.stale %}<span class="badge warm">stale</span>{% endif %}<br><span class="meta">{{ o['basis']|replace('_', ' ') }} · confidence {{ o['confidence'] }}</span></td>
 <td>{{ o['as_of_date']|fdate if o['as_of_date'] else 'not stated' }}<br><span class="meta">verified {{ o['last_verified'] or 'never' }}</span></td>
 <td>{{ o['closed_date']|fdate if o['closed_date'] else 'not stated' }}{% if o['exit_date'] %}<br><span class="meta">exit {{ o['exit_date']|fdate }}</span>{% endif %}{% if o['expected_close'] %}<br><span class="meta">expected close {{ o['expected_close']|fdate }}</span>{% endif %}</td>
 <td>{{ r.evidence|length }} item{{ '' if r.evidence|length == 1 else 's' }}{% if r.evidence %} · <a href="/ownership/{{ o['id'] }}">sources and status log</a>{% endif %}{% if o['conflict_note'] %}<br><span class="meta">{{ o['conflict_note'] }}</span>{% endif %}</td></tr>{% endfor %}
-</table>
+</table></div>
 <p class="meta">A relationship is current, pending, historical or unclear by rule, from its evidence. An announcement never counts as a closing, a company missing from a firm's page is never treated as an exit, and the closing date is shown only when a source states it.</p>
 {% else %}<p class="meta">No sponsor relationship is recorded for this company.</p>{% endif %}
 {% if pe.add_ons %}<h3>Add-on acquisitions</h3><ul class="plain">{% for l in pe.add_ons %}<li>{{ l['parent'] }} &rarr; {{ l['child'] }} · <b>{{ l['status'] }}</b>{% if l['announced_date'] %} · announced {{ l['announced_date']|fdate }}{% endif %}{% if l['closed_date'] %} · closed {{ l['closed_date']|fdate }}{% endif %}</li>{% endfor %}</ul>{% endif %}

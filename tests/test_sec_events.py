@@ -134,7 +134,8 @@ def test_the_scanner_is_registered_free_and_the_other_free_ones_are_marked(cfg):
     assert SCANNERS["sec_events"] is SecEventsScanner
     assert {n for n, c in SCANNERS.items() if c.free} == {"ats", "financials", "sec_events"}
     assert SecEventsScanner.reads_filings                                                              # remembers filings it has read
-    assert scanner(cfg, Site()).allowed_types == {"restructuring_layoffs", "ma_divestiture", "leadership_change", "leadership_transformation_ai_data"}
+    assert scanner(cfg, Site()).allowed_types == {"restructuring_layoffs", "ma_divestiture", "leadership_change", "leadership_transformation_ai_data", "ops_failure", "financial_distress",
+                                                  "activist"}
 
 
 def test_config_rejects_a_bad_item_map(cfg):
@@ -255,3 +256,98 @@ def test_nouns_from_pay_and_background_text_are_not_change_words(cfg):
            "continued participation in the retirement plan. Her appointment in 2022 is unchanged.")
     assert officer_scan(cfg, pay).signals == []
     assert [s.extract.type for s in officer_scan(cfg, "The Chief Operating Officer resigned effective immediately.").signals] == ["leadership_change"]
+
+
+# ---- more 8-K items, and Schedule 13D from named investors -----------------------------------------------------------------------------------
+def doc(item, title):
+    return f"<html><body><p>FORM 8-K</p><p>Item {item} {title}</p><p>The Company reports.</p></body></html>"
+
+
+MORE = [("0000001234-26-000011", "2026-09-30", "2026-09-29", "8-K", "1.05", "cyber.htm"),
+        ("0000001234-26-000012", "2026-09-28", "2026-09-27", "8-K", "4.02", "restate.htm"),
+        ("0000001234-26-000013", "2026-09-26", "2026-09-25", "8-K", "2.04,9.01", "default.htm"),
+        ("0000001234-26-000014", "2026-09-24", "2026-09-23", "8-K", "5.01", "control.htm"),
+        ("0000001234-26-000015", "2026-09-22", "2026-09-21", "8-K", "2.06", "impair.htm"),
+        ("0000001234-26-000016", "2026-09-20", "2026-09-19", "8-K", "3.01", "listing.htm"),
+        ("0000001234-26-000017", "2026-09-18", "2026-09-17", "8-K", "1.03", "bankrupt.htm")]
+MORE_DOCS = {"cyber.htm": doc("1.05", "Material Cybersecurity Incidents"), "restate.htm": doc("4.02", "Non-Reliance on Previously Issued Financial Statements"),
+             "default.htm": doc("2.04", "Triggering Events That Accelerate"), "control.htm": doc("5.01", "Changes in Control of Registrant"),
+             "impair.htm": doc("2.06", "Material Impairments"), "listing.htm": doc("3.01", "Notice of Delisting"), "bankrupt.htm": doc("1.03", "Bankruptcy or Receivership")}
+
+
+def test_more_items_become_fixed_sentence_signals_of_the_right_type_without_a_model(cfg):
+    out = scanner(cfg, Site(rows=MORE, docs=MORE_DOCS)).scan(acct(), AS_OF)
+    by = {s.extract.summary: s for s in out.signals}
+    assert len(out.signals) == 7 and out.usage.total_tokens == 0 and out.error is None
+    got = {s.extract.summary.split("reporting ")[1]: (s.extract.type, s.family, s.extract.confidence, s.extract.service_lines) for s in out.signals}
+    assert got["a material cybersecurity incident (Item 1.05)."] == ("ops_failure", "events", "High", ["AI & Technology"])
+    assert got["non-reliance on previously issued financial statements (Item 4.02)."][0] == "financial_distress"
+    assert got["a change in control of the registrant (Item 5.01)."][0] == "ma_divestiture"
+    assert {v[0] for k, v in got.items() if any(x in k for x in ("2.04", "2.06", "3.01", "1.03"))} == {"financial_distress"}
+    assert all(len(s.split()) <= 25 for s in by) and all(s.extract.source_type == "sec_filing" for s in out.signals)
+
+
+def test_a_distress_event_is_a_company_event_that_is_scored_and_shown_not_background(cfg):
+    from bd.feed import BACKGROUND_TYPES
+    from bd.labels import TYPE_LABELS
+    assert cfg.scoring.family_of("financial_distress") == "events" and "financial_distress" not in BACKGROUND_TYPES
+    assert TYPE_LABELS["financial_distress"] and cfg.scoring.base_points["financial_distress"] > cfg.scoring.base_points["financial_pressure"]
+
+
+def rows13(*forms):
+    return [(f"0000009999-26-0000{i:02d}", "2026-09-15", "", form, "", "xslSCHEDULE_13D_X01/primary_doc.xml" if form.startswith("SCHEDULE") else "d13.htm")
+            for i, form in enumerate(forms)]
+
+
+COVER_ACTIVIST = "<html><body><p>SCHEDULE 13D</p><p>NAME OF REPORTING PERSON Starboard Value LP</p><p>Acme Corp common stock</p></body></html>"
+COVER_OTHER = "<html><body><p>SCHEDULE 13D</p><p>NAME OF REPORTING PERSON Founders Family Trust</p><p>Acme Corp common stock</p></body></html>"
+
+
+def test_an_initial_schedule_13d_that_names_a_listed_investor_is_an_activist_signal(cfg):
+    for form in ("SC 13D", "SCHEDULE 13D"):
+        site = Site(rows=rows13(form), docs={"d13.htm": COVER_ACTIVIST, "primary_doc.xml": COVER_ACTIVIST})
+        out = scanner(cfg, site).scan(acct(), AS_OF)
+        (sig,) = out.signals
+        e = sig.extract
+        assert e.type == "activist" and e.confidence == "High" and e.source_type == "sec_filing" and e.event_date == date(2026, 9, 15)
+        assert e.summary == "Schedule 13D filed naming activist investor Starboard Value, reporting a stake above 5%." and e.service_lines == ["Strategy & Operations"]
+        assert sig.notes == [f"EDGAR {form} 0000009999-26-000000; cover page names Starboard Value"] and out.read_filings == ["0000009999-26-000000"]
+        assert len([p for p in site.requests if "/submissions/" in p]) == 1                       # the same one request that finds the 8-Ks
+    assert "xslSCHEDULE_13D_X01/primary_doc.xml" in sig.extract.source_url
+
+
+def test_a_13d_from_anyone_else_an_amendment_or_the_investor_itself_is_not_activism(cfg):
+    site = Site(rows=rows13("SC 13D", "SC 13D/A"), docs={"d13.htm": COVER_OTHER})
+    out = scanner(cfg, site).scan(acct(), AS_OF)
+    assert out.signals == [] and [r.reason for r in out.rejections] == ["no_listed_activist_named"] and out.read_filings == ["0000009999-26-000000"]    # the amendment is never fetched
+    own = account().model_copy(update={"cik": CIK, "name": "Starboard Value Acquisition"})
+    assert scanner(cfg, Site(rows=rows13("SC 13D"), docs={"d13.htm": COVER_ACTIVIST})).scan(own, AS_OF).signals == []
+    off = cfg.model_copy(deep=True)
+    off.sec_events.schedule_13d.activists = []
+    s2 = Site(rows=rows13("SC 13D"), docs={"d13.htm": COVER_ACTIVIST})
+    assert scanner(off, s2).scan(acct(), AS_OF).signals == [] and not [p for p in s2.requests if "/Archives/" in p]            # an empty list turns it off: nothing fetched
+
+
+def test_an_unreachable_13d_is_not_marked_read_and_a_13d_name_must_be_a_whole_word(cfg):
+    out = scanner(cfg, Site(rows=rows13("SC 13D"), status={"d13.htm": 503})).scan(acct(), AS_OF)
+    assert out.signals == [] and out.read_filings == [] and out.rejections[0].reason.startswith("unreachable:")
+    tricky = "<html><body><p>NAME OF REPORTING PERSON Thirdpoint Holdings and ValueActive Fund</p></body></html>"
+    assert scanner(cfg, Site(rows=rows13("SC 13D"), docs={"d13.htm": tricky})).scan(acct(), AS_OF).signals == []
+
+
+def test_the_13d_document_path_may_be_one_folder_down_but_never_climbs(cfg):
+    from bd.edgar import _DOCPATH
+    assert _DOCPATH.match("xslSCHEDULE_13D_X01/primary_doc.xml") and _DOCPATH.match("d13.htm")
+    for bad in ("../x", "a/../b", "a/b/c", "/etc/passwd", "..", "a/.."):
+        assert not _DOCPATH.match(bad), bad
+
+
+def test_config_rejects_a_13d_with_a_bad_service_line_or_a_name_that_makes_the_summary_too_long(cfg):
+    from bd.config import Config
+    raw = cfg.model_dump(mode="json")
+    for mutate, msg in ((lambda r: r["sec_events"]["schedule_13d"].update(service_lines=["Nope"]), "service_lines"),
+                        (lambda r: r["sec_events"]["schedule_13d"]["activists"].append("Word " * 30), "exceed")):
+        bad = json.loads(json.dumps(raw))
+        mutate(bad)
+        with pytest.raises(Exception, match=msg):
+            Config.model_validate(bad)

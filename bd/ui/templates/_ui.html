@@ -48,3 +48,23 @@
 
 {# A source link with its host; nothing when the URL is not a safe http(s) one. #}
 {% macro src_link(url) %}{% if url|safe_url %}<a href="{{ url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ url|host }}</a>{% endif %}{% endmacro %}
+
+
+{# PE-backed companies worth a call: the priority as a ring, the company with its category and sponsors, the latest sourced fact, and the hypothesis kept apart. #}
+{% macro pe_calls(rows) %}
+<ol class="call-list">{% for c in rows %}
+<li class="call-item"><span class="ring {{ 'accent' if c.category == 'Prospect now' else 'warm' }}" style="--v:{{ c.score }}"><b>{{ c.score }}</b></span>
+<div class="call-main"><span class="rank-title"><a class="name" href="{{ '/companies/' ~ c.account_id if c.account_id else '/portfolio/' ~ c.company_id }}">{{ c.name }}</a>
+{{ cat_badge(c.category) }}{% if c.geography != 'in_scope' %}<span class="badge warm" title="No retrieved page shows this company's headquarters inside the configured area">location not verified</span>{% endif %}</span>
+<span class="chips">{% for s in c.sponsors %}<span class="chip">{{ s }}</span>{% endfor %}</span>
+{% if c.latest_text %}<p><span class="meta">Latest evidence{% if c.latest_date %} · {{ c.latest_date|fdate }}{% endif %}</span> <b>{{ c.latest_label }}</b>: {{ c.latest_text }} {{ src_link(c.latest_url) }}</p>{% endif %}
+{% if c.possible_need %}<p class="meta">Possible need (a hypothesis, not a finding): {{ c.possible_need }}</p>{% endif %}</div></li>{% endfor %}
+</ol>{% endmacro %}
+
+{# Dated sponsor and portfolio activity, newest first, each row with the page it came from. #}
+{% macro pe_feed(rows) %}
+<ul class="feed">{% for r in rows %}
+<li><span class="feed-date">{{ r.date|fdate }}</span>
+<span class="feed-body"><span class="badge">{{ r.label }}</span> {% if r.firm_id %}<a class="name" href="/firms/{{ r.firm_id }}">{{ r.who }}</a>{% elif r.account_id %}<a class="name" href="/companies/{{ r.account_id }}">{{ r.who }}</a>{% else %}<b>{{ r.who }}</b>{% endif %}<br>
+{{ r.text }} {{ src_link(r.url) }} <span class="meta">{{ r.source_type|replace('_', ' ') }}</span></span></li>{% endfor %}
+</ul>{% endmacro %}

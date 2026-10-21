@@ -38,6 +38,8 @@
 </ul>{% if d.signals|length > 12 %}<p class="meta">Showing the 12 most recent of {{ d.signals|length }}.</p>{% endif %}</div>
 {% else %}<div class="card empty">Nothing found yet. Quiet can mean nothing is happening, or that the sources do not cover this company.</div>{% endif %}
 
+{% include "_hiring_picture.html" %}
+
 <h2>Evidence-based priority</h2>
 {% with a = ap %}{% include "_assessment.html" %}{% endwith %}
 {% if pe and pe.relationships %}<h2>Private equity ownership</h2>
