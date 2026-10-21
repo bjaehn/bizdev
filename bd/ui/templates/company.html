@@ -43,7 +43,8 @@
 <h2>Evidence-based priority</h2>
 {% with a = ap %}{% include "_assessment.html" %}{% endwith %}
 {% if pe and pe.relationships %}<h2>Private equity ownership</h2>
-{% include "_pe_ownership.html" %}{% endif %}
+{% include "_pe_ownership.html" %}
+{% include "_pe_investors.html" %}{% endif %}
 
 <details class="card"><summary><b>More detail</b> <span class="meta">(timeline, background, how the score is built, other themes)</span></summary>
 <h3>The last 180 days</h3>

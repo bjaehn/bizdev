@@ -1,0 +1,44 @@
+{# A sponsor's portfolio signals. `roll` is a bd.pe_rollup.FirmRollup, `events` a list of bd.pe_rollup.FirmEvent. #}
+{% from "_ui.html" import src_link %}
+{% macro company_rows(group) %}
+<div class="wrap"><table class="stackable"><tr><th>Company</th><th>Band</th><th>What its signals add up to</th><th>Latest signals</th></tr>
+{% for h in group.with_signals %}<tr>
+<td data-label="Company"><a href="/companies/{{ h.account_id }}">{{ h.name }}</a><br><span class="meta">{{ 'lead' if h.status == 'unclear' else h.status }}{% if h.geography == 'unknown' %} · place not verified{% endif %}</span></td>
+<td data-label="Band">{% if h.band %}<span class="badge {{ 'hot' if h.band == 'Hot' else ('warm' if h.band == 'Warm' else '') }}">{{ h.band|band_name }} {{ h.score }}</span>{% else %}<span class="meta">not scored</span>{% endif %}</td>
+<td data-label="Adds up to">{% if h.theme %}<b>{{ h.theme.name }}</b><br><span class="meta">{{ h.theme.rule }}</span>{% else %}<span class="meta">no theme named</span>{% endif %}</td>
+<td data-label="Signals"><ul class="plain">{% for s in h.signals[:3] %}<li><span class="meta">{{ s.event_date|fdate }}</span> · <b>{{ s.label }}</b> {{ s.summary|truncate(180) }} {{ src_link(s.url) }}</li>{% endfor %}</ul>{% if h.signals|length > 3 %}<span class="meta">+{{ h.signals|length - 3 }} more on <a href="/companies/{{ h.account_id }}">its page</a></span>{% endif %}</td></tr>
+{% endfor %}</table></div>
+{% endmacro %}
+{% macro tally(group, noun, days) %}
+{{ group.total }} {{ noun }}{{ '' if group.total == 1 else 's' }}: {{ group.on_list }} on the scan list ({{ group.scanned }} scanned), {{ group.with_signals|length }} with a signal in the last {{ days }} days.
+{% if group.not_on_list %}{{ group.not_on_list }} {{ 'is' if group.not_on_list == 1 else 'are' }} not on the scan list, so {{ 'it has not been scanned and says' if group.not_on_list == 1 else 'they have not been scanned and say' }} nothing about demand.{% endif %}
+{% if group.outside %}{{ group.outside }} shown by a retrieved page to be outside the configured area {{ 'is' if group.outside == 1 else 'are' }} left out.{% endif %}
+{% if group.peers %}{{ group.peers }} {{ 'is a peer' if group.peers == 1 else 'are peers' }} of the firm and {{ 'is' if group.peers == 1 else 'are' }} never a prospect.{% endif %}
+{% endmacro %}
+{% macro name_list(held) %}{% for h in held[:40] %}{% if h.account_id %}<a href="/companies/{{ h.account_id }}">{{ h.name }}</a>{% else %}<a href="/portfolio/{{ h.company_id }}">{{ h.name }}</a>{% endif %}{{ ', ' if not loop.last }}{% endfor %}{% if held|length > 40 %} and {{ held|length - 40 }} more{% endif %}{% endmacro %}
+
+<h2>Recent from this firm and its companies</h2>
+{% if events %}<div class="card"><ul class="plain">
+{% for e in events %}<li><span class="meta">{{ e.date|fdate }}</span> · <b>{{ e.label }}</b>{% if e.company %} · {% if e.account_id %}<a href="/companies/{{ e.account_id }}">{{ e.company }}</a>{% else %}<a href="/portfolio/{{ e.company_id }}">{{ e.company }}</a>{% endif %}{% endif %}<br>{{ e.text }} {{ src_link(e.url) }} <span class="meta">{{ e.source_type|replace('_', ' ') }}</span></li>{% endfor %}
+</ul><p class="meta">The firm's own news and deals, exits and add-ons that a fetched page states, from the last year. A researched-workbook lead is not an event.</p></div>
+{% else %}<div class="card empty">No dated event is stored for this firm or its companies in the last year. That is not proof nothing happened: firm news is searched for in the Monday run, and deals only count once a fetched page states them.</div>{% endif %}
+
+<h2>Signals across this portfolio</h2>
+<div class="card">
+<p>{{ tally(roll.confirmed, 'confirmed holding', roll.days) }}</p>
+{% if roll.confirmed.with_signals %}{{ company_rows(roll.confirmed) }}
+{% else %}<p class="meta">No confirmed holding has a stored signal in the last {{ roll.days }} days.</p>{% endif %}
+{% if roll.confirmed.shared_themes %}<h3>Themes more than one company shows</h3>
+<ul class="plain">{% for t in roll.confirmed.shared_themes %}<li><b>{{ t.name }}</b>: {{ t.companies|length }} compan{{ 'y' if t.companies|length == 1 else 'ies' }} ({% for h in t.companies %}<a href="/companies/{{ h.account_id }}">{{ h.name }}</a>{{ ', ' if not loop.last }}{% endfor %})</li>{% endfor %}</ul>
+<p class="meta">Each theme is built from one company's own signals. Counting them together does not show shared systems, a common problem, centralized purchasing or a sponsor-wide program.</p>{% endif %}
+{% if roll.confirmed.quiet %}<details><summary class="meta">{{ roll.confirmed.quiet|length }} scanned, nothing stored in the last {{ roll.days }} days</summary><p class="meta">{{ name_list(roll.confirmed.quiet) }}. Quiet can mean nothing is happening, or that the sources do not cover the company.</p></details>{% endif %}
+{% set unlisted = roll.confirmed.held|rejectattr('on_list')|list %}{% if unlisted %}<details><summary class="meta">{{ unlisted|length }} not on the scan list</summary><p class="meta">{{ name_list(unlisted) }}. They are scanned once they are added to the list.</p></details>{% endif %}
+</div>
+
+{% if roll.leads.total or roll.leads.outside or roll.leads.peers %}<h2>Leads, not confirmed <span class="meta">({{ roll.leads.total }})</span></h2>
+<div class="card"><p>{{ tally(roll.leads, 'lead', roll.days) }}</p>
+<p class="meta">A lead is a company a source lists with this firm (the researched Chicago workbook, a listing that no longer shows it, an announcement nobody has confirmed closed) that no retrieved page has confirmed as owned. The signals below are the companies' own; they do not make the ownership true.</p>
+{% if roll.leads.with_signals %}{{ company_rows(roll.leads) }}
+{% elif roll.leads.on_list %}<p class="meta">No lead on the scan list has a stored signal in the last {{ roll.days }} days.</p>{% endif %}
+{% if roll.leads.not_on_list %}<details><summary class="meta">{{ roll.leads.not_on_list }} not on the scan list</summary><p class="meta">{{ name_list(roll.leads.held|rejectattr('on_list')|list) }}.</p></details>{% endif %}</div>{% endif %}
+{% if roll.historical %}<p class="meta">{{ roll.historical }} historical holding{{ '' if roll.historical == 1 else 's' }} (a source states an exit, or the firm lists {{ 'it' if roll.historical == 1 else 'them' }} among past investments) {{ 'is' if roll.historical == 1 else 'are' }} not counted.</p>{% endif %}

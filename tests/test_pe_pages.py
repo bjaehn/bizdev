@@ -109,7 +109,7 @@ def test_the_priority_of_a_holding_is_explained_and_nobody_is_forced_to_have_one
     e, fid, acct, *_ = world
     t = show(e.get(f"/firms/{fid}").body)
     assert "Prospect now" in t and "Strongco" in t and "Insufficient evidence" in t                          # Strongco has sourced signals; Quietco has none
-    strong = t.split("Strongco")[1][:400]
+    strong = t.split("Current holdings (2)")[1].split("Strongco")[1][:400]                                  # the portfolio table, not the signal roll-up above it
     assert "confidence" in strong and "/5 dimensions" in strong
     assert "none supported" in t
 

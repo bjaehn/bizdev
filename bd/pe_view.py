@@ -191,7 +191,7 @@ def firm_detail(conn: sqlite3.Connection, cfg: Config, firm_id: int, today: date
     scope = (f"Geography follows the configured scope: {cfg.fit_gate.state}, counties {', '.join(cfg.fit_gate.counties)}. A company's place counts only when a retrieved page shows its "
              f"headquarters; the sponsor's location never does. " + (f"Cities treated as in scope: {', '.join(sc)}." if sc else "Counties are not mapped to cities and no scope cities are "
                                                                                                                               "configured (pe_portfolio.scope_cities), so Illinois companies stay 'not verified' until fact research confirms them."))
-    return FirmDetail(f, firm_summary(conn, cfg, firm_id, today), sources, sections, hidden, geo_counts, patterns, adds, changes, note, reading, rclass, scope, sigs)
+    return FirmDetail(f, firm_summary(conn, cfg, firm_id, today, all_holdings), sources, sections, hidden, geo_counts, patterns, adds, changes, note, reading, rclass, scope, sigs)
 
 
 def firm_changes(conn: sqlite3.Connection, firm_id: int) -> tuple[list[dict], str | None]:

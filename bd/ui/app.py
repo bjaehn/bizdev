@@ -63,6 +63,7 @@ from bd.pipeline import (MAX_CLIENT_NAMES, STAGE_LABELS, STAGES, add_note, clien
                          set_stage, set_watching, stage_counts, watchlist_changes)
 from bd.opportunities import build_opportunities, filter_opportunities, score_dates
 from bd.opportunity_model import assess_account, kind_label, rules_text
+from bd.pe_rollup import company_investors, firm_events, firm_rollup
 from bd.pe_view import GEO, collection_status, company_pe, firm_detail, firm_directory, fmt_ts, ownership_detail, run_detail, run_history as pe_run_history
 from bd.setup_check import static_problems
 from bd.settings_store import (CYCLE_FIELDS, UPDATE_FIELDS, cycle_values, load_update, recent_release_changes, reset_cycles, save_cycles, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
@@ -832,7 +833,12 @@ class App:
             return self.error("404 Not Found", "No such company.")
         today = date.today()
         return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, today), stage_labels=STAGE_LABELS, stages=STAGES, hp=hiring_picture(conn, self.cfg, account_id, today),
-                           cfg_hiring_days=self.cfg.hiring.window_days, pe=company_pe(conn, self.cfg, today, account_id=account_id), ap=assess_account(conn, self.cfg, account_id, today))
+                           cfg_hiring_days=self.cfg.hiring.window_days, pe=company_pe(conn, self.cfg, today, account_id=account_id), ap=assess_account(conn, self.cfg, account_id, today),
+                           inv=self._investors(conn, account_id, today))
+
+    def _investors(self, conn: sqlite3.Connection, account_id: int, today: date) -> list:
+        row = conn.execute("SELECT id FROM pe_companies WHERE account_id = ?", (account_id,)).fetchone()
+        return company_investors(conn, self.cfg, row["id"], today) if row else []
 
     def company_text(self, conn: sqlite3.Connection, account_id: int) -> Response:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
@@ -1127,7 +1133,9 @@ class App:
         d = firm_detail(conn, self.cfg, firm_id, date.today(), geo)
         if d is None:
             return self.error("404 Not Found", "No such firm.")
-        return self.render("firm.html", page="firms", d=d, geo=geo if geo in dict(GEO) else "", geo_tabs=GEO, conf_scored={"High", "Medium"})
+        today = date.today()
+        return self.render("firm.html", page="firms", d=d, geo=geo if geo in dict(GEO) else "", geo_tabs=GEO, conf_scored={"High", "Medium"},
+                           roll=firm_rollup(conn, self.cfg, firm_id, today), events=firm_events(conn, firm_id, today))
 
     def pe_run_page(self, conn: sqlite3.Connection, run_id: int) -> Response:
         d = run_detail(conn, run_id)
@@ -1147,7 +1155,7 @@ class App:
             return self.error("404 Not Found", "No such portfolio company.")
         if pe.company["account_id"]:
             return self.redirect(f"/companies/{pe.company['account_id']}")
-        return self.render("pe_company.html", page="firms", pe=pe)
+        return self.render("pe_company.html", page="firms", pe=pe, inv=company_investors(conn, self.cfg, company_id, date.today()))
 
     def candidates(self, conn: sqlite3.Connection) -> Response:
         import json
