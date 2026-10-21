@@ -116,7 +116,7 @@ fit_gate:
     names: ["RSM US", "RSM", "West Monroe", "West Monroe Partners", "ZS", "ZS Associates", "Huron Consulting Group", "Huron", "Kearney", "A.T. Kearney",
             "BDO", "BDO USA", "Deloitte", "Deloitte Consulting", "PwC", "PricewaterhouseCoopers", "EY", "Ernst & Young", "KPMG", "Accenture",
             "McKinsey & Company", "Boston Consulting Group", "Bain & Company", "Slalom", "Grant Thornton", "Baker Tilly", "Protiviti", "Crowe",
-            "Capgemini", "Guidehouse", "Alvarez & Marsal", "FTI Consulting", "Oliver Wyman"]
+            "Capgemini", "Guidehouse", "Alvarez & Marsal", "FTI Consulting", "Oliver Wyman", "CXponent"]      # CXponent: a technology advisory peer, named so by the PE workbook
     domains: [rsmus.com, westmonroe.com, zs.com, huronconsultinggroup.com, kearney.com, bdo.com, deloitte.com, pwc.com, ey.com, kpmg.com, kpmg.us,
               accenture.com, mckinsey.com, bcg.com, bain.com, slalom.com, grantthornton.com, bakertilly.com, protiviti.com, crowe.com, capgemini.com,
               guidehouse.com, alvarezandmarsal.com, fticonsulting.com, oliverwyman.com]
@@ -392,9 +392,22 @@ pe_portfolio:
   pending_window_days: 270               # announced and not shown as completed: "pending" this long, then "unclear"
   snapshot_keep: 5
   text_cap_bytes: 400000
-  # Geography follows fit_gate (state and counties). A company's city is not mapped to a county by this code; if you want cities inside
-  # the state counted as in scope without fact research, list them here. Empty means not configured, and the page says so.
-  scope_cities: []
+  # Geography follows fit_gate (state and counties). A company's city is not mapped to a county by this code, so the cities below stand for it.
+  # Cities and suburbs in the six fit_gate counties (Cook, DuPage, Lake, Will, Kane, McHenry). A company whose headquarters a retrieved page puts in one of
+  # them counts as Chicagoland without a paid county check; a city not listed goes to the fact research, which must find the county with evidence. The list
+  # is a convenience, not a census: add a city when you see one missing, remove one you doubt.
+  scope_cities: [Chicago, Evanston, Skokie, Oak Park, Cicero, Berwyn, Des Plaines, Park Ridge, Niles, Morton Grove, Lincolnwood, Glenview,
+                 Northbrook, Northfield, Winnetka, Wilmette, Glencoe, Deerfield, Highland Park, Highwood, Lake Forest, Lake Bluff, Lincolnshire,
+                 Riverwoods, Bannockburn, Libertyville, Mundelein, Vernon Hills, Buffalo Grove, Long Grove, Lake Zurich, Barrington, Wauconda,
+                 Gurnee, Waukegan, North Chicago, Zion, Grayslake, Round Lake, Antioch, Wheeling, Prospect Heights, Arlington Heights,
+                 Mount Prospect, Rolling Meadows, Palatine, Schaumburg, Hoffman Estates, Elk Grove Village, Rosemont, Schiller Park,
+                 Franklin Park, Melrose Park, Maywood, Bellwood, Northlake, Bedford Park, Burbank, Oak Lawn, Orland Park, Tinley Park, Oak Forest,
+                 Homewood, Matteson, University Park, Chicago Heights, Harvey, Lansing, Calumet City, Elmhurst, Villa Park, Addison, Bensenville,
+                 Wood Dale, Itasca, Roselle, Bloomingdale, Carol Stream, Glendale Heights, Lombard, Wheaton, Glen Ellyn, Oak Brook,
+                 Oakbrook Terrace, Downers Grove, Westmont, Clarendon Hills, Hinsdale, Burr Ridge, Willowbrook, Darien, Woodridge, Lisle,
+                 Naperville, Warrenville, West Chicago, La Grange, Westchester, Bolingbrook, Romeoville, Lemont, Plainfield, Joliet, Lockport,
+                 Mokena, Frankfort, New Lenox, Aurora, Batavia, Geneva, "St. Charles", Elgin, South Elgin, Carpentersville, Algonquin,
+                 Crystal Lake, McHenry, Woodstock, Huntley, Cary, Lake in the Hills]
   locate_per_run: 25                     # free: reads a company's own site for an address shown on it
   deal_window_days: 730                  # transaction research (paid): deals dated this far back
   deals_max_per_firm: 10

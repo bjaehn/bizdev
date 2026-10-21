@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from bd.config import Config
 from bd.labels import FIRM_TYPE_LABELS, TYPE_LABELS
 from bd.opportunity_model import CATEGORY_ORDER, CONF_RANK, assess_company, kind_label
-from bd.pe_ownership import company_geography
+from bd.pe_ownership import company_geography, is_peer_company
 from bd.pe_view import source_dicts
 
 FEED_DAYS = 90
@@ -119,6 +119,8 @@ def pe_home(conn: sqlite3.Connection, cfg: Config, today: date) -> PeHome:
         sponsors.setdefault(r["company_id"], []).append(r["name"])
     rows: list[CallRow] = []
     for c in backed:
+        if is_peer_company(conn, c["id"], cfg):                      # a consultancy owned by a sponsor is a peer of the client, not a prospect
+            continue
         geo = company_geography(conn, c["id"], cfg).status
         if geo == "out_of_scope":
             h.out_of_area += 1

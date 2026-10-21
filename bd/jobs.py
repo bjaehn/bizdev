@@ -54,6 +54,7 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "check": ("Test the model connection", False, False),
     "discover": ("Discover companies (market research)", True, False),
     "pe_sync": ("Sync PE firms from accounts", False, False),
+    "pe_import": ("Load the researched Chicago PE firms and companies (free)", False, False),
     "pe_collect": ("Read PE portfolio pages (free)", False, False),
     "pe_portfolio": ("Research PE portfolios", True, False),
     "pe_deals": ("Research PE transactions (acquisitions, add-ons, exits)", True, False),
@@ -121,6 +122,8 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
 
     if kind == "pe_sync":
         return ["pe-sync"]
+    if kind == "pe_import":
+        return ["pe-import"]
     if kind == "pe_collect":
         only = (form.get("firm") or "").strip()
         if len(only) > 120 or any(c in only for c in "\n\r\x00"):
@@ -242,7 +245,8 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         # hiring, press and company events within the spending limit; only then the work that fills in company facts and finds new companies,
         # with whatever is left of the limit. Facts never delay or use up the money for signals.
         steps = [["check"], ["sec-fill", "--as-of", as_of],                  # free: gives public companies the SEC id that the filing scanners need
-                 ["pe-sync"], ["pe-collect", "--soft", "--as-of", as_of],        # free: each firm's own portfolio page, read politely; never stops the Update
+                 ["pe-sync"], ["pe-import", "--soft", "--as-of", as_of],     # free: the researched Chicago PE firms and relationships, loaded as leads
+                 ["pe-collect", "--soft", "--as-of", as_of],        # free: each firm's own portfolio page, read politely; never stops the Update
                  ["ats-find", "--soft", "--as-of", as_of],           # free: a company's own job board, found on its careers page, so the free complete feed can read it
                  ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
                  ["scan", "--limit", a["--scan"], "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--allow-empty", "--as-of", as_of]]
@@ -273,10 +277,10 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
-        return [["pe-sync"], ["pe-collect", "--soft", "--as-of", as_of], ["ats-find", "--soft", "--as-of", as_of],   # free and soft: portfolios and job boards refresh every Monday
+        return [["pe-sync"], ["pe-import", "--soft", "--as-of", as_of], ["pe-collect", "--soft", "--as-of", as_of], ["ats-find", "--soft", "--as-of", as_of],   # free and soft: portfolios and job boards refresh every Monday
                 ["scan", "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
-    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "pe-collect", "pe-deals", "pe-promote", "rfps", "sec-fill") else [args]
+    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "pe-collect", "pe-import", "pe-deals", "pe-promote", "rfps", "sec-fill") else [args]
 
 
 def redact(text: str, env: dict[str, str] | None = None) -> str:

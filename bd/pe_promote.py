@@ -16,7 +16,7 @@ from bd.cost import estimate_cost
 from bd.discover import Company, DiscoverSummary, Found, _known, _norm_name, research_and_add
 from bd.enrich import Enricher
 from bd.llm import Usage
-from bd.pe_ownership import company_geography
+from bd.pe_ownership import company_geography, is_peer_company
 from bd.verify import UrlVerifier
 
 CONF_RANK = {"High": 0, "Medium": 1, "Low": 2}
@@ -24,12 +24,12 @@ CONF_RANK = {"High": 0, "Medium": 1, "Low": 2}
 
 def promotable(conn: sqlite3.Connection, cfg: Config, limit: int) -> list[tuple[sqlite3.Row, str]]:
     """(company, the firm it is listed under), best-supported first: still-held relationships, geography not out of scope, not already an account,
-    candidate or exclusion."""
+    candidate or exclusion, and not a peer of the client (fit_gate.competitors)."""
     names, domains = _known(conn)
     out = []
     for c in conn.execute("SELECT * FROM pe_companies WHERE account_id IS NULL ORDER BY name").fetchall():
-        if _norm_name(c["name"]) in names or (c["domain"] and c["domain"] in domains):
-            continue
+        if _norm_name(c["name"]) in names or (c["domain"] and c["domain"] in domains) or is_peer_company(conn, c["id"], cfg):
+            continue                                                                       # known already, or a peer of the client: never researched
         o = conn.execute("SELECT o.*, f.name AS firm_name FROM pe_ownership o JOIN pe_firms f ON f.id = o.firm_id WHERE o.company_id = ? AND f.status = 'active' "
                          "AND o.status != 'historical' ORDER BY CASE o.confidence WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 ELSE 2 END, o.id LIMIT 1", (c["id"],)).fetchone()
         if o is None:

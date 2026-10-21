@@ -172,3 +172,13 @@ def test_the_analysis_page_shows_the_pe_section_with_escaped_text_and_an_honest_
     assert "<i>Capital</i>" not in raw and "&lt;i&gt;Capital&lt;/i&gt;" in raw and "<b>now</b>" not in raw          # sponsor names and sourced text are escaped
     assert f'href="/companies/{a}"' in raw and 'class="ring' in raw
     assert body.index("Is it heating up?") < body.index('id="pe"')                                               # under the heating-up chart, above the ranked list
+
+
+def test_a_sponsor_owned_consultancy_is_a_peer_and_is_left_off_the_call_list_and_the_counts(cfg, tmp_path):
+    conn = make_db(tmp_path)
+    own(conn, cfg, "Alpha Capital", "West Monroe", age=60)
+    a = account_id(conn, "West Monroe")
+    add_signal(conn, cfg, a, "rfp_match", 8, source_type="sec_filing", summary="Open RFP.", url="https://sec.example/rfp")
+    add_signal(conn, cfg, a, "platform_migration", 12, source_type="sec_filing", summary="Announces an ERP migration.", url="https://sec.example/erp")
+    h = pe_home(conn, cfg, TODAY)
+    assert h.calls == [] and h.backed == 0

@@ -89,3 +89,16 @@ def test_promotion_is_capped_and_a_company_with_no_retrievable_page_behind_it_is
     again, llm2 = run(conn, cfg, facts, limit=10)
     assert not any("Alpha Co" in c or "Beta Co" in c for c in llm2.calls if "Company:" in c) or True          # already accounts or candidates: not researched twice
     assert conn.execute("SELECT COUNT(*) FROM accounts WHERE name IN ('Alpha Co', 'Beta Co')").fetchone()[0] == 2
+
+
+def test_a_peer_of_the_client_is_never_promoted_or_researched(conn, cfg):
+    """West Monroe is a consultancy a sponsor owns: a competitor, so paid research must not touch it, whatever name or alias or site it goes by."""
+    with conn:
+        fid = ensure_firm(conn, "Alpha Capital", "manual", "test", "alphacap.example")[0]
+    holding(conn, cfg, fid, "West Monroe", "westmonroe.com", "IL", "Chicago")
+    holding(conn, cfg, fid, "Some Peer Entity", "zs.com", "IL", "Chicago")                       # a competitor by its domain
+    cid = holding(conn, cfg, fid, "Alias Peer", None, "IL", "Chicago")
+    with conn:
+        conn.execute("INSERT INTO pe_aliases(entity_type, entity_id, alias, alias_key, kind) VALUES ('company', ?, 'West Monroe Partners', 'west monroe partners', 'other_name')", (cid,))
+    holding(conn, cfg, fid, "Honest Widgets", "honestwidgets.com", "IL", "Naperville")
+    assert [c["name"] for c, _f in promotable(conn, cfg, 10)] == ["Honest Widgets"]
