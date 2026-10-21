@@ -74,3 +74,10 @@ def test_the_profile_is_on_the_analysis_side_and_the_manage_page_on_the_admin_si
     assert '<header class="admin">' not in e.get(f"/companies/{ids['Deepco']}").body
     assert '<header class="admin">' in e.get(f"/accounts/{ids['Deepco']}").body
     assert f'href="/companies/{ids["Deepco"]}"' in e.get(f"/accounts/{ids['Deepco']}").body
+
+
+def test_the_breakdown_bar_has_a_gradient_per_segment_with_the_plain_colour_as_the_fallback_and_never_trusts_a_colour_string():
+    svg = breakdown_svg([("Leadership", 30.0, "var(--k-lead)"), ("Hiring", 10.0, "var(--k-hire)")], 40.0, 40, 100)
+    assert svg.count("<linearGradient") == 2 and 'fill="var(--k-lead)"' in svg and "url(#bd-g0)" in svg and "url(#bd-g1)" in svg and 'filter="url(#bd-sh)"' in svg
+    evil = breakdown_svg([("x", 10.0, '"><script>alert(1)</script>')], 10.0, 10, 100)
+    assert "<script>" not in evil and "&lt;script&gt;" in evil

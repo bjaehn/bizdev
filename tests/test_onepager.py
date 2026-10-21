@@ -60,3 +60,10 @@ def test_the_profile_works_for_an_unscored_company(app_env):  # noqa: F811
     a = add_account(e.conn, "Quietco")
     page = e.get(f"/companies/{a}")
     assert page.code == 200 and "not scored" in page.body and "No signals in the last 180 days" in page.body and "Why this score" not in page.body
+
+
+def test_the_timeline_dots_are_shaded_spheres_with_a_ring_a_shadow_and_a_last_30_days_band():
+    svg = timeline_svg([s(3), s(10, "hiring", "hiring_cluster")], AS_OF)
+    assert svg.count("<radialGradient") == 2 and 'id="tl-leadership"' in svg and 'id="tl-hiring"' in svg and "url(#tl-leadership)" in svg
+    assert 'stroke="var(--panel)"' in svg and "<feDropShadow" in svg and "<title>The last 30 days</title>" in svg and svg.count("<circle") == 2
+    assert FAMILY_COLORS["leadership"] in svg and FAMILY_COLORS["hiring"] in svg and FAMILY_COLORS["filings"] not in svg     # its own categorical colours, and only those present

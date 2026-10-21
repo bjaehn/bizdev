@@ -64,6 +64,26 @@ def test_colours_are_tokens_hex_only_in_the_two_token_blocks():
     assert tokens.count(":root") == 2 and "prefers-color-scheme:dark" in tokens
 
 
+DEPTH_TOKENS = ("--shadow", "--shadow-2", "--shadow-3", "--hl", "--inset", "--inset-top", "--sheen", "--row-alt", "--glow", "--shadow-btn", "--panel-2", "--bg-glow",
+                "--line-soft", "--accent-2", "--hot-2", "--warm-2", "--good-2")
+
+
+def test_every_depth_token_is_defined_for_light_and_again_for_dark():
+    """Depth is drawn from tokens, so dark mode only works if each one is redefined there (a light shadow on a dark page is invisible)."""
+    tokens = re.search(r"/\* ---------- 1\. tokens ---------- \*/(.*?)/\* ---------- 2\. base", CSS, re.S).group(1)
+    light, dark = tokens.split("@media (prefers-color-scheme:dark)")
+    for t in DEPTH_TOKENS:
+        assert re.search(re.escape(t) + r":", light), f"{t} is not defined for light"
+        assert re.search(re.escape(t) + r":", dark), f"{t} is not redefined for dark"
+
+
+def test_charts_tables_and_cells_use_the_depth_tokens_and_print_removes_them():
+    for needle in (".chart{", "var(--g-well)", "tr:has(th)+tr td", "var(--row-alt)", ".mark:hover", ".cell{", "var(--sheen)"):
+        assert needle in CSS, needle
+    printed = CSS[CSS.index("/* ---------- 7. print"):]
+    assert ".tile,.stat,.chip{" in printed and "box-shadow:none" in printed
+
+
 def test_the_stylesheet_covers_light_dark_phone_and_print_and_is_documented():
     for needle in ("max-width:640px", "@media print", "/* ---------- 3. layout", "/* ---------- 4. components", "THE ONLY PLACE STYLING IS DEFINED"):
         assert needle in CSS, needle

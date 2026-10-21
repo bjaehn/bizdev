@@ -155,3 +155,10 @@ def test_the_trend_says_when_there_is_only_one_run_and_compares_two(seeded):
 def test_an_empty_market_page_renders_with_plain_messages(app_env):
     body = app_env.get("/market").body
     assert "Nothing has been scored yet" in body and "No signals in the last 90 days" in body
+
+
+def test_the_band_chart_fills_with_a_gradient_per_band_and_a_shadow_under_the_group():
+    svg = trend_svg([("Oct 5", 1, 2, 3)])
+    for band in ("Hot", "Warm", "Watch"):
+        assert f'id="tb-{band}"' in svg and f"url(#tb-{band})" in svg
+    assert "<feDropShadow" in svg and 'filter="url(#tb-sh)"' in svg and 'class="mark"' in svg and 'stroke-dasharray="2 5"' in svg
