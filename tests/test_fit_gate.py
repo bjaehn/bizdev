@@ -113,3 +113,41 @@ def test_seed_exclusions_validation_is_all_or_nothing(conn, tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM exclusions").fetchone()[0] == 0
     ex.write_text("name,reason\nA,client\n")
     assert "header" in seed_exclusions(conn, ex)[1][0]
+
+
+# ---- competitors are not prospects ------------------------------------------------------------------------------------------------------------------
+@pytest.mark.parametrize("name,domain,out", [
+    ("RSM US LLP", None, True),                      # the name, ignoring case, punctuation and legal suffixes
+    ("rsm us", None, True),
+    ("West Monroe Partners", "westmonroe.com", True),
+    ("ZS", None, True),
+    ("Deloitte Consulting LLP", "www2.deloitte.com", True),      # a subdomain of the firm's own site
+    ("Anything Inc", "huronconsultinggroup.com", True),          # the domain alone is enough
+    ("Bain & Company", None, True),
+    ("Bain Capital", "baincapital.com", False),                  # a private equity firm: not the consultancy of the same first word
+    ("ZS Pharma", None, False),                                  # the whole name must match, not its first word
+    ("Kirkland & Ellis", "kirkland.com", False),                 # law firms are prospects, not on the list
+    ("Hub Group", "hubgroup.com", False),
+])
+def test_a_competitor_is_out_of_scope_as_a_conflict_and_nothing_near_it_is(cfg, name, domain, out):
+    r = check_fit(acct(name=name, domain=domain), [], cfg)
+    assert (r.verdict == "fail") is out
+    if out:
+        assert r.reasons == ("excluded: conflict (a competitor of the firm; fit_gate.competitors)",) and r.status == "excluded"
+
+
+def test_the_gate_excludes_a_competitor_already_on_the_list_and_filling_in_facts_cannot_bring_it_back(cfg, tmp_path):
+    conn = connect(tmp_path / "g.sqlite")
+    init_db(conn)
+    conn.execute("INSERT INTO accounts(name, domain, status, chicagoland, revenue, ownership) VALUES ('RSM US LLP','rsmus.com','active','yes',5e9,'private')")
+    conn.execute("INSERT INTO accounts(name, domain, status, chicagoland, revenue, ownership) VALUES ('Acme','acme.com','active','yes',5e8,'public')")
+    conn.commit()
+    s = apply_fit_gate(conn, cfg)
+    assert [a.name for a, _r in s.excluded] == ["RSM US LLP"] and [a.name for a in s.passed] == ["Acme"] and s.changed == 1
+    assert conn.execute("SELECT status FROM accounts WHERE name = 'RSM US LLP'").fetchone()[0] == "excluded"
+
+
+def test_the_competitor_list_can_be_emptied_in_config(cfg):
+    off = cfg.model_copy(deep=True)
+    off.fit_gate.competitors.names, off.fit_gate.competitors.domains = [], []
+    assert check_fit(acct(name="RSM US LLP", domain="rsmus.com"), [], off).verdict == "pass"

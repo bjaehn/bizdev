@@ -25,6 +25,7 @@ CYCLE_FIELDS = {  # name -> (label, min, max, the config section it overrides)
     "deep_every_weeks": ("Deep technology and procurement scan: every scanned company this often, in weeks (0 = only where a signal shows)", 0, 26, "scan"),
     "ats_find_every_weeks": ("Look for a company's own job board this often, in weeks (0 = never)", 0, 26, "hiring"),
     "ats_find_per_run": ("Companies whose careers page is read per run", 1, 100, "hiring"),
+    "enrich_retry_every_weeks": ("Facts research: a company looked at without an error waits this long before another look, in weeks (0 = every run)", 0, 26, "enrich"),
 }
 
 

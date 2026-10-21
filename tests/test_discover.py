@@ -267,3 +267,68 @@ def test_a_segment_the_search_tool_could_not_search_is_an_error_not_an_empty_seg
     out = go(cfg, conn, Failing([], {}, []), segments=("manufacturing",))
     assert out.errors == 1 and out.found == 0
     assert "search tool errors: too_many_requests" in conn.execute("SELECT errors FROM runs WHERE step = 'discover'").fetchone()[0]
+
+
+# ---- competitors and the segment rotation ------------------------------------------------------------------------------------------------------------
+def test_a_competitor_is_skipped_before_any_research_and_counted(cfg, conn):
+    llm = RoutingLLM([co("RSM US LLP", "rsmus.com"), co("West Monroe Partners", "westmonroe.com"), co("Fresh Inc", "fresh.com")],
+                     {"Fresh Inc": county_facts("Fresh Inc", "fresh.com")}, all_urls("fresh.com", "rsmus.com", "westmonroe.com"))
+    s = go(cfg, conn, llm)
+    assert s.skipped_competitor == 2 and s.researched == 1 and s.added == ["Fresh Inc"]
+    assert len(llm.calls) == 2                                                           # one search, and one research call for the only company that is not a competitor
+    assert not [c for c in llm.calls if "RSM" in c and "Company:" in c]
+
+
+def test_queued_competitors_are_rejected_at_the_start_of_a_run_and_audited(cfg, conn):
+    conn.execute("INSERT INTO candidates(name, domain, segment, source_url, found_date, status, reason) VALUES ('ZS','zs.com','x','https://a.example','2026-10-20','queued','size unverified')")
+    conn.execute("INSERT INTO candidates(name, domain, segment, source_url, found_date, status) VALUES ('Kirkland & Ellis','kirkland.com','x','https://b.example','2026-10-20','queued')")
+    conn.commit()
+    s = go(cfg, conn, RoutingLLM([], {}, []))
+    assert s.rejected_queued == ["ZS"]
+    rows = {r["name"]: (r["status"], r["reason"]) for r in conn.execute("SELECT name, status, reason FROM candidates")}
+    assert rows["ZS"][0] == "rejected" and "competitor of the firm" in rows["ZS"][1] and rows["Kirkland & Ellis"][0] == "queued"
+    assert conn.execute("SELECT COUNT(*) FROM audit_log WHERE actor = 'discover' AND field = 'candidate_rejected'").fetchone()[0] == 1
+
+
+def test_the_discovery_prompt_tells_the_model_not_to_return_competing_firms(cfg):
+    from importlib import resources
+    text = resources.files("bd.prompts").joinpath("discover.md").read_text(encoding="utf-8")
+    assert "compete with the client" in text and "consulting firms" in text
+
+
+def test_a_limit_below_the_number_of_segments_rotates_through_all_of_them(cfg, conn):
+    from datetime import date
+    from bd.discover import note_segment, pick_segments
+    segs = ["a", "b", "c", "d", "e"]
+    assert pick_segments(conn, segs, 3) == ["a", "b", "c"]                                # nothing searched yet: configured order
+    for day, s in ((1, "a"), (1, "b"), (1, "c")):
+        note_segment(conn, s, date(2026, 10, day), 4)
+    assert pick_segments(conn, segs, 3) == ["d", "e", "a"]                                # never searched first, then the oldest, ties in configured order
+    note_segment(conn, "d", date(2026, 10, 8), 0)
+    note_segment(conn, "e", date(2026, 10, 8), 0)
+    note_segment(conn, "a", date(2026, 10, 8), 2)
+    assert pick_segments(conn, segs, 3) == ["b", "c", "a"] and pick_segments(conn, segs, None) == ["b", "c", "a", "d", "e"]     # the oldest two, then the 8th by configured order
+    assert pick_segments(conn, segs + ["new"], 2) == ["new", "b"]                         # a segment added in Settings is searched first
+    row = conn.execute("SELECT searches, last_found, last_searched FROM discovery_segments WHERE segment = 'a'").fetchone()
+    assert (row["searches"], row["last_found"], row["last_searched"]) == (2, 2, "2026-10-08")
+
+
+def test_a_run_records_the_segments_it_searched_but_not_one_that_errored(cfg, conn):
+    llm = RoutingLLM([co("Fresh Inc", "fresh.com")], {"Fresh Inc": county_facts("Fresh Inc", "fresh.com")}, all_urls("fresh.com"))
+    go(cfg, conn, llm, segments=("manufacturing", "retail"))
+    rows = {r["segment"]: r["last_found"] for r in conn.execute("SELECT segment, last_found FROM discovery_segments")}
+    assert rows == {"manufacturing": 1, "retail": 1}                                      # last_found is what the search returned
+    bad = RoutingLLM([], {}, [], fail_discover=True)
+    bad.run = lambda *a, **k: (_ for _ in ()).throw(__import__("bd.llm", fromlist=["LLMError"]).LLMError("boom", Usage()))
+    s = go(cfg, conn, bad, segments=("energy",))
+    assert s.errors == 1 and conn.execute("SELECT COUNT(*) FROM discovery_segments WHERE segment = 'energy'").fetchone()[0] == 0
+
+
+def test_the_log_says_when_each_segment_was_last_searched(cfg, conn):
+    lines: list[str] = []
+    v = FakeVerifier(None)
+    llm = RoutingLLM([], {}, [])
+    run_discover(conn, cfg, Discoverer(cfg, llm, v), Enricher(cfg, llm, v, None), AS_OF, model=None, segments=["manufacturing"], workers=1, log=lines.append)
+    run_discover(conn, cfg, Discoverer(cfg, llm, v), Enricher(cfg, llm, v, None), AS_OF, model=None, segments=["manufacturing"], workers=1, log=lines.append)
+    seg = [x for x in lines if "segment 'manufacturing'" in x]
+    assert "not searched before" in seg[0] and f"last searched {AS_OF.isoformat()}" in seg[1]

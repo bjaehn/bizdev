@@ -28,7 +28,7 @@ from bd.config import Config
 from bd.cost import estimate_cost
 from bd.curate import create_account
 from bd.enrich import Enricher
-from bd.fit_gate import check_fit, load_exclusions
+from bd.fit_gate import check_fit, is_competitor, load_exclusions
 from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from bd.models import SourceType
 from bd.urls import host_in, hostname, normalize_url
@@ -72,6 +72,8 @@ class DiscoverSummary:
     segments: int = 0
     found: int = 0
     skipped_known: int = 0
+    skipped_competitor: int = 0       # on the competitor list (fit_gate.competitors): not researched, not added, not queued
+    rejected_queued: list[str] = field(default_factory=list)   # queued candidates the competitor list rejected at the start of the run
     skipped_source: int = 0
     researched: int = 0
     added: list[str] = field(default_factory=list)
@@ -87,6 +89,37 @@ class DiscoverSummary:
 
 def _norm_name(n: str) -> str:
     return " ".join(n.lower().replace(",", " ").replace(".", " ").split())
+
+
+def pick_segments(conn: sqlite3.Connection, segments: list[str], limit: int | None) -> list[str]:
+    """The segments to search this run: never searched first, then the least recently searched, the configured order breaking ties. With a limit below the
+    number of segments this rotates through all of them (it used to take the first N every time, so the last ones were never searched)."""
+    last = {r["segment"]: r["last_searched"] for r in conn.execute("SELECT segment, last_searched FROM discovery_segments")}
+    order = sorted(range(len(segments)), key=lambda i: (segments[i] in last, last.get(segments[i], ""), i))
+    picked = [segments[i] for i in order]
+    return picked[:limit] if limit else picked
+
+
+def note_segment(conn: sqlite3.Connection, segment: str, as_of: date, found: int) -> None:
+    """Remember a segment was searched. Only a search that worked counts: one that errored is tried again next run."""
+    with conn:
+        conn.execute("INSERT INTO discovery_segments(segment, last_searched, searches, last_found) VALUES (?,?,1,?) "
+                     "ON CONFLICT(segment) DO UPDATE SET last_searched = excluded.last_searched, searches = searches + 1, last_found = excluded.last_found",
+                     (segment, as_of.isoformat(), found))
+
+
+def reject_queued_competitors(conn: sqlite3.Connection, cfg: Config) -> list[str]:
+    """Queued candidates that are on the competitor list are rejected (a person would only have to do it), and the audit log says so."""
+    from bd.accounts import log_audit
+
+    done = []
+    for r in conn.execute("SELECT id, name, domain FROM candidates WHERE status = 'queued'").fetchall():
+        if is_competitor(r["name"], r["domain"], cfg):
+            with conn:
+                conn.execute("UPDATE candidates SET status = 'rejected', reason = COALESCE(reason, '') || ' | competitor of the firm (fit_gate.competitors)' WHERE id = ?", (r["id"],))
+                log_audit(conn, "discover", "update", None, "candidate_rejected", None, r["id"])
+            done.append(r["name"])
+    return done
 
 
 class Discoverer:
@@ -162,6 +195,10 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
     # ---- phase 1: find candidates, one search call per segment ------------------------------------------------
     segs = segments if segments is not None else dc.segments
     out.segments = len(segs)
+    out.rejected_queued = reject_queued_competitors(conn, cfg)
+    if out.rejected_queued:
+        log(f"  {len(out.rejected_queued)} queued candidate(s) are on the competitor list and were rejected: {', '.join(out.rejected_queued)}")
+    searched = {r["segment"]: r["last_searched"] for r in conn.execute("SELECT segment, last_searched FROM discovery_segments")}
     names, domains = _known(conn)
     known_list = sorted({r["name"] for r in conn.execute("SELECT name FROM accounts")})
     new: list[Found] = []
@@ -186,12 +223,19 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
     for seg, (companies, retrieved, usage, err), cost in results:
         _log(conn, as_of, "discover", None, usage.total_tokens, cost, err, len(companies))
         out.errors += bool(err)
-        log(f"  segment '{seg}': {len(companies)} companies" + (f"  ERROR {err}" if err else ""))
+        if not err:
+            note_segment(conn, seg, as_of, len(companies))
+        log(f"  segment '{seg}': {len(companies)} companies (" + (f"last searched {searched[seg]}" if seg in searched else "not searched before") + ")"
+            + (f"  ERROR {err}" if err else ""))
         for c in companies:
             out.found += 1
             dom = normalize_domain(c.domain) if c.domain else ""
             if _norm_name(c.name) in names or (dom and dom in domains):
                 out.skipped_known += 1
+                continue
+            if is_competitor(c.name, dom or c.domain, cfg):
+                out.skipped_competitor += 1
+                log(f"    skipped {c.name}: on the competitor list")
                 continue
             why = discoverer.source_ok(c, retrieved)
             if why:

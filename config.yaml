@@ -109,6 +109,17 @@ fit_gate:
     pe-backed: {revenue_usd: 75000000, employees: null}
   excluded_industries: [cannabis]
   exclusion_reasons: [client, do_not_pursue, cannabis, conflict]
+  # Firms that compete with the client are not prospects. A match (the whole name, ignoring case, punctuation and legal suffixes, or the firm's own domain)
+  # is out of scope as "conflict": never scanned, never added or queued by discovery, never researched. Add or remove names freely; the Do-not-pursue list
+  # (Admin) covers one-offs. Law firms and other professional-services buyers are deliberately not listed.
+  competitors:
+    names: ["RSM US", "RSM", "West Monroe", "West Monroe Partners", "ZS", "ZS Associates", "Huron Consulting Group", "Huron", "Kearney", "A.T. Kearney",
+            "BDO", "BDO USA", "Deloitte", "Deloitte Consulting", "PwC", "PricewaterhouseCoopers", "EY", "Ernst & Young", "KPMG", "Accenture",
+            "McKinsey & Company", "Boston Consulting Group", "Bain & Company", "Slalom", "Grant Thornton", "Baker Tilly", "Protiviti", "Crowe",
+            "Capgemini", "Guidehouse", "Alvarez & Marsal", "FTI Consulting", "Oliver Wyman"]
+    domains: [rsmus.com, westmonroe.com, zs.com, huronconsultinggroup.com, kearney.com, bdo.com, deloitte.com, pwc.com, ey.com, kpmg.com, kpmg.us,
+              accenture.com, mckinsey.com, bcg.com, bain.com, slalom.com, grantthornton.com, bakertilly.com, protiviti.com, crowe.com, capgemini.com,
+              guidehouse.com, alvarezandmarsal.com, fticonsulting.com, oliverwyman.com]
 
 scan:
   window_days: 180
@@ -352,6 +363,11 @@ discovery:
     - construction, engineering and real estate
     - education, nonprofits and associations
     - media, marketing and telecommunications
+
+# Facts research (bd enrich). A company looked at for its missing facts, without an error, waits this many weeks before the next look: the ones that
+# yielded nothing were being tried again every Update at about $0.03 each. 0 = look every run. Also on the Settings page.
+enrich:
+  enrich_retry_every_weeks: 4
 
 # Private equity firms: derived from accounts that have a sponsor; `bd pe-portfolio` finds their other Chicagoland
 # companies, `bd pe-signals` looks for firm-level news (new fund, operating-partner hire, exit).

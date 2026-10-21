@@ -23,7 +23,7 @@ from collections import deque
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from importlib import resources
 from pathlib import Path
 from typing import Literal
@@ -367,8 +367,11 @@ def write_proposals(results: list[EnrichResult], path: str | Path) -> int:
 
 
 def select_accounts(conn: sqlite3.Connection, all_accounts: bool, only: str | None, limit: int | None, exact: bool = False,
-                    cfg: Config | None = None) -> list[Account]:
-    """Companies whose location or size is still unverified (all of them with `all_accounts`); known out-of-scope ones are never enriched."""
+                    cfg: Config | None = None, today: date | None = None, waiting: list[Account] | None = None) -> list[Account]:
+    """Companies whose location or size is still unverified (all of them with `all_accounts`); known out-of-scope ones are never enriched.
+
+    With `today` (and no `all_accounts` or `only`), a company looked at without an error in the last `enrich.enrich_retry_every_weeks` weeks waits: the ones that
+    yielded nothing were being tried again on every Update. Those left out are appended to `waiting`. A look that ended in an error does not count."""
     from bd.accounts import list_accounts
     from bd.config import load_config
     from bd.fit_gate import check_fit, load_exclusions
@@ -378,6 +381,13 @@ def select_accounts(conn: sqlite3.Connection, all_accounts: bool, only: str | No
     accts = [a for a in accts if a.status != "excluded" and (all_accounts or check_fit(a, exclusions, cfg).unverified)]
     if only:
         accts = [a for a in accts if (a.name.lower() == only.lower() if exact else only.lower() in a.name.lower())]
+    weeks = cfg.enrich.enrich_retry_every_weeks
+    if today and weeks and not all_accounts and not only:
+        since = (today - timedelta(days=weeks * 7)).isoformat()
+        looked = {r[0] for r in conn.execute("SELECT DISTINCT account_id FROM runs WHERE step = 'enrich' AND errors IS NULL AND run_date >= ? AND account_id IS NOT NULL", (since,))}
+        if waiting is not None:
+            waiting.extend(a for a in accts if a.id in looked)
+        accts = [a for a in accts if a.id not in looked]
     # Never-researched companies first, then the ones tried longest ago, so a hard case that yields nothing cannot use the whole
     # batch on every run while the rest wait.
     last = {r["account_id"]: r["d"] for r in conn.execute(

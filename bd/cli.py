@@ -311,8 +311,9 @@ def discover(
     init_db(conn)
     from bd.settings_store import apply_overrides
     cfg = apply_overrides(cfg, conn)          # limits and segments edited in the app
-    segs = [segment] if segment else cfg.discovery.segments[: limit or None]
-    typer.echo(f"{len(segs)} segment(s); up to {cfg.discovery.per_segment} companies each; research at most "
+    from bd.discover import pick_segments
+    segs = [segment] if segment else pick_segments(conn, cfg.discovery.segments, limit)           # the least recently searched first
+    typer.echo(f"{len(segs)} of {len(cfg.discovery.segments)} segment(s), least recently searched first; up to {cfg.discovery.per_segment} companies each; research at most "
                f"{cfg.discovery.max_candidates_per_run} new companies, auto-add at most {cfg.discovery.max_auto_add_per_run}.")
     if dry_run:
         for s_ in segs:
@@ -328,8 +329,9 @@ def discover(
     edgar = EdgarClient(cfg, settings.user_agent) if settings.user_agent_configured else None
     summary = run_discover(conn, cfg, Discoverer(cfg, web, verifier), Enricher(cfg, web, verifier, edgar), run_date,
                            model=model, segments=segs, workers=workers, log=typer.echo)
-    typer.echo(f"\nFound {summary.found} ({summary.skipped_known} already known, {summary.skipped_source} with an "
-               f"unverifiable source); researched {summary.researched}: {len(summary.added)} auto-added, "
+    typer.echo(f"\nFound {summary.found} ({summary.skipped_known} already known"
+               + (f", {summary.skipped_competitor} on the competitor list" if summary.skipped_competitor else "")
+               + f", {summary.skipped_source} with an unverifiable source); researched {summary.researched}: {len(summary.added)} auto-added, "
                f"{len(summary.queued)} queued for review, {len(summary.rejected)} rejected by the fit gate.")
     note = f" ({summary.unpriced_calls} calls unpriced)" if summary.unpriced_calls else ""
     typer.echo(f"Total: {summary.tokens:,} tokens, ${summary.est_cost:.4f} estimated{note}, {summary.errors} call errors.")
@@ -831,12 +833,19 @@ def enrich(
     cfg, settings = load_config(), Settings.from_env()
     conn = connect(settings.db_path)
     init_db(conn)
-    accounts = select_accounts(conn, all_accounts, only, limit, exact, cfg)
+    from bd.settings_store import apply_overrides
+    cfg = apply_overrides(cfg, conn)                      # the retry wait edited on the Settings page
+    waiting: list = []
+    accounts = select_accounts(conn, all_accounts, only, limit, exact, cfg, today=run_date, waiting=waiting)
+    if waiting:
+        typer.echo(f"{len(waiting)} compan{'y' if len(waiting) == 1 else 'ies'} looked at in the last {cfg.enrich.enrich_retry_every_weeks} weeks "
+                   "wait before another look (Settings, or --only / --all to look now).")
     if not accounts:
         if allow_empty:
-            typer.echo("No companies have unverified facts right now.")
+            typer.echo("No companies are due for a facts look right now." if waiting else "No companies have unverified facts right now.")
             return
-        _fail("No accounts to enrich (companies with unverified facts by default; use --all, or run `bd seed accounts.csv` first).")
+        _fail("No accounts to enrich (companies with unverified facts by default; use --all, or run `bd seed accounts.csv` first)."
+              + (f" {len(waiting)} are waiting after a recent look; use --only or --all to look now." if waiting else ""))
     try:
         key, model = settings.require_llm()
     except RuntimeError as e:
