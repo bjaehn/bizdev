@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date
-from urllib.parse import urlparse
+
+from bd.urls import hostname
 
 
 def source_domain(url: str) -> str:
-    host = (urlparse(url.strip()).hostname or "").lower()
-    return host.removeprefix("www.")
+    return hostname(url)
 
 
 def signal_hash(account_id: int | str, type_: str, event_date: date, source_url: str) -> str:

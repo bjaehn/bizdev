@@ -97,3 +97,26 @@ def test_timeout_and_connect_error(cfg):
         raise httpx.ConnectError("refused", request=req)
     assert make(cfg, timeout).verify("https://acme.com/x").reason == "timeout"
     assert make(cfg, conn).verify("https://acme.com/x").reason.startswith("connect_error")
+
+
+# ---- a URL that is not a URL (a template placeholder, a typo, a model's slip) must be a refusal, never an exception ------------------------------------
+BAD_URLS = ("https://[tenant].example.com/jobs", "https://[bad", "//[object Object]/x", "http://a]b/")
+
+
+def test_the_verifier_refuses_a_malformed_url_and_a_malformed_redirect_instead_of_raising(cfg):
+    v = make(cfg, lambda req: httpx.Response(302, headers={"location": "https://[bad"}))
+    for url in BAD_URLS:
+        r = v.verify(url)
+        assert not r.ok and r.reason == "bad_url"
+    r = v.verify("https://acme.com/a")                                  # a good URL whose server redirects to a malformed one
+    assert not r.ok and r.reason == "bad_url"
+
+
+def test_domains_and_source_hosts_read_from_model_output_never_raise():
+    from bd.accounts import normalize_domain
+    from bd.hashing import signal_hash, source_domain
+    from datetime import date
+    for bad in BAD_URLS + ("[acme].com", "acme.com]"):
+        assert normalize_domain(bad) == "" and source_domain(bad) == ""
+        assert len(signal_hash(1, "leadership_change", date(2026, 10, 1), bad)) == 64
+    assert normalize_domain("https://www.Acme.com/x") == "acme.com" and source_domain("https://www.Acme.com/x") == "acme.com"

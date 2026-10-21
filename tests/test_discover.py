@@ -332,3 +332,29 @@ def test_the_log_says_when_each_segment_was_last_searched(cfg, conn):
     run_discover(conn, cfg, Discoverer(cfg, llm, v), Enricher(cfg, llm, v, None), AS_OF, model=None, segments=["manufacturing"], workers=1, log=lines.append)
     seg = [x for x in lines if "segment 'manufacturing'" in x]
     assert "not searched before" in seg[0] and f"last searched {AS_OF.isoformat()}" in seg[1]
+
+
+def test_an_empty_segment_shows_the_models_reason_and_every_segment_shows_its_tokens(cfg, conn):
+    lines: list[str] = []
+    v = FakeVerifier(None)
+
+    class Empty(RoutingLLM):
+        def run(self, system, messages, **kw):
+            r = super().run(system, messages, **kw)
+            r.text = json.dumps({"companies": [], "note": "Every   company I found\nwas already known."})
+            return r
+    llm = Empty([], {}, [])
+    run_discover(conn, cfg, Discoverer(cfg, llm, v), Enricher(cfg, llm, v, None), AS_OF, model=None, segments=["manufacturing"], workers=1, log=lines.append)
+    text = "\n".join(lines)
+    assert "segment 'manufacturing': 0 companies, 150 tokens" in text and "model note: Every company I found was already known." in text
+    # a segment that returned companies has no note line, and the note is never kept or scored
+    lines.clear()
+    llm2 = RoutingLLM([co("Fresh Inc", "fresh.com")], {"Fresh Inc": county_facts("Fresh Inc", "fresh.com")}, all_urls("fresh.com"))
+    run_discover(conn, cfg, Discoverer(cfg, llm2, v), Enricher(cfg, llm2, v, None), AS_OF, model=None, segments=["retail"], workers=1, log=lines.append)
+    assert not any("model note" in x for x in lines)
+
+
+def test_the_discovery_prompt_asks_for_a_reason_only_when_the_list_is_empty(cfg):
+    from importlib import resources
+    text = resources.files("bd.prompts").joinpath("discover.md").read_text(encoding="utf-8")
+    assert '"note": ""' in text and "one short sentence saying why" in text

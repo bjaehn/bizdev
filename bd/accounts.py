@@ -7,9 +7,10 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlparse
 
 from pydantic import BaseModel
+
+from bd.urls import safe_urlparse
 
 SEED_COLUMNS = ["name", "domain", "hq_city", "chicagoland", "revenue", "employees",
                 "ownership", "sponsor", "industry", "tier", "cik"]
@@ -69,7 +70,7 @@ def is_valid_domain(host: str) -> bool:
 
 def normalize_domain(raw: str) -> str:
     raw = raw.strip().lower()
-    host = urlparse(raw if "//" in raw else "//" + raw).hostname or ""
+    host = safe_urlparse(raw if "//" in raw else "//" + raw).hostname or ""
     return host.removeprefix("www.")
 
 

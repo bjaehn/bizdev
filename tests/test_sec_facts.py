@@ -79,7 +79,7 @@ def test_public_means_a_listed_ticker_and_hq_needs_a_us_address():
 def test_read_degrades_quietly():
     out = read(SUBS, None, AS_OF)
     assert out.public and out.hq == "Chicago, IL" and out.revenue is None
-    assert read(None, {"facts": {}}, AS_OF).notes == ["no recent annual revenue in the SEC data"]
+    assert read(None, {"facts": {}}, AS_OF).notes == ["no recent annual revenue in the SEC data (no annual (10-K) revenue in US dollars under any tag read)"]
 
 
 # ---- in the enricher ---------------------------------------------------------------------------------------------------------
@@ -146,3 +146,21 @@ def test_the_fit_gate_passes_once_the_sec_revenue_arrives(cfg, tmp_path):
     assert ev["revenue"] == facts_url(CIK) and ev["ownership"] == submissions_url(CIK) and ev["chicagoland"] == COUNTY_PAGE
     acct = Account(id=1, name="Acme Corp", **{d.column: d.proposed for d in p.diffs if d.column in ("chicagoland", "revenue", "ownership")})
     assert check_fit(acct, [], cfg).verdict == "pass"
+
+
+def _facts(concept="Revenues", end="2025-12-31", val=3.7e9, form="10-K", start="2025-01-01"):
+    return {"facts": {"us-gaap": {concept: {"units": {"USD": [{"start": start, "end": end, "val": val, "form": form, "filed": "2026-02-20", "accn": "0000000000-26-000001"}]}}}}}
+
+
+def test_the_reason_nothing_was_filled_says_whether_there_was_no_figure_a_stale_one_or_a_bad_one():
+    from datetime import date
+    from bd.sec_facts import read
+    today = date(2026, 10, 21)
+    ok = read(None, _facts(), today)
+    assert ok.revenue == 3.7e9 and ok.notes == []
+    none = read(None, _facts(form="40-F"), today)                                      # only an annual report on another form
+    assert none.revenue is None and none.notes == ["no recent annual revenue in the SEC data (no annual (10-K) revenue in US dollars under any tag read)"]
+    old = read(None, _facts(end="2024-08-31", start="2023-09-01"), today)
+    assert old.notes == ["no recent annual revenue in the SEC data (the newest annual figure is for the year ended 2024-08-31, more than 18 months before this run)"]
+    neg = read(None, _facts(val=-5.0), today)
+    assert "is not positive" in neg.notes[0] and "2025-12-31" in neg.notes[0]

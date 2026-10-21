@@ -41,6 +41,23 @@ def latest_revenue(facts: dict, as_of: date) -> tuple[float, date] | None:
     return best.value, best.end
 
 
+def revenue_problem(facts: dict, as_of: date) -> str:
+    """Why `latest_revenue` found nothing, so a read problem can be told apart from a company that stopped filing: no annual figure under any tag read, a figure
+    that is not positive, or a newest year that ended too long ago."""
+    best = None
+    for concept in REVENUE_CONCEPTS:
+        series = annual_values(facts, concept)
+        if series and (best is None or series[0].end > best.end):
+            best = series[0]
+    if best is None:
+        detail = "no annual (10-K) revenue in US dollars under any tag read"
+    elif best.value <= 0:
+        detail = f"the newest annual figure, for the year ended {best.end.isoformat()}, is not positive"
+    else:
+        detail = f"the newest annual figure is for the year ended {best.end.isoformat()}, more than {MAX_FACT_AGE_DAYS // 30} months before this run"
+    return f"no recent annual revenue in the SEC data ({detail})"
+
+
 def is_public(submissions: dict) -> bool:
     return any(isinstance(t, str) and t.strip() for t in (submissions.get("tickers") or [])) or \
         any(isinstance(e, str) and e.strip() for e in (submissions.get("exchanges") or []))
@@ -66,5 +83,5 @@ def read(submissions: dict | None, facts: dict | None, as_of: date, need_revenue
             out.revenue = r[0]
             out.revenue_note = f"revenue FY{r[1].year} from SEC XBRL"
         else:
-            out.notes.append("no recent annual revenue in the SEC data")
+            out.notes.append(revenue_problem(facts, as_of))
     return out

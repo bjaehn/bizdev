@@ -56,6 +56,7 @@ class Company(BaseModel):
 
 class DiscoverResponse(BaseModel):
     companies: list[Company] = []
+    note: str = ""                       # why the list is empty, when it is (shown in the run log; never stored or scored)
 
 
 @dataclass
@@ -125,6 +126,7 @@ def reject_queued_competitors(conn: sqlite3.Connection, cfg: Config) -> list[str
 class Discoverer:
     def __init__(self, cfg: Config, llm: LLM, verifier: UrlVerifier) -> None:
         self.cfg, self.llm, self.verifier = cfg, llm, verifier
+        self.notes: dict[str, str] = {}              # segment -> the model's own reason for an empty list
 
     def system_prompt(self) -> str:
         return resources.files("bd.prompts").joinpath("discover.md").read_text(encoding="utf-8")
@@ -148,6 +150,7 @@ class Discoverer:
             return [], set(), e.usage, f"{type(e).__name__}: {e}"
         if not resp.companies and (failed := search_failure(res)):       # a segment the search tool could not search is not an empty segment
             return [], res.retrieved_urls, res.usage, failed
+        self.notes[segment] = " ".join((resp.note or "").split())[:300]
         return resp.companies[: self.cfg.discovery.per_segment], res.retrieved_urls, res.usage, None
 
     def source_ok(self, c: Company, retrieved: set[str]) -> str | None:
@@ -225,8 +228,9 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
         out.errors += bool(err)
         if not err:
             note_segment(conn, seg, as_of, len(companies))
-        log(f"  segment '{seg}': {len(companies)} companies (" + (f"last searched {searched[seg]}" if seg in searched else "not searched before") + ")"
-            + (f"  ERROR {err}" if err else ""))
+        note = getattr(discoverer, "notes", {}).get(seg, "")
+        log(f"  segment '{seg}': {len(companies)} companies, {usage.total_tokens:,} tokens (" + (f"last searched {searched[seg]}" if seg in searched else "not searched before") + ")"
+            + (f"  ERROR {err}" if err else "") + (f"\n    model note: {note}" if note and not companies else ""))
         for c in companies:
             out.found += 1
             dom = normalize_domain(c.domain) if c.domain else ""
