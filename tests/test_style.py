@@ -9,7 +9,7 @@ from tests.conftest import add_account, add_signal
 from tests.test_admin import ADMIN_GROUPS, call, PW  # noqa: F401
 from tests.test_update import app_env  # noqa: F401  (fixture)
 
-ANALYSIS = ["/opportunities", "/signals", "/help", "/reports", "/market", "/firms", "/rfps", "/ask", "/monday"]
+ANALYSIS = ["/opportunities", "/signals", "/help", "/reports", "/market", "/private-equity", "/firms", "/rfps", "/ask", "/monday"]
 
 
 @pytest.fixture

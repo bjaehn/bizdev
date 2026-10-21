@@ -17,7 +17,8 @@
 {% if nav is not defined or nav %}
 <nav>
 {% if is_admin %}<a class="top" href="/opportunities">← Back to analysis</a>
-{% else %}<a class="top {{ 'on' if page in ('opportunities', 'company', 'signals', 'help', 'find') else '' }}" href="/opportunities">Analysis</a>{% endif %}
+{% else %}<a class="top {{ 'on' if page in ('opportunities', 'company', 'signals', 'help', 'find') else '' }}" href="/opportunities">Analysis</a>
+<a class="top {{ 'on' if page in ('pe', 'firms') else '' }}" href="/private-equity">Private equity</a>{% endif %}
 </nav>
 <div class="right">{% if not is_admin %}<a class="adminlink" href="/admin">Admin</a>{% endif %}
 {% if hosted and who %}<span class="who" title="Signed in as {{ who }}">{{ who }}</span>{% endif %}

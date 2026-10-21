@@ -45,7 +45,9 @@ from bd.trend import KIND_LABELS, TREND_KINDS
 from bd import users as people
 from bd.actor import acting_as, current as current_actor, current_id
 from bd.hiring_picture import hiring_picture
-from bd.pe_home import pe_home
+from bd.pe_graph import firm_svg, market_svg
+from bd.pe_home import coverage_line, pe_home
+from bd.pe_network import CAT_BY_KEY, CAT_KEYS, build_universe, company_lines, lookup as pe_lookup, table_lines
 from bd.week import build_week, newest_signal, signs_line
 from bd.profile import brief_text, build_profile
 from bd.health import build_health
@@ -131,7 +133,7 @@ def safe_url(u: object) -> str:
 # ADMIN is everything that maintains the data or runs the machine. (page key, href, label, hint, hosted only)
 REPORT_ITEMS = (
     ("market", "/market", "Market view", "Where signals are appearing across industries"),
-    ("firms", "/firms", "Private equity firms", "Owners and their portfolio companies"),
+    ("firms", "/firms", "PE firm sources", "Which firm pages are read, how completely, and what changed"),
     ("rfps", "/rfps", "Open RFPs", "Public solicitations from Chicago-area agencies"),
     ("ask", "/ask", "Ask your data", "Plain-English questions about your own data"),
     ("card", "/monday", "Monday card", "What the weekly post would contain"),
@@ -565,6 +567,7 @@ class App:
             ("GET", "/candidates"): lambda: self.candidates(conn),
             ("GET", "/hiring"): lambda: self.redirect("/opportunities" + (f"?theme={quote(req.q('theme'))}" if req.q("theme") else "") + "#hiring"),
             ("POST", "/settings/refresh"): lambda: self.refresh_save(req, conn),
+            ("GET", "/private-equity"): lambda: self.pe_page(req, conn),
             ("GET", "/firms"): lambda: self.firms(conn),
             ("POST", "/firms/add"): lambda: self.firm_add(req, conn),
             ("GET", "/settings"): lambda: self.settings_page(conn),
@@ -1120,6 +1123,30 @@ class App:
         return self.render("firms.html", page="firms", rows=firm_directory(conn, self.cfg, today), st=collection_status(conn, self.cfg, today),
                            history=pe_run_history(conn, 6), form=form or {}, errors=errors or [], last_job=last_job)
 
+    def pe_page(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """The private-equity network: a market map of firms and the companies they hold, or one firm's neighbourhood, with the plain table beside it."""
+        today = date.today()
+        firm = req.q("firm")
+        firm_id = int(firm) if firm.isdigit() and conn.execute("SELECT 1 FROM pe_firms WHERE id = ? AND status = 'active'", (int(firm),)).fetchone() else None
+        past, cat = req.q("past") == "1", req.q("cat") if req.q("cat") in CAT_BY_KEY else ""
+        q = " ".join(req.q("q").split())[:80]
+        market = build_universe(conn, self.cfg, today, past=past, cat=cat if not firm_id else "")
+        u = build_universe(conn, self.cfg, today, firm_id=firm_id, past=past, cat=cat) if firm_id else market
+        if firm_id:
+            wide, phone = firm_svg(u, prefix="pgf-w"), firm_svg(u, prefix="pgf-p", k=2.0, cap=12, max_label=14, phone=True)
+        else:
+            wide, phone = market_svg(u, prefix="pgm-w"), market_svg(u, prefix="pgm-p", size=640, k=1.1, max_firms=10, max_label=14, ring=0.25, phone=True)
+        lines = table_lines(conn, self.cfg, today, market)
+        live = [f for f in market.all_firms if f.live]
+        companies_with_signals = conn.execute("SELECT COUNT(DISTINCT c.id) FROM pe_companies c JOIN pe_ownership o ON o.company_id = c.id WHERE c.account_id IS NOT NULL "
+                                              "AND o.status IN ('current', 'pending', 'unclear')").fetchone()[0] if live else 0
+        focus = next((f for f in market.all_firms if f.id == firm_id), None)
+        cov, cov_class = coverage_line(conn, self.cfg, today)
+        return self.render("private_equity.html", page="pe", u=u, wide=wide, phone=phone, lines=lines, co_lines=company_lines(u), firm=focus, past=past, cat=cat, q=q, cats=CAT_KEYS,
+                           hits=pe_lookup(conn, today, q) if q else [], stats={"firms": len(live), "chicago": sum(f.chicago for f in live), "held": sum(f.current + f.pending for f in live),
+                                                                               "leads": sum(f.leads for f in live), "linked": companies_with_signals},
+                           coverage=cov, coverage_class=cov_class)
+
     def firm_add(self, req: Request, conn: sqlite3.Connection) -> Response:
         form = {k: req.f(k) for k in ("name", "domain", "hq_city", "portfolio_url")}
         errs = add_firm(conn, form["name"], form["domain"], form["hq_city"], form["portfolio_url"])
@@ -1135,7 +1162,11 @@ class App:
             return self.error("404 Not Found", "No such firm.")
         today = date.today()
         return self.render("firm.html", page="firms", d=d, geo=geo if geo in dict(GEO) else "", geo_tabs=GEO, conf_scored={"High", "Medium"},
-                           roll=firm_rollup(conn, self.cfg, firm_id, today), events=firm_events(conn, firm_id, today))
+                           roll=firm_rollup(conn, self.cfg, firm_id, today), events=firm_events(conn, firm_id, today), **self._firm_map(conn, firm_id, today))
+
+    def _firm_map(self, conn: sqlite3.Connection, firm_id: int, today: date) -> dict:
+        u = build_universe(conn, self.cfg, today, firm_id=firm_id)
+        return {"map_wide": firm_svg(u, prefix="pgf-w"), "map_phone": firm_svg(u, prefix="pgf-p", k=2.0, cap=12, max_label=14, phone=True)}
 
     def pe_run_page(self, conn: sqlite3.Connection, run_id: int) -> Response:
         d = run_detail(conn, run_id)

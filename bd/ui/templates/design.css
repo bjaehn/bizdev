@@ -24,6 +24,8 @@
      table / .wrap                                    rounded table; table.matrix + .cell + .meter for company-by-signal grids
      .chart (.chart-inner)                            scrolls sideways on a phone; SVG charts use these tokens too
      .chart--wide / .chart--phone                     one chart drawn twice: full width, and the last 6 weeks for a phone (CSS shows one)
+     .pg (.pg-node .pg-edge--current|pending|lead|past|addon .pg-firm .pg-co--now|validate|nurture|monitor|none|ring .pg-co2 .pg-peer .pg-label .pg-more)   the private-equity network SVG (bd/pe_graph.py): dots coloured by priority, lines styled by ledger status
+     .swatch.ln-* / .swatch.pg-dot                    legend keys for those lines and dots
      .wrap.wide                                       a table with many columns: keeps its width and scrolls sideways on a phone
      dl.kv                                            facts as label / value pairs (one column on a phone)
      .dim-row (.unknown)                              one dimension of the evidence-based priority: label + anchor, a bar, and its points; unknown has no bar fill
@@ -255,6 +257,22 @@ a.pill:hover{transform:translateY(-2px);box-shadow:var(--shadow-2),var(--hl)}
 .swatch.hot{background:var(--g-hot)}.swatch.warm{background:var(--g-warm)}.swatch.watch{background:var(--g-accent);opacity:.55}
 .swatch.shade{background:var(--sheen),color-mix(in srgb,var(--accent) calc(var(--v,0) * 88%),transparent);border:1px solid var(--line)}
 .swatch.sq{width:14px;height:14px;border-radius:2px}
+.swatch.ln{height:0;width:28px;border-radius:0;background:none;box-shadow:none;border-top:3px solid var(--muted);align-self:center}
+.swatch.ln-current{border-top-color:var(--accent)}.swatch.ln-pending{border-top-color:var(--warmbg);border-top-style:dashed}.swatch.ln-lead{border-top-style:dotted}.swatch.ln-past{border-top-width:1px;opacity:.5}
+.swatch.pg-sq{background:var(--panel);border:2px solid var(--ink);box-shadow:none}.swatch.pg-sq--chicago{background:var(--ink)}
+.swatch.pg-dot{width:14px;height:14px;border-radius:50%;background:currentColor;box-shadow:none}.swatch.pg-dot.pg-co--none{background:var(--soft);border:1.5px solid var(--muted)}.swatch.pg-dot.pg-co--ring{color:var(--muted);background:none;border:2px dashed currentColor}
+/* private-equity network: drawn by bd/pe_graph.py as inline SVG. Colour and line style live here, never in the drawing code. */
+.pg{display:block;width:100%;height:auto;max-width:70rem;margin-inline:auto}
+.pg-node{cursor:pointer}.pg-node:hover .pg-co,.pg-node:focus .pg-co,.pg-node:hover .pg-firm,.pg-node:focus .pg-firm,.pg-node:hover .pg-peer{stroke:var(--ink)}
+.pg-edge{fill:none;stroke:var(--muted);stroke-width:1.4;opacity:.55}.pg-edge--current{stroke:var(--accent);stroke-width:2;opacity:.8}.pg-edge--pending{stroke:var(--warmbg);stroke-width:2;stroke-dasharray:7 5;opacity:.95}
+.pg-edge--lead{stroke-width:1.6;stroke-dasharray:1.5 4.5;stroke-linecap:round;opacity:.85}.pg-edge--past{stroke-width:.9;opacity:.3}.pg-edge--co{opacity:.4}
+.pg-edge--addon{stroke:var(--ink);stroke-width:1.2;opacity:.5}.pg-edge--announced{stroke-dasharray:3 3}
+.pg-firm{fill:var(--panel);stroke:var(--ink);stroke-width:2.5}.pg-firm--investor{fill:var(--panel)}.pg-firm--chicago{fill:var(--ink)}.pg-firm--co{fill:var(--chip);stroke:var(--muted);stroke-width:2}
+.pg-co{fill:currentColor;stroke:var(--panel);stroke-width:2}.pg-co--now{color:var(--accent)}.pg-co--validate{color:var(--warmbg)}.pg-co--nurture{color:var(--good)}
+.pg-co--monitor,.pg-co--none{color:var(--soft);stroke:var(--muted);stroke-width:1.5}.pg-co--ring{fill:none;stroke:currentColor;stroke-width:2.2;stroke-dasharray:3 3}.pg-co--ring.pg-co--monitor,.pg-co--ring.pg-co--none{stroke:var(--muted)}
+.pg-co2{fill:none;stroke:var(--muted);stroke-width:1.5}.pg-peer{fill:var(--panel);stroke:var(--ink);stroke-width:2}
+.pg-label{font:600 12px var(--font);fill:var(--ink);paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round}.pg-label--co{font-weight:500;font-size:11px}.pg-more{fill:var(--muted);font-weight:500}
+.pg--phone .pg-label{font-size:17px}.pg--phone .pg-label--co{font-size:15px}
 .dot{color:var(--c,var(--accent))}
 .wrap{overflow-x:auto;background:var(--grad-panel);border:1px solid var(--line-soft);border-radius:var(--r-lg);box-shadow:var(--shadow),var(--hl)}
 .wrap>table{background:transparent;box-shadow:none;border-radius:0}

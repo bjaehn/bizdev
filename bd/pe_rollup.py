@@ -153,6 +153,12 @@ def _accounts(conn: sqlite3.Connection, ids: list[int]) -> dict[int, Account]:
             for r in conn.execute(f"SELECT * FROM accounts WHERE status = 'active' AND id IN ({q})", ids)}
 
 
+def company_themes(conn: sqlite3.Connection, cfg: Config, account: Account, run_date: str) -> list[Insight]:
+    """What a company's own stored signals add up to (bd.insights), strongest first, as of the latest score run."""
+    sa = score_one(conn, cfg, account, date.fromisoformat(run_date))
+    return insights_for(evidence_from_scored(sa.result, sa.rows), cfg.service_lines)
+
+
 def firm_rollup(conn: sqlite3.Connection, cfg: Config, firm_id: int, today: date, days: int = SIGNAL_DAYS, themes: bool = True,
                 items: list[FeedItem] | None = None) -> FirmRollup:
     """A firm's holdings and leads with each company's own band, theme and recent signals. `items` is the stored feed for `days`, passed in when several
@@ -191,8 +197,7 @@ def firm_rollup(conn: sqlite3.Connection, cfg: Config, firm_id: int, today: date
             if s is not None:
                 h.score, h.band = s["score"], s["band"]
                 if themes and s["score"]:
-                    sa = score_one(conn, cfg, acc, date.fromisoformat(latest))
-                    h.themes = insights_for(evidence_from_scored(sa.result, sa.rows), cfg.service_lines)
+                    h.themes = company_themes(conn, cfg, acc, latest)
         group.held.append(h)
     for g in (out.confirmed, out.leads):
         g.held.sort(key=lambda h: (-(h.score or 0), -(h.latest.toordinal() if h.latest else 0), h.name.lower()))
