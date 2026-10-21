@@ -11,6 +11,8 @@
 {% else %}<input type="hidden" name="status" value="active"><button type="submit">Make active</button>{% endif %}</form></div>
 {% if d.firm['status'] == 'excluded' %}<div class="flash err">An excluded firm is not read or scanned and its news no longer lifts any score.</div>{% endif %}
 
+{% if not geo %}{% include "_pe_rollup.html" %}{% endif %}
+
 <h2>Firm details</h2>
 <div class="card"><p class="meta">What the product knows about the firm itself. A blank is "not known", not a guess. The website domain lets <b>Read PE portfolio pages</b> look for a Portfolio link on the firm's own home page; a portfolio page URL is read directly. The headquarters is the firm's, as entered: it is never used as a portfolio company's location.</p>
 {% if ' and ' in d.firm['name']|lower or ';' in d.firm['name'] %}<p class="meta">This name may be more than one firm. It is kept as one sponsor, because the product does not split names by guessing. To follow them separately, list the name and the firms it stands for under <code>pe_portfolio.sponsor_splits</code> in <code>config.yaml</code>, or add each firm on the <a href="/firms">directory</a> and exclude this one.</p>{% endif %}

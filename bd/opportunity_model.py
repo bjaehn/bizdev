@@ -624,11 +624,12 @@ class FirmSummary:
     sources: list[sqlite3.Row] = field(default_factory=list)
 
 
-def firm_summary(conn: sqlite3.Connection, cfg: Config, firm_id: int, today: date) -> FirmSummary:
-    """Counts and disclosure for a sponsor: how many distinct supported opportunities, never a sum of scores, and how complete the portfolio reading is."""
+def firm_summary(conn: sqlite3.Connection, cfg: Config, firm_id: int, today: date, ranked: list[Holding] | None = None) -> FirmSummary:
+    """Counts and disclosure for a sponsor: how many distinct supported opportunities, never a sum of scores, and how complete the portfolio reading is.
+    `ranked` is the firm's holdings when the caller has already ranked them (every holding is assessed, so a big portfolio is not assessed twice)."""
     rows = conn.execute("SELECT status, COUNT(*) AS n FROM pe_ownership WHERE firm_id = ? GROUP BY status", (firm_id,)).fetchall()
     by_status = {r["status"]: r["n"] for r in rows}
-    held = rank_holdings(conn, cfg, firm_id, today)
+    held = rank_holdings(conn, cfg, firm_id, today) if ranked is None else [h for h in ranked if h.ownership["status"] != "historical"]
     by_cat: dict[str, int] = {}
     for h in held:
         by_cat[h.assessment.category] = by_cat.get(h.assessment.category, 0) + 1

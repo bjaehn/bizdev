@@ -1,0 +1,18 @@
+{# The sponsors behind a company and what they and their other companies are doing. `inv` is a list of bd.pe_rollup.Investor. #}
+{% from "_ui.html" import status_badge, src_link %}
+{% for i in inv %}
+<div class="card">
+<h3><a href="/firms/{{ i.firm_id }}">{{ i.name }}</a> {% if i.lead %}<span class="badge">lead</span>{% else %}{{ status_badge(i.status) }}{% endif %}</h3>
+{% if i.lead %}<p class="meta">A lead: {{ i.name }} is listed with this company, but no retrieved page has confirmed that it owns it. Its news and its other companies are shown for context, not as proof.</p>{% endif %}
+{% if i.events %}<p><b>Recent from {{ i.name }}</b></p>
+<ul class="plain">{% for e in i.events[:5] %}<li><span class="meta">{{ e.date|fdate }}</span> · <b>{{ e.label }}</b>{% if e.company %} · {{ e.company }}{% endif %}<br>{{ e.text }} {{ src_link(e.url) }}</li>{% endfor %}</ul>
+{% if i.events|length > 5 %}<p class="meta">{{ i.events|length - 5 }} more on <a href="/firms/{{ i.firm_id }}">the firm's page</a>.</p>{% endif %}
+{% elif i.status != 'historical' %}<p class="meta">No dated event is stored for {{ i.name }} or its companies in the last year.</p>{% endif %}
+{% if i.status == 'historical' %}<p class="meta">The ledger records this relationship as historical, so the firm's other companies are not shown.</p>
+{% elif i.siblings %}<p><b>Other companies {{ i.name }} {{ 'lists' if i.lead else 'holds' }} that have signals</b></p>
+<ul class="plain">{% for h in i.siblings %}<li><a href="/companies/{{ h.account_id }}">{{ h.name }}</a>{% if h.band %} <span class="badge {{ 'hot' if h.band == 'Hot' else ('warm' if h.band == 'Warm' else '') }}">{{ h.band|band_name }}</span>{% endif %}
+ <span class="meta">{{ h.signals[0].event_date|fdate }}</span> · <b>{{ h.signals[0].label }}</b> {{ h.signals[0].summary|truncate(160) }} {{ src_link(h.signals[0].url) }}{% if h.signals|length > 1 %} <span class="meta">+{{ h.signals|length - 1 }} more</span>{% endif %}</li>{% endfor %}</ul>
+<p class="meta">Same sponsor, not evidence of shared needs: these are the other companies' own signals, and they say nothing about this company.{% if i.siblings_total > i.siblings|length %} {{ i.siblings_total }} other {{ 'leads' if i.lead else 'holdings' }} in all{% if i.siblings_not_on_list %}, {{ i.siblings_not_on_list }} of them not on the scan list, so not scanned{% endif %}.{% endif %}</p>
+{% elif i.siblings_total %}<p class="meta">None of the {{ i.siblings_total }} other {{ 'leads' if i.lead else 'holdings' }} of {{ i.name }} has a stored signal in the last 90 days{% if i.siblings_not_on_list %}; {{ i.siblings_not_on_list }} of them {{ 'is' if i.siblings_not_on_list == 1 else 'are' }} not on the scan list, so {{ 'it was' if i.siblings_not_on_list == 1 else 'they were' }} not scanned{% endif %}. Same sponsor, not evidence of shared needs.</p>{% endif %}
+</div>
+{% endfor %}
