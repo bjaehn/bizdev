@@ -42,3 +42,6 @@ The Monday 05:00 Chicago run (and the daily light refresh on other days) is sepa
 * One job runs at a time; a job is stopped after 2 hours. If the service restarts mid-run the job shows as "interrupted" and the Monday catch-up (up to 12 hours late) starts it again if it never ran that week.
 * A single replica only. Do not scale this service to more than one instance (SQLite, in-memory login throttle, scheduler).
 * This is a public URL protected by one shared password. See SECURITY.md section 4b; ask IT about putting it behind SSO (Cloudflare Access, Tailscale, or SEI-managed hosting) before real use with confidential target lists.
+
+## After a merge
+Merging to `main` does not by itself mean the new code is running: Railway has skipped deployments before. The first lines of the next Update's log say `Code: <commit>` (the commit the running deployment was built from). If it is not the commit you merged, open Railway, Deployments, and deploy the latest commit. The log of an Update that ran on older code can look like a fix that did not work.

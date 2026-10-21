@@ -12,12 +12,11 @@ import os
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlparse
 
 import httpx2 as httpx
 
 from bd.config import Config
-from bd.urls import host_in
+from bd.urls import host_in, safe_urljoin, safe_urlparse
 
 Resolver = Callable[[str], list[str]]
 
@@ -72,7 +71,7 @@ class UrlVerifier:
     def verify(self, url: str) -> VerifyResult:
         current = url.strip()
         for _ in range(self._cfg.verify.max_redirects + 1):
-            p = urlparse(current)
+            p = safe_urlparse(current)
             if p.scheme not in ("http", "https") or not p.hostname:
                 return VerifyResult(False, "bad_url", final_url=current)
             if host_in(p.hostname, self._cfg.sources.blocked_domains):
@@ -90,7 +89,7 @@ class UrlVerifier:
             except httpx.HTTPError as e:
                 return VerifyResult(False, f"connect_error:{type(e).__name__}", final_url=current)
             if status in (301, 302, 303, 307, 308) and location:
-                current = urljoin(current, location)
+                current = safe_urljoin(current, location)
                 continue
             if 200 <= status < 300:
                 return VerifyResult(True, "ok", status=status, final_url=current)

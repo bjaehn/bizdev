@@ -17,4 +17,6 @@ For each company: `name` (its common legal or trading name), `domain` (its prima
 ## Output
 Reply with exactly one JSON object and nothing else (no prose, no code fences):
 
-{"companies": [{"name": "Acme Corp", "domain": "acme.com", "hq_city": "Chicago", "hq_state": "IL", "source_url": "https://...", "source_type": "company_site"}]}
+{"companies": [{"name": "Acme Corp", "domain": "acme.com", "hq_city": "Chicago", "hq_state": "IL", "source_url": "https://...", "source_type": "company_site"}], "note": ""}
+
+`note` is empty unless `companies` is empty. If it is empty, make `note` one short sentence saying why (for example: every company you found was already known, none could be tied to a page you retrieved, or the searches returned nothing useful). Do not put anything else in it.

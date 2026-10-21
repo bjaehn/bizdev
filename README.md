@@ -207,6 +207,8 @@ Everyone has the same access (Analysis and Admin); the point is names, not roles
 *New link* (or *Reset password*) ends that person's sessions and gives a fresh link; *Remove* ends them and frees the sign-in name; you cannot remove yourself.
 Changing `BD_UI_PASSWORD` signs everyone out, owner and people alike. Wrong attempts are throttled per client and per sign-in name. `bd ui` (local) has no Users page.
 
+**Which code is running.** Every Update log starts with `Code: <commit>` (Railway's `RAILWAY_GIT_COMMIT_SHA`). A merge is not a deployment, so compare it with the commit you merged before trusting what the log says about a fix; a log that came from code before the fix looks exactly like a fix that did not work.
+
 ## Weekly schedule: Monday 05:00 America/Chicago
 
 (If you use the hosted app, the schedule is already built in and you can skip this section.)

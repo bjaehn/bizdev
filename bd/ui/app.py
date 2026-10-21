@@ -27,7 +27,7 @@ from datetime import date, datetime, timezone
 import os
 from http.cookies import SimpleCookie
 from pathlib import Path
-from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.parse import parse_qs, quote, urlencode
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
@@ -53,6 +53,7 @@ from bd.market import build_market
 from bd.jobs import COMPARE_BUDGET, EXTRA_SCANNERS, FIND_BUDGET, KINDS, LOG_PAGE_BYTES, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
+from bd.urls import safe_urlparse
 from bd.lookup import find as find_company
 from bd.labels import FAMILY_LABELS, TYPE_LABELS, fmt_date, money
 from bd.pe_store import add_firm, set_firm_status, update_firm
@@ -116,13 +117,13 @@ def fact(v: object, column: str = "") -> str:
 
 
 def host(u: object) -> str:
-    return (urlparse(str(u or "")).hostname or "").removeprefix("www.")
+    return (safe_urlparse(str(u or "")).hostname or "").removeprefix("www.")
 
 
 def safe_url(u: object) -> str:
     """Only http(s) URLs may become links."""
     u = str(u or "")
-    return u if urlparse(u).scheme in ("http", "https") and urlparse(u).netloc else ""
+    return u if safe_urlparse(u).scheme in ("http", "https") and safe_urlparse(u).netloc else ""
 
 
 # Two areas on one login. ANALYSIS is what a viewer uses: This week, the Companies explorer, a company's brief and the extra reports.
@@ -249,7 +250,7 @@ class App:
             if origin == "null":
                 if req.headers.get("sec-fetch-site") != "same-origin":
                     return self.error("403 Forbidden", "Cross-origin request refused.")
-            elif origin and urlparse(origin).netloc not in self.allowed_hosts():
+            elif origin and safe_urlparse(origin).netloc not in self.allowed_hosts():
                 return self.error("403 Forbidden", "Cross-origin request refused.")
             if req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
                 return self.error("403 Forbidden", "Cross-site request refused.")
@@ -280,7 +281,7 @@ class App:
             return True
         if origin == "null":
             return req.headers.get("sec-fetch-site") == "same-origin"
-        return urlparse(origin).netloc == req.headers.get("host", "")
+        return safe_urlparse(origin).netloc == req.headers.get("host", "")
 
     def _secure(self, req: Request) -> bool:
         return req.headers.get("x-forwarded-proto", "") == "https"

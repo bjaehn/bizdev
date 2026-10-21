@@ -180,7 +180,7 @@ def collect_source(conn: sqlite3.Connection, cfg: Config, fetcher: Fetcher, firm
                    force: bool = False) -> SourceOutcome:
     out = SourceOutcome(src["id"], firm["name"], src["url"], "ok")
     now = now_iso()
-    snap = None if force else recently_read(conn, src["url"], cfg)
+    snap = None if force or src["status"] in ("failed", "blocked") else recently_read(conn, src["url"], cfg)      # a source whose last attempt did not succeed is read again, not served from the cache
     if snap is not None:
         with conn:
             conn.execute("UPDATE pe_sources SET last_attempt = ? WHERE id = ?", (now, src["id"]))

@@ -447,3 +447,24 @@ def test_enrich_page_offers_apply_all_and_applies_only_new_facts(hosted):
     assert c.execute("SELECT chicagoland, revenue FROM accounts").fetchone() == ("yes", 5e8)
     assert call(hosted.app, "POST", "/enrich/apply-all", {"csrf": csrf, "file": "../../etc/passwd"}, cookie=s).code == 303
     assert call(hosted.app, "POST", "/enrich/apply-all", {"file": "p.csv"}, cookie=s).code == 403
+
+
+def test_a_malformed_origin_or_link_is_refused_or_ignored_not_a_server_error(hosted):
+    """An Origin header is attacker-controlled and a stored link can be anything: neither may raise out of urlparse."""
+    from bd.ui.app import host, safe_url
+    for bad in ("http://[", "https://[bad", "//[object Object]"):
+        assert login(hosted, headers={"Origin": bad}).code == 403
+        assert host(bad) == "" and safe_url(bad) == ""
+    assert host("https://www.example.com/a") == "example.com" and safe_url("https://example.com/a") == "https://example.com/a"
+    assert safe_url("javascript:alert(1)") == ""
+
+
+def test_bd_check_starts_by_saying_which_commit_the_deployment_was_built_from(monkeypatch):
+    from typer.testing import CliRunner
+    from bd.cli import app
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "06d377df621ba4df2a6beaf848d510185dd44c5a")
+    r = CliRunner().invoke(app, ["check"])
+    assert r.output.startswith("Code: 06d377d (the commit this deployment was built from).") and r.exit_code != 0       # it still says what else to fix
+    monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA")
+    assert CliRunner().invoke(app, ["check"]).output.startswith("Code: commit unknown")

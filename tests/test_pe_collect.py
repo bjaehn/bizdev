@@ -283,3 +283,21 @@ def test_a_company_named_only_with_suffix_words_is_kept_and_a_nameless_entry_nev
     assert res.failed == 0 and res.ok == 1 and rels(conn)["The Limited"]["status"] == "current"
     assert any("nothing to match on" in u for u in res.outcomes[0].unresolved)
     assert conn.execute("SELECT COUNT(*) FROM pe_companies WHERE name_key = ''").fetchone()[0] == 0
+
+
+def test_a_source_whose_last_attempt_failed_is_read_again_at_once_not_served_from_the_cache(conn, cfg, monkeypatch):
+    """Live: after the Sycamore failure the next Update said "cached, 0 entries", so a fix could not take effect until cache_hours had passed."""
+    import bd.pe_collect as pc
+    firm(conn)
+    real = pc._apply
+    monkeypatch.setattr(pc, "_apply", lambda *a, **k: (_ for _ in ()).throw(ValueError("a company needs a name")))
+    f, _client, _clk, c = make_fetcher(cfg, {A: listing()})
+    register_sources(conn)
+    first = run_collect(conn, c, f, TODAY)
+    assert first.failed == 1 and conn.execute("SELECT status FROM pe_sources").fetchone()[0] == "failed"
+    assert conn.execute("SELECT COUNT(*) FROM pe_snapshots").fetchone()[0] == 1                       # the page was read and kept; only the ingest failed
+    monkeypatch.setattr(pc, "_apply", real)
+    again = run_collect(conn, c, f, TODAY)                                                            # well inside cache_hours of that snapshot
+    assert (again.failed, again.ok, again.cached) == (0, 1, 0) and rels(conn)["One Co"]["status"] == "current"
+    third = run_collect(conn, c, f, TODAY)
+    assert third.cached == 1                                                                          # once it succeeded, the cache applies again
