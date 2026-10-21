@@ -37,7 +37,7 @@ from bd.cost import estimate_cost
 from bd.edgar import EdgarClient, EdgarError, facts_url, submissions_url
 from bd.sec_facts import read as read_sec_facts
 from bd.sec_ids import TICKERS_URL, Index, Listing, build_index
-from bd.llm import LLM, LLMError, Usage, generate_validated
+from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from bd.models import SourceType
 from bd.scanners.base import reconcile_source_type
 from bd.urls import host_in, hostname, normalize_url
@@ -181,6 +181,11 @@ class Enricher:
             self._propose_listed_cik(found, res)
         self._fill_from_sec(account, as_of, res)
         got = set(res.row)
+        failed = search_failure(llm_res)
+        if failed and not got & set(SEED_COLUMNS[1:]):        # nothing proposed AND the search tool failed: the company was not looked up, which is not the same as "not found"
+            res.error, res.missing = failed, []
+            res.row["notes"] = "not looked up: " + failed.split(" (")[0]
+            return res
         want = {"domain": "domain", "hq_city and hq_state": "hq_city", "industry": "industry", "il_county": "chicagoland",
                 "revenue_usd": "revenue", "employees": "employees", "ownership": "ownership", "sponsor": "sponsor", "cik": "cik"}
         found_but_dropped = " ".join(res.dropped)

@@ -296,3 +296,45 @@ def test_the_details_and_flags_survive_the_json_retry(cfg):
                            resp([block(type="text", text=GOOD, citations=None)])])
     _, res = generate_validated(c, "s", "u", ScanResponse, retries=1)
     assert res.search_errors == ["too_many_requests"] and len(res.search_error_details) == 1 and "q1" in res.search_error_details[0]
+
+
+# ---- web search is called directly, not from the model's own code ------------------------------------------------------------------------------
+def _bad_request(text):
+    import anthropic
+    import httpx2
+    return anthropic.BadRequestError(text, response=httpx2.Response(400, request=httpx2.Request("POST", "https://api.anthropic.com")), body=None)
+
+
+def test_search_is_called_directly_but_the_basic_fallback_tool_is_sent_as_it_is(cfg):
+    assert cfg.llm.web_search_allowed_callers == ["direct"]
+    bad = resp([_search_error("invalid_tool_input"), block(type="text", text="x", citations=None)])
+    c, msgs = client(cfg, [bad, resp([block(type="text", text=GOOD, citations=None)])])
+    c.run("S", [{"role": "user", "content": "go"}])
+    assert msgs.calls[0]["tools"][0]["allowed_callers"] == ["direct"] and msgs.calls[0]["tools"][0]["type"] == cfg.llm.web_search_tool_type
+    assert msgs.calls[1]["tools"][0]["type"] == "web_search_20250305" and "allowed_callers" not in msgs.calls[1]["tools"][0]
+    off = cfg.model_copy(deep=True)
+    off.llm.web_search_allowed_callers = None
+    c, msgs = client(off, [resp([block(type="text", text=GOOD, citations=None)])])
+    c.run("S", [{"role": "user", "content": "go"}])
+    assert "allowed_callers" not in msgs.calls[0]["tools"][0]
+
+
+def test_a_refused_allowed_callers_field_never_stops_the_searches(cfg, capsys):
+    c, msgs = client(cfg, [_bad_request("tools.0.web_search_20260209: allowed_callers is not supported"), resp([block(type="text", text=GOOD, citations=None)]),
+                           resp([block(type="text", text=GOOD, citations=None)])])
+    assert c.run("S", [{"role": "user", "content": "go"}]).text == GOOD
+    assert "allowed_callers" in msgs.calls[0]["tools"][0] and "allowed_callers" not in msgs.calls[1]["tools"][0]      # the same call again, without the field
+    assert "NOTE: the API refused allowed_callers" in capsys.readouterr().err
+    c.run("S", [{"role": "user", "content": "go"}])
+    assert "allowed_callers" not in msgs.calls[2]["tools"][0]                                                           # and not sent again in this run
+    other, _ = client(cfg, [_bad_request("max_tokens: too large")])
+    with pytest.raises(LLMError, match="BadRequestError"):                                                              # any other rejection is still an error
+        other.run("S", [{"role": "user", "content": "go"}])
+
+
+def test_a_failed_search_line_says_who_made_the_call(cfg):
+    from bd.llm import search_error_details_from
+    code = block(type="server_tool_use", id="a", name="web_search", input={"params": {"query": "q"}}, caller={"type": "code_execution_20260120", "tool_id": "x"})
+    direct = block(type="server_tool_use", id="b", name="web_search", input={"query": "q"}, caller={"type": "direct"})
+    d = search_error_details_from([code, _error_for("a", "invalid_tool_input"), direct, _error_for("b", "invalid_tool_input")])
+    assert d[0].startswith('invalid_tool_input via=code_execution_20260120 asked={"params": {"query": "q"}}') and d[1].startswith('invalid_tool_input via=direct asked={"query": "q"}')

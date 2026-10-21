@@ -46,7 +46,7 @@ from bd.week import build_week, newest_signal, signs_line
 from bd.profile import brief_text, build_profile
 from bd.health import build_health
 from bd.market import build_market
-from bd.jobs import COMPARE_BUDGET, EXTRA_SCANNERS, FIND_BUDGET, KINDS, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
+from bd.jobs import COMPARE_BUDGET, EXTRA_SCANNERS, FIND_BUDGET, KINDS, LOG_PAGE_BYTES, LOOKUP_BUDGET, SCANNER_NAMES, JobError, JobRunner, company_name
 from bd.scheduler import next_run
 from bd.ui.auth import Hosted, Throttle
 from bd.lookup import find as find_company
@@ -371,8 +371,16 @@ class App:
         company = None
         if job.kind in ("lookup", "sec_fill") and "--only" in job.args:        # a one-company job: link straight to the company
             company = conn.execute("SELECT id, name FROM accounts WHERE lower(name) = lower(?)", (job.args[job.args.index("--only") + 1],)).fetchone()
-        return self.render("job.html", page="operate", job=job, log=self.jobs.log_tail(job_id), company=company,
+        log, size = self.jobs.log_view(job_id, LOG_PAGE_BYTES)
+        return self.render("job.html", page="operate", job=job, log=log, company=company, cut_kb=(len(log.encode()) // 1000, size // 1000) if size > LOG_PAGE_BYTES else None,
                            running=job.status in ("queued", "running"), label=KINDS.get(job.kind, (job.kind,))[0])
+
+    def job_log(self, job_id: int) -> Response:
+        """The whole log of a job as plain text, for copying or saving: the page itself shows only the last LOG_PAGE_BYTES of a very long one."""
+        assert self.jobs is not None
+        if self.jobs.get(job_id) is None:
+            return self.error("404 Not Found", "No such job.")
+        return Response("200 OK", (self.jobs.log_full(job_id) or "(no output yet)\n").encode(), [("Content-Type", "text/plain; charset=utf-8")])
 
     def route(self, req: Request, conn: sqlite3.Connection) -> Response:
         p, m = req.path.rstrip("/") or "/", req.method
@@ -389,6 +397,8 @@ class App:
                 return self.find_wait(int(p[11:]), conn)
             if m == "GET" and p.startswith("/jobs/") and p[6:].isdigit():
                 return self.job_page(int(p[6:]), conn)
+            if m == "GET" and p.startswith("/jobs/") and p.endswith("/log") and p[6:-4].isdigit():
+                return self.job_log(int(p[6:-4]))
         parts = p.strip("/").split("/")
         table = {
             ("GET", "/"): lambda: self.home(conn) if self.jobs is not None else self.opportunities(req, conn),

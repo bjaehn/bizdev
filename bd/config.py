@@ -162,6 +162,7 @@ class Llm(_Strict):
     web_search_max_uses: int
     web_search_tool_type: str
     web_search_fallback_tool_type: str | None = None   # tried once, for a call whose every search failed with invalid_tool_input
+    web_search_allowed_callers: list[str] | None = None   # ["direct"]: the model calls web search itself instead of from code it writes (dynamic filtering); null = the API's default for the tool type
     max_continuations: int
     json_retries: int
     concurrency: int

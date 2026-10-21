@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
@@ -111,9 +112,12 @@ def search_error_details_from(content: list[Any], cap: int = 160) -> list[str]:
         c = d.get("content")
         if d.get("type") != "web_search_tool_result" or not isinstance(c, dict) or not str(c.get("type", "")).endswith("_error"):
             continue
-        asked = (uses.get(d.get("tool_use_id")) or {}).get("input")
+        use = uses.get(d.get("tool_use_id")) or {}
+        asked = use.get("input")
+        caller = (use.get("caller") or {}).get("type") if isinstance(use.get("caller"), dict) else None     # "direct", or the code execution tool that made the call
         extra = {k: v for k, v in c.items() if k not in ("type", "error_code")}
-        text = str(c.get("error_code") or "unknown") + (f" asked={json.dumps(asked, ensure_ascii=False)}" if asked else " asked=(not in the reply)") + (f" detail={json.dumps(extra, ensure_ascii=False)}" if extra else "")
+        text = (str(c.get("error_code") or "unknown") + (f" via={caller}" if caller else "")
+                + (f" asked={json.dumps(asked, ensure_ascii=False)}" if asked else " asked=(not in the reply)") + (f" detail={json.dumps(extra, ensure_ascii=False)}" if extra else ""))
         out.append(" ".join(text.split())[:cap])
     return out
 
@@ -159,6 +163,7 @@ class AnthropicWebSearchClient:
         self._model = model
         self._web_search = web_search  # False = plain text call (used by the briefer)
         self._fallback_failed = False   # the repeat with the basic search tool failed too: stop repeating for the rest of this run (it would only double the spend)
+        self._callers_refused = False   # the API rejected allowed_callers once: stop sending it for the rest of this run, so a refused field can never stop every search
         # An API key that is not scoped to one workspace needs the workspace named on every request. Environment only
         # (ANTHROPIC_WORKSPACE_ID); a key that is already workspace-scoped needs nothing.
         ws = workspace_id if workspace_id is not None else os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
@@ -175,6 +180,9 @@ class AnthropicWebSearchClient:
             tool["allowed_domains"] = list(allowed_domains)
         else:
             tool["blocked_domains"] = list(self._cfg.sources.blocked_domains)
+        callers = self._cfg.llm.web_search_allowed_callers
+        if callers and not self._callers_refused and tool["type"] == self._cfg.llm.web_search_tool_type:      # the basic fallback tool is a direct call already
+            tool["allowed_callers"] = list(callers)
         return [tool]
 
     def run(self, system: str, messages: list[dict[str, Any]], allowed_domains: list[str] | None = None,
@@ -185,10 +193,22 @@ class AnthropicWebSearchClient:
         for attempt in range(self._cfg.llm.max_continuations + 1):
             try:
                 extra: dict[str, Any] = {"tools": self._tools(allowed_domains, max_uses, tool_type)} if self._web_search else {}
-                resp = self._client.messages.create(
-                    model=self._model, max_tokens=self._cfg.llm.max_tokens,
-                    system=system, messages=convo, **extra,
-                )
+                try:
+                    resp = self._client.messages.create(
+                        model=self._model, max_tokens=self._cfg.llm.max_tokens,
+                        system=system, messages=convo, **extra,
+                    )
+                except anthropic.BadRequestError as e:
+                    if not (extra and "allowed_callers" in extra["tools"][0] and "allowed_callers" in str(e)):
+                        raise
+                    self._callers_refused = True
+                    print("NOTE: the API refused allowed_callers on the web search tool; searching with its default instead "
+                          f"({str(e)[:160]}). Set llm.web_search_allowed_callers to null in config.yaml to stop sending it.", file=sys.stderr)
+                    extra = {"tools": self._tools(allowed_domains, max_uses, tool_type)}
+                    resp = self._client.messages.create(
+                        model=self._model, max_tokens=self._cfg.llm.max_tokens,
+                        system=system, messages=convo, **extra,
+                    )
             except anthropic.APIError as e:
                 raise LLMError(f"{type(e).__name__}: {e}", usage) from e
             one = _usage_from(resp.usage)
