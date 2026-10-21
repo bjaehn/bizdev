@@ -29,9 +29,13 @@ TYPE_LABELS = {
     "rfp_match": "RFP match",
     "risk_factor": "Risk factor disclosure",
     "financial_pressure": "Financial pressure",
+    "financial_distress": "Financial distress / restatement",
 }
 assert set(TYPE_LABELS) == set(SIGNAL_TYPES)
 
+THEME_LABEL = {"ai_technology": "AI and technology", "data_analytics": "data and analytics",
+               "strategy_operations": "strategy and operations", "transformation_change": "transformation and change",
+               "product_engineering": "product and engineering"}
 FAMILY_LABELS = {"leadership": "Leadership", "hiring": "Hiring", "events": "Company events", "pe": "Private equity",
                  "technology": "Technology", "procurement": "Procurement", "filings": "Filings", "financials": "Financials"}
 FIRM_TYPE_LABELS = {"firm_new_fund": "new fund", "firm_exit": "exit", "firm_operating_partner": "operating-partner hire"}

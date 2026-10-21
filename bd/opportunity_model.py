@@ -33,7 +33,7 @@ FAMILY = {"pe_platform_or_sponsor_exec": "platform_deal", "deal_completed": "pla
 DEAL_KINDS = frozenset(FAMILY)
 COMPANY_OWN = frozenset({"platform_migration", "vendor_deal", "rfp_match", "leadership_change", "leadership_transformation_ai_data", "open_exec_search",
                          "restructuring_layoffs", "cost_program", "ops_failure", "ai_commitment", "strategy_rebrand", "hiring_cluster", "hiring_leadership",
-                         "hiring_interim", "hiring_single", "financial_pressure", "activist", "ma_divestiture", "risk_factor"})
+                         "hiring_interim", "hiring_single", "financial_pressure", "financial_distress", "activist", "ma_divestiture", "risk_factor"})
 DEAL_LABELS = {"deal_completed": "completed acquisition", "deal_announced": "announced acquisition", "add_on_completed": "completed add-on acquisition",
                "add_on_announced": "announced add-on acquisition"}
 

@@ -26,6 +26,7 @@ from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from pydantic import BaseModel
 
 from bd.models import ScanResponse, SignalExtract
+from bd.postings import BoardReading
 from bd.urls import host_in, hostname, normalize_url
 from bd.verify import UrlVerifier
 
@@ -60,6 +61,7 @@ class ScanOutcome:
     postings: list = field(default_factory=list)       # job postings seen (bd.scanners.hiring.Posting), stored by the runner
     postings_complete: bool = False                    # True: `postings` is the board's complete list, so absent ones are closed
     learned_board: tuple[str, str] | None = None       # (provider, board id) learned from posting URLs
+    board: BoardReading | None = None                  # what a read of the whole job board showed (the `ats` scanner), stored by the runner
     read_filings: list[str] = field(default_factory=list)   # SEC accession numbers read (remembered so they are not re-read)
 
     def rejection_summary(self) -> str:

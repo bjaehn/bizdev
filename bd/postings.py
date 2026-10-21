@@ -2,10 +2,30 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 from bd.accounts import log_audit
+
+
+@dataclass
+class BoardReading:
+    """What one read of a company's whole job board showed. `programs` maps a program name to its postings inside the window, newest first
+    (title, url, posted date as ISO text); `total` is every open role on the board, `relevant` those whose title matched a theme."""
+    total: int
+    relevant: int
+    programs: dict[str, list[tuple[str, str, str]]] = field(default_factory=dict)
+
+
+def store_board_reading(conn: sqlite3.Connection, account_id: int, seen: date, r: BoardReading, examples: int = 5) -> None:
+    """Keep today's reading (a second read the same day replaces it) and drop readings more than a year older. The caller owns the transaction."""
+    programs = {name: {"n": len(rows), "examples": [{"title": t, "url": u, "posted": d} for t, u, d in rows[:examples]]} for name, rows in r.programs.items()}
+    conn.execute("INSERT INTO board_readings(account_id, seen_date, total, relevant, programs) VALUES (?,?,?,?,?) "
+                 "ON CONFLICT(account_id, seen_date) DO UPDATE SET total = excluded.total, relevant = excluded.relevant, programs = excluded.programs",
+                 (account_id, seen.isoformat(), r.total, r.relevant, json.dumps(programs)))
+    conn.execute("DELETE FROM board_readings WHERE account_id = ? AND seen_date < ?", (account_id, (seen - timedelta(days=400)).isoformat()))
 
 
 def store_postings(conn: sqlite3.Connection, account_id: int, postings: list, seen: date, source: str,

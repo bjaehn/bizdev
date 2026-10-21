@@ -103,6 +103,18 @@ CREATE TABLE IF NOT EXISTS postings (
 );
 CREATE INDEX IF NOT EXISTS ix_postings_account ON postings(account_id, open, posted_date);
 
+-- One reading of a company's whole job board per day it was read (the `ats` scanner): how many roles were open, how many matched a theme, and the
+-- programs named in titles (JSON: program -> {"n": postings dated inside the window, "examples": [{"title","url","posted"}]}). Counts only; history is what
+-- lets a page say the board grew or shrank. Rows older than a year are removed when a newer one is written.
+CREATE TABLE IF NOT EXISTS board_readings (
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    seen_date  TEXT NOT NULL,
+    total      INTEGER NOT NULL,
+    relevant   INTEGER NOT NULL,
+    programs   TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (account_id, seen_date)
+);
+
 -- SEC filings already read by the edgar / earnings scanners, so a daily refresh only pays for new ones.
 CREATE TABLE IF NOT EXISTS filings_read (
     account_id INTEGER NOT NULL REFERENCES accounts(id),

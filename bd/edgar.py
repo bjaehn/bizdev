@@ -29,6 +29,7 @@ API_HOST = "https://data.sec.gov"
 ARCHIVE_HOST = "https://www.sec.gov"
 _ACCESSION = re.compile(r"^\d{10}-\d{2}-\d{6}$")
 _DOCNAME = re.compile(r"^[A-Za-z0-9_.\-]+$")
+_DOCPATH = re.compile(r"^(?!\.+(?:/|$))[A-Za-z0-9_.\-]+(?:/(?!\.+$)[A-Za-z0-9_.\-]+)?$")       # a Schedule 13D's rendered page sits one folder down (xslSCHEDULE_13D_X01/primary_doc.xml)
 _FORMS = {"8-K", "8-K/A"}
 
 
@@ -179,8 +180,9 @@ class EdgarClient:
     def recent_items(self, cik: str, since: date, until: date, limit: int, item: str) -> list[Filing]:
         return self.recent_filings(cik, since, until, limit, {item})
 
-    def recent_filings(self, cik: str, since: date, until: date, limit: int, items: set[str]) -> list[Filing]:
-        """8-K filings (newest first) that report at least one of `items`, with an event date inside the window. One request."""
+    def recent_filings(self, cik: str, since: date, until: date, limit: int, items: set[str], forms: set[str] | None = None) -> list[Filing]:
+        """8-K filings (newest first) that report at least one of `items`, plus any filing whose form is one of `forms` (an item list does not apply to those,
+        for example a Schedule 13D), with an event date inside the window. One request."""
         recent = self.submissions(cik)["filings"]["recent"]
         cols = [recent.get(k) for k in ("accessionNumber", "filingDate", "reportDate", "form", "items", "primaryDocument")]
         if not all(isinstance(c, list) for c in cols[:2] + cols[3:]):
@@ -189,10 +191,11 @@ class EdgarClient:
         out: list[Filing] = []
         for i, (acc, fdate, form, listed, doc) in enumerate(zip(cols[0], cols[1], cols[3], cols[4], cols[5])):
             fd = _date(fdate)
-            if form not in _FORMS or fd is None or not _ACCESSION.match(str(acc)) or not _DOCNAME.match(str(doc)):
+            by_form = bool(forms) and form in forms
+            if (form not in _FORMS and not by_form) or fd is None or not _ACCESSION.match(str(acc)) or not (_DOCPATH if by_form else _DOCNAME).match(str(doc)):
                 continue
             reported = [x.strip() for x in str(listed or "").split(",")]
-            if not items & set(reported):
+            if not by_form and not items & set(reported):
                 continue
             f = Filing(cik=f"{int(cik):010d}", accession=str(acc), filing_date=fd,
                        report_date=_date(reports[i]) if i < len(reports) else None,
@@ -220,6 +223,10 @@ class EdgarClient:
             end = min((pos for pos, num in heads if pos > start and num != i), default=len(text))
             out[i] = text[start:end][:cap]
         return out
+
+    def filing_head(self, filing: Filing, chars: int = 6000) -> str:
+        """The first `chars` characters of a filing's visible text (a Schedule 13D's cover page names the reporting person). One fetch."""
+        return html_to_text(self._get(filing.url).text)[:chars]
 
     def filing_text(self, filing: Filing) -> str:
         return excerpt(html_to_text(self._get(filing.url).text), self._cfg.edgar.max_chars)

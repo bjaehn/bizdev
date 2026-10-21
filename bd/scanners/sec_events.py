@@ -27,7 +27,8 @@ class SecEventsScanner(Scanner):
     def __init__(self, cfg: Config, edgar: EdgarClient | None) -> None:
         super().__init__(cfg, None, None)
         self.edgar = edgar
-        self.allowed_types = frozenset(i.type for i in cfg.sec_events.items.values()) | frozenset(cfg.sec_events.officer_titles)
+        self.allowed_types = (frozenset(i.type for i in cfg.sec_events.items.values()) | frozenset(cfg.sec_events.officer_titles)
+                              | (frozenset({"activist"}) if cfg.sec_events.schedule_13d.activists else frozenset()))
 
     @classmethod
     def create(cls, cfg, web, text, verifier, edgar, ats=None):  # type: ignore[override]
@@ -74,14 +75,19 @@ class SecEventsScanner(Scanner):
         items = cfg.sec_events.items
         lo = as_of - timedelta(days=cfg.scan.window_days)
         hi = as_of + timedelta(days=cfg.scan.max_future_days)
+        d13 = cfg.sec_events.schedule_13d
+        forms = set(d13.forms) if d13.activists else set()
         try:
-            filings = self.edgar.recent_filings(account.cik, lo, hi, cfg.sec_events.max_filings_per_scan, set(items))
+            filings = self.edgar.recent_filings(account.cik, lo, hi, cfg.sec_events.max_filings_per_scan, set(items), forms)
         except EdgarError as e:
             out.error = f"EdgarError: {e}"
             return out
         seen: set[str] = set()
         for f in filings:
             if f.accession in known_accessions:           # read on an earlier run
+                continue
+            if f.form in forms:
+                self._schedule_13d(account, f, out, seen)
                 continue
             wanted = {i for i in f.items if i in items}
             out.candidates += 1
@@ -126,3 +132,28 @@ class SecEventsScanner(Scanner):
                 out.signals.append(AcceptedSignal(extract, cfg.scoring.family_of(extract.type), h,
                                                   [f"EDGAR {f.form} {f.accession} Item {item}"]))
         return out
+
+    def _schedule_13d(self, account: Account, f, out: ScanOutcome, seen: set[str]) -> None:
+        """An initial Schedule 13D is an `activist` signal only when its cover page names an investor from the configured list (never the company itself)."""
+        d = self.cfg.sec_events.schedule_13d
+        out.candidates += 1
+        assert self.edgar is not None
+        try:
+            head = self.edgar.filing_head(f)
+        except EdgarError as e:
+            out.rejections.append(Rejection(f"unreachable:{e}", "activist", f.url))
+            return
+        out.read_filings.append(f.accession)
+        named = next((n for n in d.activists if n.lower() not in account.name.lower()
+                      and re.search(r"(?<![A-Za-z])" + re.escape(n) + r"(?![A-Za-z])", head, re.I)), None)
+        if named is None:
+            out.rejections.append(Rejection("no_listed_activist_named", "activist", f.url, f"{f.form}: the cover page names none of the {len(d.activists)} listed investors"))
+            return
+        extract = SignalExtract(type="activist", event_date=f.event_date, summary=d.summary(named), source_url=f.url, source_type="sec_filing", confidence="High",
+                                service_lines=self._canonical_lines(d.service_lines), role_or_person=None)
+        h = signal_hash(account.id, extract.type, extract.event_date, extract.source_url)
+        if h in seen:
+            out.rejections.append(Rejection("duplicate_in_batch", extract.type, f.url))
+            return
+        seen.add(h)
+        out.signals.append(AcceptedSignal(extract, self.cfg.scoring.family_of(extract.type), h, [f"EDGAR {f.form} {f.accession}; cover page names {named}"]))

@@ -146,6 +146,11 @@ def _has(title: str, phrases: list[str]) -> bool:
     return any(re.search(r"\b" + re.escape(p.lower()) + r"\b", title.lower()) for p in phrases)
 
 
+def programs_in(title: str, cfg: Config) -> list[str]:
+    """The configured programs (hiring.programs) a job title names, in config order."""
+    return [name for name, phrases in cfg.hiring.programs.items() if _has(title, phrases)]
+
+
 def classify(title: str, cfg: Config) -> tuple[str, str, bool] | None:
     """(theme, seniority, interim) for a relevant title, else None. Themes are tried in config order."""
     h = cfg.hiring

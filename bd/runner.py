@@ -19,7 +19,7 @@ from bd.budget import Reserve
 from bd.config import Config
 from bd.cost import estimate_cost
 from bd.llm import Usage
-from bd.postings import known_accessions, learn_board, record_filings, store_postings
+from bd.postings import known_accessions, learn_board, record_filings, store_board_reading, store_postings
 from bd.scanners.base import ScanOutcome, Scanner, store_signals
 from bd.signal_coverage import SUCCESSFUL_RUN
 
@@ -139,6 +139,8 @@ def run_scans(conn: sqlite3.Connection, cfg: Config, scanners: list[Scanner], ac
                                out.postings_complete)
             elif out.postings_complete and not out.error:        # a complete empty board: everything was taken down
                 store_postings(conn, acc.id, [], as_of, acc.ats_provider or "", True)
+            if out.board and not out.error:
+                store_board_reading(conn, acc.id, as_of, out.board)
             if out.learned_board and not out.error:
                 learn_board(conn, acc.id, out.learned_board)
             record_filings(conn, acc.id, sc.name, out.read_filings, as_of)

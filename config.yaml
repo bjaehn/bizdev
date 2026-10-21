@@ -26,12 +26,13 @@ scoring:
     rfp_match: 30
     risk_factor: 8
     financial_pressure: 14  # from the company's own latest 10-K figures (revenue down, margin down, or an operating loss)
+    financial_distress: 20  # an 8-K that reports a bankruptcy, a debt acceleration, an impairment, a listing notice or a restatement (sec_events)
 
   # Which family each type belongs to.
   families:
     leadership: [leadership_change, leadership_transformation_ai_data, open_exec_search]
     hiring: [hiring_cluster, hiring_leadership, hiring_interim, hiring_single]
-    events: [restructuring_layoffs, ma_divestiture, activist, ops_failure, cost_program, ai_commitment, strategy_rebrand]
+    events: [restructuring_layoffs, ma_divestiture, activist, ops_failure, cost_program, ai_commitment, strategy_rebrand, financial_distress]
     pe: [pe_platform_or_sponsor_exec, pe_addon, pe_hold_2_4]
     technology: [platform_migration, vendor_deal]
     procurement: [rfp_match]
@@ -219,6 +220,23 @@ hiring:
   theme_title_gates:
     product_engineering: [manager, director, head, vp, vice president, chief, principal, staff, lead, architect]
   interim_words: [interim, fractional, contract executive]
+  # Programs named in job titles (whole words, any case), read from the company's whole board feed. Three or more postings dated inside window_days that
+  # name the same program become one hiring_cluster signal for it. Platforms that companies implement as programs; general cloud and language names are left out
+  # on purpose (nearly every large employer hires for them all the time). Edit freely.
+  program_min: 3
+  program_signals_max: 3
+  program_service_lines: [AI & Technology]
+  programs:
+    SAP: [sap, s/4hana, s4hana, sap hana]
+    Oracle ERP: [oracle fusion, oracle cloud erp, oracle ebs, oracle e-business, peoplesoft, netsuite]
+    Workday: [workday]
+    Salesforce: [salesforce]
+    ServiceNow: [servicenow]
+    Microsoft Dynamics: [dynamics 365, d365, dynamics ax]
+    ERP: [erp]
+    Data platform: [snowflake, databricks, data lakehouse, data lake, data mesh]
+    Supply chain planning: [kinaxis, blue yonder, o9 solutions, manhattan associates]
+    Procurement platform: [coupa, ariba]
 
 # Financial pressure, read from the SEC's structured data for the company's latest 10-K (no model call, so no cost).
 # A signal needs at least one of these to hold; each compares the latest fiscal year with the one before it.
@@ -236,10 +254,17 @@ sec_fill:
 # signal by the filing's report date, fetches the filing and requires the item heading in it, and writes the summary from the label
 # below. Each item maps to one signal type and the service lines it points to.
 sec_events:
-  max_filings_per_scan: 6
+  max_filings_per_scan: 8
   items:
     "2.05": {type: restructuring_layoffs, label: "costs associated with exit or disposal activities", service_lines: [Strategy & Operations]}
     "2.01": {type: ma_divestiture, label: "completion of an acquisition or disposition of assets", service_lines: [Strategy & Operations]}
+    "5.01": {type: ma_divestiture, label: "a change in control of the registrant", service_lines: [Strategy & Operations]}
+    "1.05": {type: ops_failure, label: "a material cybersecurity incident", service_lines: [AI & Technology]}
+    "1.03": {type: financial_distress, label: "bankruptcy or receivership", service_lines: [Strategy & Operations]}
+    "2.04": {type: financial_distress, label: "triggering events that accelerate or increase a direct financial obligation", service_lines: [Strategy & Operations]}
+    "2.06": {type: financial_distress, label: "material impairments", service_lines: [Strategy & Operations]}
+    "3.01": {type: financial_distress, label: "notice of delisting or failure to satisfy a continued listing rule", service_lines: [Strategy & Operations]}
+    "4.02": {type: financial_distress, label: "non-reliance on previously issued financial statements", service_lines: [Strategy & Operations]}
     # Item 5.02 is where a public company reports an officer joining or leaving. It also covers directors and pay, so the item's own text is read: a
     # change is reported only when one of the titles below sits within officer_window_chars of a change word. The summary is a fixed sentence naming the
     # title; no person is named and the wording is not interpreted beyond that. These signals are Medium confidence.
@@ -257,6 +282,17 @@ sec_events:
   officer_window_chars: 140
   officer_service_lines:
     leadership_transformation_ai_data: [AI & Technology, Data & Analytics, Strategy & Operations]
+  # Schedule 13D is where an investor with more than 5% of a company's shares reports a stake it may act on. Only an INITIAL 13D (amendments are not read) whose
+  # first 6000 characters name one of the investors below becomes an `activist` signal; a 13D from anyone else (a founder, a sponsor, a strategic buyer) is not
+  # activism and is ignored. The list is yours to edit: a name is matched as whole words, any case, so use the firm's full name.
+  schedule_13d:
+    forms: ["SC 13D", "SCHEDULE 13D"]
+    service_lines: [Strategy & Operations]
+    activists: ["Elliott Investment Management", "Elliott Management", "Starboard Value", "JANA Partners", "Trian Fund Management", "Third Point", "Engine Capital",
+                "Ancora Holdings", "Ancora Advisors", "Legion Partners", "Land & Buildings", "Mantle Ridge", "Politan Capital", "Sachem Head", "Corvex Management",
+                "ValueAct", "Pershing Square", "Icahn Enterprises", "Carl C. Icahn", "Irenic Capital", "Blue Harbour", "Impactive Capital", "Cannell Capital",
+                "Barington Capital", "Glenview Capital", "Marcato Capital", "Clearway Capital", "Rubric Capital", "Browning West", "Oasis Management", "Palliser Capital",
+                "Cevian Capital", "Voss Capital", "Anson Funds", "Lion Point Capital", "Spruce Point"]
 
 # Open public RFPs / RFQs / RFIs from Chicago-area agencies. One search per group, restricted to that group's own domains, so
 # every result is an official page. Not tied to a company and never scored; shown on the Open RFPs page.
@@ -377,6 +413,7 @@ opportunity_model:
     hiring_leadership: 40
     pe_addon: 40
     financial_pressure: 35
+    financial_distress: 45
     activist: 35
     deal_completed: 30          # a completed acquisition is a research trigger, not proof of a need
     open_exec_search: 30
@@ -419,6 +456,7 @@ opportunity_model:
     activist: 45
     pe_addon: 45
     financial_pressure: 40
+    financial_distress: 40
     restructuring_layoffs: 40
     pe_platform_or_sponsor_exec: 40
     leadership_change: 35
@@ -487,6 +525,7 @@ opportunity_model:
     ops_failure: [Operating model and process improvement, Customer experience and service operations]
     activist: [Operating model and process improvement]
     financial_pressure: [Operating model and process improvement]
+    financial_distress: [Operating model and process improvement]
     strategy_rebrand: [Product strategy and delivery]
     ma_divestiture: [Acquisition integration and separation]
     pe_addon: [Acquisition integration and separation]

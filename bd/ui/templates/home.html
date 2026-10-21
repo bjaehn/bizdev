@@ -30,6 +30,10 @@
 {% set l = coverage.leadership %}
 <h3>Leadership changes</h3>
 <p><b>{{ l.companies }}</b> compan{{ 'y has' if l.companies == 1 else 'ies have' }} a leadership signal in the last {{ l.window_days }} days: <b>{{ l.from_filings }}</b> read from SEC 8-K filings by code (free, Item 5.02) and <b>{{ l.from_search }}</b> found by searches. {% if l.from_filings %}<b>{{ l.companies_from_filings }}</b> compan{{ 'y was' if l.companies_from_filings == 1 else 'ies were' }} found only through a filing. {% endif %}Filings can speak only for the <b>{{ l.filing_companies }}</b> compan{{ 'y' if l.filing_companies == 1 else 'ies' }} on the list with an SEC id; the rest rely on searches.</p>
+<h3>Private equity</h3>
+{% if pe.empty %}<p class="meta">{{ pe.empty }}</p>
+{% else %}<p><b>{{ pe.firms }}</b> sponsor{{ '' if pe.firms == 1 else 's' }} tracked; <b>{{ pe.backed }}</b> compan{{ 'y is' if pe.backed == 1 else 'ies are' }} shown by a source as owned by one, <b>{{ pe.by_category.get('Prospect now', 0) }}</b> of them Prospect now; <b>{{ pe.feed_total }}</b> dated sponsor or portfolio event{{ '' if pe.feed_total == 1 else 's' }} in the last 90 days. <a href="/opportunities#pe">See them on Analysis</a>.</p>
+{% if pe.coverage %}<p class="notice {{ pe.coverage_class }}">{{ pe.coverage }}</p>{% endif %}{% endif %}
 {% else %}<p class="meta">No companies are on the scan list yet.</p>{% endif %}
 </div>
 
@@ -39,7 +43,7 @@
 <ol>
 <li>Reads the SEC's own data for public companies (free), so the filing scanners know which company is which.</li>
 <li>Reads each private equity firm's own portfolio page (free), and looks on each company's own careers page for its job board, so its postings come from the free complete feed (free).</li>
-<li>Reads every company's public job board and SEC event filings (free).</li>
+<li>Reads every company's own job board (open roles, and the programs its job titles name) and its SEC event filings: 8-K items such as officer changes, restructuring, cyber incidents, defaults and restatements, and Schedule 13D from named activist investors (free).</li>
 <li>Scans up to <b>{{ u.scan }}</b> companies for leadership changes, hiring, press and company events. This is where most of the money goes.{% if coverage.deep.cycle_weeks %} Each scanned company that shows a signal, or has had no deep technology and procurement look in {{ coverage.deep.cycle_weeks }} weeks, also gets that deeper look.{% endif %}</li>
 <li>Searches <b>{{ u.segments }}</b> industry segments for new Chicagoland companies, with what is left of the limit.</li>
 <li>Researches up to <b>{{ u.research }}</b> companies whose location or size is unconfirmed, and fills in the ones with a source that checked out.</li>

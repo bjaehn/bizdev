@@ -32,6 +32,7 @@ SignalType = Literal[
     "rfp_match",
     "risk_factor",
     "financial_pressure",
+    "financial_distress",
 ]
 SIGNAL_TYPES: tuple[str, ...] = get_args(SignalType)
 

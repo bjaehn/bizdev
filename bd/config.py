@@ -223,6 +223,12 @@ class Hiring(_Strict):
     interim_words: list[str]
     ats_find_every_weeks: int = 8        # a company whose careers page was looked at for a job board is not looked at again for this long (0 = never look)
     ats_find_per_run: int = 25           # companies whose careers page is read per run (free, polite)
+    # Programs named in job titles, read from the whole board feed (not only the titles that match a theme): when program_min or more postings dated inside
+    # window_days name the same program, that is a hiring_cluster signal for it (at most program_signals_max per company), and the board reading shows the counts.
+    programs: dict[str, list[str]] = {}
+    program_min: int = 3
+    program_signals_max: int = 3
+    program_service_lines: list[str] = ["AI & Technology"]
 
 
 class Edgar(_Strict):
@@ -358,9 +364,20 @@ class SecEventItem(_Strict):
     officers: bool = False            # Item 5.02 also covers directors and pay: read the item's own text and report only an officer change (see SecEvents.officer_titles)
 
 
+class Schedule13D(_Strict):
+    """An initial Schedule 13D that names one of these investors is an `activist` signal (bd.scanners.sec_events). Empty list = not read."""
+    forms: list[str] = ["SC 13D", "SCHEDULE 13D"]
+    service_lines: list[str] = []
+    activists: list[str] = []
+
+    def summary(self, name: str) -> str:
+        return f"Schedule 13D filed naming activist investor {name}, reporting a stake above 5%."
+
+
 class SecEvents(_Strict):
     """Signals read straight from SEC 8-K item codes, with no model call (bd.scanners.sec_events)."""
     max_filings_per_scan: int
+    schedule_13d: Schedule13D = Schedule13D()
     items: dict[str, SecEventItem]    # "2.05" -> what it means
     officer_titles: dict[str, list[str]] = {}       # signal type -> officer titles that, next to a change word in the item's own text, make an officer change
     officer_change_words: list[str] = []
@@ -410,6 +427,15 @@ class Config(_Strict):
                 raise ValueError(f"sec_events item {item} needs service_lines from {self.service_lines}")
             if len(self.sec_events.summary(item).split()) > MAX_SUMMARY_WORDS:
                 raise ValueError(f"sec_events item {item}: the summary would exceed {MAX_SUMMARY_WORDS} words; shorten the label")
+        if self.hiring.programs and (not self.hiring.program_service_lines or not set(self.hiring.program_service_lines) <= set(self.service_lines)):
+            raise ValueError(f"hiring.program_service_lines needs service_lines from {self.service_lines}")
+        d = self.sec_events.schedule_13d
+        if d.activists:
+            if not d.service_lines or not set(d.service_lines) <= set(self.service_lines):
+                raise ValueError(f"sec_events.schedule_13d needs service_lines from {self.service_lines}")
+            longest = max(d.activists, key=len)
+            if len(d.summary(longest).split()) > MAX_SUMMARY_WORDS:
+                raise ValueError(f"sec_events.schedule_13d: the summary for {longest!r} would exceed {MAX_SUMMARY_WORDS} words; shorten the name")
         return self
 
     @model_validator(mode="after")

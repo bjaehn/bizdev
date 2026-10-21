@@ -45,7 +45,8 @@ before touching any template. The rules are enforced by `tests/test_design_syste
 4. **Rhythm, not margins.** Vertical spacing comes from the stack rule (`main`, `.stack`, `.card`, `.prose`, `.entry-main`), so do not
    add margins to elements. Wrap a group in `.stack` if it needs the rhythm.
 5. **Repeated markup is a macro** in `bd/ui/templates/_ui.html` (for example `company_entry`), not copy-pasted HTML.
-6. Charts are SVG built in Python (`bd/charts.py`, `bd/timeline.py`); they use the same tokens (`var(--hotbg)` and so on), never their own palette
+6. **Depth and gradient come from tokens** (`--shadow*`, `--hl`, `--grad-panel`, `--g-accent/hot/warm/good/soft`, `--glow`, defined for light and dark); a component takes them, a template never sets them. Print removes them.
+7. Charts are SVG built in Python (`bd/charts.py`, `bd/timeline.py`); they use the same tokens (`var(--hotbg)` and so on), never their own palette
    (the timeline's categorical signal-type colours are the one deliberate exception).
 
 Look: a coloured header band (`.hero`) carries each analysis page's title; white `.card`s; solid band `.badge`s; `.tiles` for big numbers;
@@ -58,6 +59,7 @@ To change the look of the whole app: edit the tokens or one component in `design
 - `bd/week.py` the one Analysis page's data (top three new-business companies by score, the numbered Watch-and-above list, evidence, tracked); `bd/trend.py` weekly signals by kind, the takeaway sentence and score history; `bd/compare.py` the stores-nothing test of the combined sweep scan against what the separate scanners stored; `bd/insights.py` opportunity themes (rules over signal types, with evidence); `bd/feed.py` the signal feed (`/signals`); `bd/signal_coverage.py` how much
   of the list has been scanned (Admin Home); the viewer lookup is the capped (`$1`) `find` signal-scan job in `bd/jobs.py` + `/find` in `app.py`; `bd/profile.py` the company brief and its plain-text copy;
   `bd/market.py` the Market view data; `bd/charts.py` SVG charts.
+  `bd/pe_home.py` the PE section of the Analysis page (call list and activity feed, from stored evidence only; also counts on Admin Home); `bd/hiring_picture.py` a company's hiring picture from stored readings of its own job board (`board_readings`: counts and programs named in titles, written by the free `ats` scan).
   **PE portfolio**: `bd/pe_ownership.py` the ledger and status rules; `bd/sources.py` (bounded, polite reader: robots, per-host rate limit, retries, size cap, challenge-page detection),
   `bd/pe_listing.py` (portfolio page parser: sections, pagination, WordPress API fallback, coverage claims), `bd/pe_collect.py` (`bd pe-collect`, free, idempotent, failure-isolated, snapshots and diffs),
   `bd/pe_deals.py` (`bd pe-deals`: the model reports a deal with a quote, **code** verifies the page), `bd/pe_promote.py` (`bd pe-promote`: through the existing fit gate, no second target list),

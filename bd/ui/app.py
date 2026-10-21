@@ -42,6 +42,8 @@ from bd.charts import spark_svg, trend_svg, weekly_svg
 from bd.signal_coverage import signal_coverage
 from bd.feed import FEED_DAYS, GROUP_LABELS, GROUPS as FEED_GROUPS, load_items as load_feed_items
 from bd.trend import KIND_LABELS, TREND_KINDS
+from bd.hiring_picture import hiring_picture
+from bd.pe_home import pe_home
 from bd.week import build_week, newest_signal, signs_line
 from bd.profile import brief_text, build_profile
 from bd.health import build_health
@@ -512,7 +514,7 @@ class App:
             step = ("Open Analysis", f"{opps} companies are ranked. Press Update my list any time to refresh them.", "opportunities")
         last = self.jobs.last_job(("update",))
         return self.render("home.html", page="home", problems=problems, total=total, ready=ready, opps=opps, top=top, u=u,
-                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, coverage=signal_coverage(conn, apply_overrides(self.cfg, conn), date.today(), u, tuple(EXTRA_SCANNERS.split(","))), release_changes=recent_release_changes(conn),
+                           step=step, last=last, busy=self.jobs.busy(), fields=UPDATE_FIELDS, coverage=signal_coverage(conn, apply_overrides(self.cfg, conn), date.today(), u, tuple(EXTRA_SCANNERS.split(","))), release_changes=recent_release_changes(conn), pe=pe_home(conn, self.cfg, date.today()),
                            last_log=self.jobs.log_tail(last.id)[-1500:] if last and last.status == "failed" else "")
 
     def update_start(self, req: Request, conn: sqlite3.Connection) -> Response:
@@ -556,7 +558,8 @@ class App:
         return self.render("opportunities.html", page="opportunities", w=w, shown=shown, tabs=tabs, band=band, everything=everything, family=family, industry=industry,
                            stage_labels=STAGE_LABELS, kinds=[(k, label) for k, _, label in TREND_KINDS], kind_labels=KIND_LABELS,
                            trend_chart=weekly_svg(w.trend.weeks, w.trend.series, KIND_LABELS),
-                           trend_chart_phone=weekly_svg(w.trend.weeks, w.trend.series, KIND_LABELS, width=380, height=250, last=6, fs=14), h=self.hiring_data(conn, req.q("theme")))
+                           trend_chart_phone=weekly_svg(w.trend.weeks, w.trend.series, KIND_LABELS, width=380, height=250, last=6, fs=14), h=self.hiring_data(conn, req.q("theme")),
+                           pe=pe_home(conn, self.cfg, date.today()))
 
     def pipeline_update(self, req: Request, conn: sqlite3.Connection, account_id: int, what: str) -> Response:
         if what == "stage":
@@ -698,7 +701,7 @@ class App:
         if a is None:
             return self.error("404 Not Found", "No such company.")
         today = date.today()
-        return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, today), stage_labels=STAGE_LABELS, stages=STAGES,
+        return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, today), stage_labels=STAGE_LABELS, stages=STAGES, hp=hiring_picture(conn, self.cfg, account_id, today),
                            cfg_hiring_days=self.cfg.hiring.window_days, pe=company_pe(conn, self.cfg, today, account_id=account_id), ap=assess_account(conn, self.cfg, account_id, today))
 
     def company_text(self, conn: sqlite3.Connection, account_id: int) -> Response:
