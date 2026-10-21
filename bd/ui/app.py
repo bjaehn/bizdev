@@ -42,6 +42,8 @@ from bd.charts import spark_svg, trend_svg, weekly_svg
 from bd.signal_coverage import signal_coverage
 from bd.feed import FEED_DAYS, GROUP_LABELS, GROUPS as FEED_GROUPS, load_items as load_feed_items
 from bd.trend import KIND_LABELS, TREND_KINDS
+from bd import users as people
+from bd.actor import acting_as, current as current_actor, current_id
 from bd.hiring_picture import hiring_picture
 from bd.pe_home import pe_home
 from bd.week import build_week, newest_signal, signs_line
@@ -147,6 +149,7 @@ ADMIN_GROUPS = (
     ("System", (("health", "/health", "Data health", "What is producing, what it costs, what is missing", False),
                 ("runs", "/runs", "Run history and cost", "What ran and what it cost", False),
                 ("audit", "/audit", "Change log", "Who changed what, with sources", False),
+                ("users", "/users", "Users", "Who can sign in, and a one-time link to add someone", True),
                 ("settings", "/settings", "Settings", "Numbers behind the Update button", False))),
 )
 KIND_COLORS = {"leadership": "var(--k-lead)", "hiring": "var(--k-hire)", "press": "var(--k-press)", "events": "var(--k-event)"}
@@ -163,7 +166,7 @@ class App:
         self.root = (root or Path.cwd()).resolve()
         self.port: int | None = None
         self._csrf = hosted.csrf if hosted else hmac.new(token.encode(), b"csrf", hashlib.sha256).hexdigest()
-        self._flash: list[tuple[str, str]] = []
+        self._flash: dict[str, list[tuple[str, str]]] = {}       # per signed-in person, so one person's notice is never shown to another
         self.env = Environment(loader=PackageLoader("bd.ui", "templates"), autoescape=select_autoescape(["html"]),
                                trim_blocks=True, lstrip_blocks=True)
         self.env.filters.update(band_name=lambda b: {'Stored': 'Below Watch'}.get(b, b), status_label=lambda v: {'active': 'Scanned for signals', 'hold_review': 'Unverified', 'unverified': 'Unverified', 'excluded': 'Out of scope'}.get(v, v), money=money, show=show, fact=fact, host=host, safe_url=safe_url, fdate=lambda d: fmt_date(date.fromisoformat(d)) if isinstance(d, str) else fmt_date(d))
@@ -189,8 +192,9 @@ class App:
             import traceback
             traceback.print_exc()
         resp.headers += [("Content-Security-Policy", CSP), ("X-Content-Type-Options", "nosniff"),
-                         ("Referrer-Policy", "same-origin"), ("Cache-Control", "no-store"),
-                         ("X-Frame-Options", "DENY")]
+                         ("Cache-Control", "no-store"), ("X-Frame-Options", "DENY")]
+        if not any(k.lower() == "referrer-policy" for k, _ in resp.headers):       # a page may ask for stricter (the sign-up page sends no referrer at all)
+            resp.headers.append(("Referrer-Policy", "same-origin"))
         if self.hosted and environ.get("HTTP_X_FORWARDED_PROTO", "") == "https":
             resp.headers.append(("Strict-Transport-Security", "max-age=31536000"))
         start_response(resp.status, resp.headers)
@@ -213,19 +217,19 @@ class App:
         return req
 
     def render(self, template: str, http_status: str = "200 OK", **ctx) -> Response:
-        flash, self._flash = self._flash, []
-        body = self.env.get_template(template).render(flash=flash, **ctx).encode()
+        flash = self._flash.pop("", []) + (self._flash.pop(current_actor(), []) if current_actor() else [])     # notices made outside any session, then this person's own
+        body = self.env.get_template(template).render(flash=flash, who=current_actor(), **ctx).encode()
         return Response(http_status, body, [("Content-Type", "text/html; charset=utf-8")])
 
     def error(self, status: str, message: str, nav: bool = True) -> Response:
-        body = self.env.get_template("error.html").render(status=status, message=message, flash=[], nav=nav).encode()
+        body = self.env.get_template("error.html").render(status=status, message=message, flash=[], nav=nav, who=current_actor()).encode()
         return Response(status, body, [("Content-Type", "text/html; charset=utf-8")])
 
     def redirect(self, to: str, extra: list[tuple[str, str]] | None = None) -> Response:
         return Response("303 See Other", b"", [("Location", to), *(extra or [])])
 
     def say(self, kind: str, text: str) -> None:
-        self._flash.append((kind, text))
+        self._flash.setdefault(current_actor() or "", []).append((kind, text))
 
     # ---- guard + routing ---------------------------------------------------------------------------------------
     def handle(self, req: Request) -> Response:
@@ -287,7 +291,7 @@ class App:
 
     def login_page(self, error: str = "", status: str = "200 OK") -> Response:
         # Public page: never touches the shared flash list (that belongs to the signed-in user).
-        body = self.env.get_template("login.html").render(error=error, flash=[], nav=False, csrf="").encode()
+        body = self.env.get_template("login.html").render(error=error, flash=[], nav=False, csrf="", who=None).encode()
         return Response(status, body, [("Content-Type", "text/html; charset=utf-8")])
 
     def handle_hosted(self, req: Request) -> Response:
@@ -296,11 +300,14 @@ class App:
             return Response("200 OK", b"ok", [("Content-Type", "text/plain; charset=utf-8")])
         if req.method not in ("GET", "POST"):
             return self.error("405 Method Not Allowed", "Only GET and POST are used.", nav=False)
-        signed_in = self.hosted.session_ok(req.cookies.get("bd_session", ""))
+        person = self.identify(req.cookies.get("bd_session", ""))
+        signed_in = person is not None
         if req.path == "/login":
             if req.method == "GET":
                 return self.redirect("/opportunities") if signed_in else self.login_page()
             return self.login(req)
+        if req.path.startswith("/join/") and len(req.path) > 6:
+            return self.join(req)
         if not signed_in:
             if req.method == "GET":
                 return self.redirect("/login")
@@ -316,9 +323,28 @@ class App:
                 return self.redirect("/login", [("Set-Cookie", self._cookie(req, "", 0))])
         conn = connect(self.db_path)
         try:
-            return self.route(req, conn)
+            with acting_as(person.name, person.id):
+                return self.route(req, conn)
         finally:
             conn.close()
+
+    def identify(self, cookie: str) -> people.Person | None:
+        """Who this session belongs to: the owner (shared password), a person with their own login, or nobody."""
+        assert self.hosted is not None
+        if self.hosted.session_ok(cookie):
+            return people.OWNER_PERSON
+        parsed = self.hosted.parse_user_session(cookie)
+        if parsed is None:
+            return None
+        uid, expiry, sig = parsed
+        conn = connect(self.db_path)
+        try:
+            row = people.active_user(conn, uid)
+        finally:
+            conn.close()
+        if row is not None and self.hosted.user_session_ok(uid, expiry, sig, row["session_key"]):
+            return people.Person(row["id"], row["name"])
+        return None
 
     def login(self, req: Request) -> Response:
         assert self.hosted is not None
@@ -326,19 +352,115 @@ class App:
                 req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
             return self.error("403 Forbidden", "Cross-origin request refused.", nav=False)
         client = self.client_id(req)
-        wait = self.throttle.retry_after(client)
+        name = " ".join(req.f("login").split())
+        owner = name == "" or name.lower() == people.OWNER.lower()            # no name = the shared password
+        keys = [client] if owner else [client, f"user:{name.lower()}"]       # a person's name is throttled too, so guessing from many places is slow
+        wait = max(self.throttle.retry_after(k) for k in keys)
         if wait:
             return self.login_page(f"Too many attempts. Try again in {wait} seconds.", "429 Too Many Requests")
-        if self.hosted.check_password(req.f("password")):
-            self.throttle.succeeded(client)
-            return self.redirect("/opportunities", [("Set-Cookie", self._cookie(req, self.hosted.make_session(),
-                                                                   self.hosted.session_hours * 3600))])
-        self.throttle.failed(client)
+        cookie = ""
+        if owner:
+            if self.hosted.check_password(req.f("password")):
+                cookie = self.hosted.make_session()
+        else:
+            conn = connect(self.db_path)
+            try:
+                with conn:
+                    row = people.authenticate(conn, name, req.f("password"))
+                if row is not None:
+                    cookie = self.hosted.make_user_session(row["id"], row["session_key"])
+            finally:
+                conn.close()
+        if cookie:
+            for k in keys:
+                self.throttle.succeeded(k)
+            return self.redirect("/opportunities", [("Set-Cookie", self._cookie(req, cookie, self.hosted.session_hours * 3600))])
+        for k in keys:
+            self.throttle.failed(k)
         import time
         time.sleep(self.fail_delay)
-        return self.login_page("That password is not right.", "401 Unauthorized")
+        return self.login_page("That sign-in name or password is not right." if not owner else "That password is not right.", "401 Unauthorized")
 
     fail_delay = 1.0
+
+    # ---- people (hosted only) ---------------------------------------------------------------------------------
+    def join_page(self, token: str, person_name: str = "", error: str = "", status: str = "200 OK") -> Response:
+        body = self.env.get_template("join.html").render(error=error, flash=[], nav=False, csrf="", who=None, token=token, person_name=person_name,
+                                                          min_password=people.MIN_PASSWORD).encode()
+        return Response(status, body, [("Content-Type", "text/html; charset=utf-8"), ("Referrer-Policy", "no-referrer")])
+
+    def join(self, req: Request) -> Response:
+        """The page a one-time sign-up link opens (public: the token is the proof). The person chooses their own password and is signed in."""
+        assert self.hosted is not None
+        token = req.path[len("/join/"):]
+        if len(token) > 100 or not token.replace("-", "").replace("_", "").isalnum():
+            return self.join_page("", error="This link is not right. Ask for a new one.", status="404 Not Found")
+        client = self.client_id(req)
+        conn = connect(self.db_path)
+        try:
+            row = people.invited_user(conn, token)
+            if req.method == "GET":
+                if row is None:
+                    return self.join_page("", error="This link has already been used, has expired, or is not right. Ask for a new one.", status="404 Not Found")
+                return self.join_page(token, person_name=row["name"])
+            if not self.same_origin(req) or req.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+                return self.error("403 Forbidden", "Cross-origin request refused.", nav=False)
+            wait = self.throttle.retry_after(client)
+            if wait:
+                return self.join_page(token, person_name=row["name"] if row else "", error=f"Too many attempts. Try again in {wait} seconds.", status="429 Too Many Requests")
+            if row is None:
+                self.throttle.failed(client)
+                return self.join_page("", error="This link has already been used, has expired, or is not right. Ask for a new one.", status="404 Not Found")
+            if req.f("password") != req.f("password2"):
+                return self.join_page(token, person_name=row["name"], error="The two passwords are not the same.", status="400 Bad Request")
+            with conn:
+                person, problem = people.accept_invite(conn, token, req.f("password"))
+            if person is None:
+                return self.join_page(token, person_name=row["name"], error=problem or "That did not work.", status="400 Bad Request")
+            self.throttle.succeeded(client)
+            return self.redirect("/opportunities", [("Set-Cookie", self._cookie(req, self.hosted.make_user_session(person["id"], person["session_key"]),
+                                                                   self.hosted.session_hours * 3600))])
+        finally:
+            conn.close()
+
+    def _join_url(self, req: Request, token: str) -> str:
+        host = req.headers.get("host", "")
+        if not host or not all(c.isalnum() or c in ".-:" for c in host):
+            host = "your-app-address"
+        return f"{'https' if self._secure(req) else 'http'}://{host}/join/{token}"
+
+    def users_page(self, conn: sqlite3.Connection, link: str = "", link_for: str = "") -> Response:
+        return self.render("users.html", page="users", rows=people.list_users(conn), link=link, link_for=link_for, days=people.INVITE_DAYS,
+                           min_password=people.MIN_PASSWORD, owner=people.OWNER, me=current_id())
+
+    def users_add(self, req: Request, conn: sqlite3.Connection) -> Response:
+        with conn:
+            uid, token, problem = people.add_user(conn, req.f("name"), req.f("login"), current_actor() or "ui")
+        if problem:
+            self.say("err", problem)
+            return self.users_page(conn)
+        self.say("ok", f"Added {people.clean_name(req.f('name'))}. They cannot sign in until they open their link.")
+        return self.users_page(conn, link=self._join_url(req, token), link_for=people.clean_name(req.f("name")))     # shown once, in this page only: never in a URL
+
+    def users_link(self, req: Request, conn: sqlite3.Connection, user_id: int) -> Response:
+        row = conn.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        with conn:
+            token = people.new_link(conn, user_id, current_actor() or "ui")
+        if token is None or row is None:
+            self.say("err", "No such person.")
+            return self.users_page(conn)
+        self.say("ok", f"{row['name']}'s old password and sessions have ended. Send them the new link.")
+        return self.users_page(conn, link=self._join_url(req, token), link_for=row["name"])
+
+    def users_remove(self, req: Request, conn: sqlite3.Connection, user_id: int) -> Response:
+        if user_id == current_id():
+            self.say("err", "You cannot remove yourself. Ask someone else to, or sign in with the shared password.")
+            return self.redirect("/users")
+        row = conn.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+        with conn:
+            ok = people.remove_user(conn, user_id, current_actor() or "ui")
+        self.say("ok" if ok else "err", f"{row['name']} was removed and signed out." if ok and row else "No such person.")
+        return self.redirect("/users")
 
     # ---- operate (hosted only) --------------------------------------------------------------------------------
     def operate(self, conn: sqlite3.Connection) -> Response:
@@ -397,6 +519,13 @@ class App:
                 return self.find_run(req, conn)
             if m == "GET" and p.startswith("/find/wait/") and p[11:].isdigit():
                 return self.find_wait(int(p[11:]), conn)
+            if (m, p) == ("GET", "/users"):
+                return self.users_page(conn)
+            if (m, p) == ("POST", "/users/add"):
+                return self.users_add(req, conn)
+            if m == "POST" and p.startswith("/users/") and p.count("/") == 3 and p.split("/")[2].isdigit() and p.split("/")[3] in ("link", "remove"):
+                uid = int(p.split("/")[2])
+                return self.users_link(req, conn, uid) if p.endswith("/link") else self.users_remove(req, conn, uid)
             if m == "GET" and p.startswith("/jobs/") and p[6:].isdigit():
                 return self.job_page(int(p[6:]), conn)
             if m == "GET" and p.startswith("/jobs/") and p.endswith("/log") and p[6:-4].isdigit():

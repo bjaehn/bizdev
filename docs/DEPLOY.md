@@ -8,7 +8,7 @@ UI is exactly what the weekly run uses.
 
 | Variable | Required | What it is |
 |---|---|---|
-| `BD_UI_PASSWORD` | yes | The sign-in password. 16+ characters or the app refuses to start. Changing it signs everyone out. |
+| `BD_UI_PASSWORD` | yes | The owner's sign-in password (leave the sign-in name empty). 16+ characters or the app refuses to start. Changing it signs everyone out, people added on the Users page included. |
 | `ANTHROPIC_API_KEY` | for enrich/scan/brief | Your Anthropic API key. |
 | `ANTHROPIC_WORKSPACE_ID` | only if the API says the key "is not scoped to a workspace" | The workspace id (from the Anthropic Console). The app sends it as the `anthropic-workspace-id` header. Not needed for a workspace-scoped key. |
 | `ANTHROPIC_MODEL` | for enrich/scan/brief | Model id to use. Not hard-coded anywhere. |
@@ -23,7 +23,7 @@ UI is exactly what the weekly run uses.
 1. Create a Railway project with a service from this repo (Dockerfile build; `railway.json` sets the healthcheck).
 2. Add a **volume mounted at `/data`** (the database, job logs and proposal files live there; without it everything is lost on redeploy).
 3. Add the variables above. Start with only `BD_UI_PASSWORD` if you just want to look around.
-4. Generate a public domain for the service and open it. Sign in with the password.
+4. Generate a public domain for the service and open it. Sign in with the password (sign-in name empty). To let others in, open Admin, *Users*, add them and pass on the one-time link it shows; the app sends no email.
 
 ## First use
 

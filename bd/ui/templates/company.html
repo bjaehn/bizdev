@@ -83,7 +83,7 @@
 <form method="post" action="/accounts/{{ d.a.id }}/note"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="back" value="{{ back }}">
 <label for="body">Add a note</label><textarea id="body" name="body" rows="2" maxlength="2000"></textarea>
 <button class="ghost" type="submit">Add note</button></form></div>
-{% if d.notes %}<h2>Your notes</h2><div class="card"><ul class="plain">{% for n in d.notes %}<li><span class="meta">{{ n['ts'][:10] }}{% if n['kind'] == 'stage' %} · moved to <b>{{ stage_labels[n['stage']] }}</b>{% endif %}</span>{% if n['body'] %}<br>{{ n['body'] }}{% endif %}</li>{% endfor %}</ul></div>{% endif %}
+{% if d.notes %}<h2>Your notes</h2><div class="card"><ul class="plain">{% for n in d.notes %}<li><span class="meta">{{ n['ts'][:10] }}{% if n['author'] %} · {{ n['author'] }}{% endif %}{% if n['kind'] == 'stage' %} · moved to <b>{{ stage_labels[n['stage']] }}</b>{% endif %}</span>{% if n['body'] %}<br>{{ n['body'] }}{% endif %}</li>{% endfor %}</ul></div>{% endif %}
 
 <p class="meta">Built {{ d.today }} from public sources by BD Signals. Every signal above links to the page it came from; a link is shown only if the page was retrieved and resolved when found.</p>
 </div>

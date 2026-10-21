@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
 from bd.accounts import list_accounts, log_audit
+from bd.actor import current as current_actor
 from bd.sec_ids import normalize_name
 
 STAGES = ("new", "reviewing", "pursuing", "passed", "won", "lost")
@@ -65,8 +66,8 @@ def set_stage(conn: sqlite3.Connection, account_id: int, stage: str, note: str =
     with conn:
         _ensure(conn, account_id)
         conn.execute("UPDATE lead_state SET stage = ?, updated = ? WHERE account_id = ?", (stage, _now(), account_id))
-        conn.execute("INSERT INTO lead_notes(account_id, ts, kind, stage, score_at, body) VALUES (?,?,?,?,?,?)",
-                     (account_id, _now(), "stage", stage, latest_score(conn, account_id), note))
+        conn.execute("INSERT INTO lead_notes(account_id, ts, kind, stage, score_at, body, author) VALUES (?,?,?,?,?,?,?)",
+                     (account_id, _now(), "stage", stage, latest_score(conn, account_id), note, current_actor()))
         if old != stage:
             log_audit(conn, actor, "stage", account_id, "stage", old, stage)
     return True
@@ -77,8 +78,8 @@ def add_note(conn: sqlite3.Connection, account_id: int, body: str) -> bool:
     if not body or not _exists(conn, account_id):
         return False
     with conn:
-        conn.execute("INSERT INTO lead_notes(account_id, ts, kind, stage, score_at, body) VALUES (?,?,?,?,?,?)",
-                     (account_id, _now(), "note", None, None, body))
+        conn.execute("INSERT INTO lead_notes(account_id, ts, kind, stage, score_at, body, author) VALUES (?,?,?,?,?,?,?)",
+                     (account_id, _now(), "note", None, None, body, current_actor()))
     return True
 
 

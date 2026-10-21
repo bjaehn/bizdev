@@ -147,7 +147,7 @@ def test_running_the_scan_adds_the_company_and_starts_exactly_one_capped_job(wor
     log = e.app.jobs.log_tail(job.id)
     assert "ARGS: scan --only Zeta Holdings --exact --scanners ats" in log and "--scanners sweep,hiring" in log
     assert "ARGS: score" in log and "sec-fill" not in log
-    assert e.conn.execute("SELECT actor FROM audit_log WHERE account_id = ? ORDER BY id LIMIT 1", (zeta.id,)).fetchone()["actor"] == "ui"
+    assert e.conn.execute("SELECT actor FROM audit_log WHERE account_id = ? ORDER BY id LIMIT 1", (zeta.id,)).fetchone()["actor"] == "Owner"      # the shared password signs in as the owner, so the log names a person, not "ui"
     assert e.post("/find/run", {"name": "zeta holdings, inc.", "confirm": "1"}).code == 303                      # typed differently: found, not added twice
     assert len([x for x in list_accounts(e.conn, status=None) if "zeta" in x.name.lower()]) == 1
 
