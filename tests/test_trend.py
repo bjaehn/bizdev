@@ -83,7 +83,8 @@ def test_the_weekly_chart_stacks_kinds_with_hover_titles_and_is_empty_when_nothi
     weeks = [AS_OF - timedelta(days=7 * (11 - i)) for i in range(12)]
     svg = weekly_svg(weeks, S(leadership=[0] * 11 + [3], press=[1] * 12), KIND_LABELS)
     assert svg.startswith("<svg") and "var(--k-lead)" in svg and "var(--k-press)" in svg and "<title>Week ending Oct 15: 3 leadership changes</title>" in svg
-    assert "var(--k-hire)" not in svg and "#" not in svg.replace("&#", "")             # kinds come from tokens, never their own hex colours
+    assert "var(--k-hire)" not in svg and not __import__("re").search(r"#[0-9a-fA-F]{3,8}\b", svg.replace("&#", ""))     # kinds come from tokens, never their own hex colours
+    assert "<linearGradient" in svg and "<feDropShadow" in svg and 'fill="var(--k-lead)"' in svg and "url(#w1000-leadership)" in svg   # depth: a gradient per kind drawn and a soft shadow, with the plain token as the fallback
     assert weekly_svg(weeks, S(), KIND_LABELS) == "" and weekly_svg([], {}, {}) == ""
 
 
@@ -93,3 +94,11 @@ def test_the_trend_line_needs_two_points_and_escapes_its_label():
     assert "<polyline" in svg and "<circle" in svg and "<b>" not in svg and "&lt;b&gt;" in svg
     flat = spark_svg([0, 0, 0])
     assert "polyline" in flat                                                         # no division by zero on a flat line
+
+
+def test_the_sparkline_has_a_fading_area_a_ringed_dot_and_an_id_that_follows_its_values():
+    a, b = spark_svg([10, 40, 100]), spark_svg([10, 40, 100])
+    other = spark_svg([10, 40, 90])
+    assert "<polygon" in a and "<linearGradient" in a and "<feDropShadow" in a and 'stroke="var(--panel)"' in a and a == b
+    ids = lambda svg: set(__import__("re").findall(r'id="(sp[0-9a-f]+)-[ag]"', svg))      # noqa: E731
+    assert len(ids(a)) == 1 and ids(a) != ids(other)                                          # two different lines on one page never share a gradient id
