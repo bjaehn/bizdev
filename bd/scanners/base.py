@@ -63,6 +63,14 @@ class ScanOutcome:
     learned_board: tuple[str, str] | None = None       # (provider, board id) learned from posting URLs
     board: BoardReading | None = None                  # what a read of the whole job board showed (the `ats` scanner), stored by the runner
     read_filings: list[str] = field(default_factory=list)   # SEC accession numbers read (remembered so they are not re-read)
+    already_read: int = 0                              # matching SEC filings skipped because an earlier run read them (so "nothing new" is not "nothing there")
+
+    def filings_note(self) -> str:
+        """For a scanner that reads SEC filings: what the SEC showed, so a quiet result can be told from a skipped one in the run log."""
+        found = self.candidates + self.already_read
+        if not found:
+            return "no matching filings in the window"
+        return f"{found} matching filing{'s' if found != 1 else ''}: {self.candidates} read now, {self.already_read} read on an earlier run"
 
     def rejection_summary(self) -> str:
         counts: dict[str, int] = {}

@@ -140,6 +140,15 @@ CREATE TABLE IF NOT EXISTS candidates (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_candidates_name ON candidates(lower(name));
 
+-- When each market-discovery segment was last searched successfully. `bd discover --limit N` takes the N least recently searched, so a limit below the
+-- number of segments rotates through all of them instead of always taking the first N.
+CREATE TABLE IF NOT EXISTS discovery_segments (
+    segment       TEXT PRIMARY KEY,
+    last_searched TEXT NOT NULL,
+    searches      INTEGER NOT NULL DEFAULT 0,
+    last_found    INTEGER NOT NULL DEFAULT 0
+);
+
 -- Settings edited in the app (overrides of config.yaml defaults). Only whitelisted keys; see bd/settings_store.py.
 CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,

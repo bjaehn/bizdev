@@ -25,7 +25,7 @@ _RANK = {"Low": 0, "Medium": 1, "High": 2}
 def norm_name(name: str) -> str:
     """Comparison key for firm and company names: case, punctuation and legal suffixes ignored."""
     n = re.sub(r"[^a-z0-9& ]+", " ", (name or "").lower().replace("&", " & "))
-    return " ".join(_SUFFIX.sub(" ", n).split())
+    return " ".join(_SUFFIX.sub(" ", n).split()) or " ".join(n.split())       # a name made only of suffix words ("The Limited") keeps them: it is the name
 
 
 def _now() -> str:

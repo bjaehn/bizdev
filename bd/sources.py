@@ -16,14 +16,13 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx2 as httpx
 
 from bd.config import Config
 from bd.htmltext import node_text, page_text, parse_html
-from bd.urls import host_in
+from bd.urls import host_in, safe_urljoin, safe_urlparse
 from bd.verify import UrlVerifier
 
 OK_TYPES = ("text/html", "application/xhtml+xml", "application/json", "application/ld+json", "text/plain", "text/xml", "application/xml")
@@ -88,7 +87,9 @@ class Fetcher:
     def _allowed(self, url: str) -> None:
         if not self.f.respect_robots:
             return
-        p = urlparse(url)
+        p = safe_urlparse(url)
+        if not p.scheme or not p.netloc:
+            raise FetchError("bad_url")
         host = p.netloc.lower()
         if host not in self._robots:
             try:
@@ -109,7 +110,7 @@ class Fetcher:
     def _raw(self, url: str, robots: bool = False) -> Fetched:
         current, hops = url.strip(), 0
         while True:
-            p = urlparse(current)
+            p = safe_urlparse(current)
             if p.scheme not in ("http", "https") or not p.hostname:
                 raise FetchError("bad_url")
             if host_in(p.hostname, self.cfg.sources.blocked_domains):
@@ -126,7 +127,7 @@ class Fetcher:
                         hops += 1
                         if hops > self.cfg.verify.max_redirects:
                             raise FetchError("too_many_redirects")
-                        current = urljoin(current, headers["location"])
+                        current = safe_urljoin(current, headers["location"])
                         continue
                     ctype = headers.get("content-type", "").split(";")[0].strip().lower()
                     if not 200 <= status < 300:

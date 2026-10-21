@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from bd.models import FIRM_SIGNAL_TYPES, MAX_SUMMARY_WORDS, SIGNAL_TYPES, SOURCE_TYPES
 
@@ -132,12 +132,23 @@ class SizeFloor(_Strict):
     employees: int | None = None
 
 
+class Competitors(_Strict):
+    """Firms that compete with the client (management, technology and strategy consultancies, accounting and advisory firms). They are not prospects."""
+    names: list[str] = Field(default_factory=list)       # compared whole, ignoring case, punctuation and legal suffixes ("RSM US LLP" matches "RSM US")
+    domains: list[str] = Field(default_factory=list)     # the firm's own site; subdomains match too
+
+
 class FitGate(_Strict):
     counties: list[str]
     state: str
     size_floor: dict[str, SizeFloor]
     excluded_industries: list[str]
     exclusion_reasons: list[str]
+    competitors: Competitors = Field(default_factory=Competitors)
+
+
+class Enrich(_Strict):
+    enrich_retry_every_weeks: int = 4      # a company looked at for its missing facts (without an error) waits this long before the next look; 0 = look every run
 
 
 class Tier(_Strict):
@@ -412,6 +423,7 @@ class Config(_Strict):
     briefer: Briefer
     card: Card
     discovery: Discovery
+    enrich: Enrich = Field(default_factory=Enrich)
     pe_firms: PeFirms
     pe_portfolio: PePortfolio
     opportunity_model: OpportunityModel

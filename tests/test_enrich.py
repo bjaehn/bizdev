@@ -301,3 +301,55 @@ def test_companies_never_researched_come_first_and_stuck_ones_do_not_hog_the_bat
     conn.commit()
     assert [a.name for a in select_accounts(conn, False, None, None)] == ["Gamma", "Delta", "Alpha", "Beta"]      # untried, then oldest attempt
     assert [a.name for a in select_accounts(conn, False, None, 2)] == ["Gamma", "Delta"]
+
+
+# ---- a company looked at waits before the next look ---------------------------------------------------------------------------------------------------
+from tests.conftest import add_account  # noqa: E402
+
+
+def _enrich_runs(conn, rows):
+    for acc, day, err in rows:
+        conn.execute("INSERT INTO runs(run_date,step,account_id,accounts_scanned,signals_found,tokens,est_cost,errors) VALUES (?,?,?,?,?,?,?,?)",
+                     (day, "enrich", acc, 1, 0, 100, 0.03, err))
+    conn.commit()
+
+
+def test_a_company_looked_at_without_an_error_waits_before_another_look(cfg, tmp_path):
+    from datetime import date, timedelta
+    conn = make_db(tmp_path)
+    ids = [add_account(conn, n, status="hold_review", chicagoland="unknown", revenue=None) for n in ("Alpha", "Beta", "Gamma", "Delta")]
+    today = date(2026, 10, 21)
+    _enrich_runs(conn, [(ids[0], "2026-10-14", None),          # a week ago, nothing wrong: waits
+                        (ids[1], "2026-10-14", "RuntimeError: search failed"),    # an error is not a look: tried again
+                        (ids[2], "2026-08-01", None)])         # long ago: due again
+    waiting: list = []
+    got = select_accounts(conn, False, None, None, cfg=cfg, today=today, waiting=waiting)
+    assert [a.name for a in got] == ["Delta", "Gamma", "Beta"]                                             # untried, then the oldest look
+    assert [a.name for a in waiting] == ["Alpha"]
+    assert [a.name for a in select_accounts(conn, False, "alpha", None, cfg=cfg, today=today)] == ["Alpha"]      # asking for a company by name looks now
+    assert "Alpha" in [a.name for a in select_accounts(conn, True, None, None, cfg=cfg, today=today)]            # so does --all
+    assert "Alpha" in [a.name for a in select_accounts(conn, False, None, None, cfg=cfg)]                        # and a caller that gives no date
+    assert "Alpha" in [a.name for a in select_accounts(conn, False, None, None, cfg=cfg, today=today + timedelta(days=22))]      # the wait ends after 4 weeks
+    off = cfg.model_copy(deep=True)
+    off.enrich.enrich_retry_every_weeks = 0
+    assert "Alpha" in [a.name for a in select_accounts(conn, False, None, None, cfg=off, today=today)]
+
+
+def test_the_enrich_command_says_how_many_are_waiting_and_an_all_waiting_run_is_not_an_error(monkeypatch, tmp_path):
+    from typer.testing import CliRunner
+    from bd.cli import app
+    from bd.db import connect, init_db
+    db = tmp_path / "w.sqlite"
+    conn = connect(db)
+    init_db(conn)
+    a = add_account(conn, "Alpha", status="hold_review", chicagoland="unknown", revenue=None)
+    _enrich_runs(conn, [(a, "2026-10-20", None)])
+    conn.commit()
+    monkeypatch.setenv("BD_DB_PATH", str(db))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
+    r = CliRunner().invoke(app, ["enrich", "--allow-empty", "--as-of", "2026-10-21"])
+    assert r.exit_code == 0 and "1 company looked at in the last 4 weeks wait before another look" in r.output
+    assert "No companies are due for a facts look right now." in r.output
+    r2 = CliRunner().invoke(app, ["enrich", "--as-of", "2026-10-21"])
+    assert r2.exit_code != 0 and "1 are waiting after a recent look" in r2.output

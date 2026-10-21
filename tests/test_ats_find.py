@@ -138,3 +138,60 @@ def test_soft_mode_never_fails_the_caller(monkeypatch):
     r = CliRunner().invoke(app, ["ats-find", "--soft"])
     assert r.exit_code == 0 and "were not looked for" in r.output
     assert CliRunner().invoke(app, ["ats-find"]).exit_code == 1
+
+
+# ---- a page that holds something that is not a URL ----------------------------------------------------------------------------------------------
+PLACEHOLDER = "https://[tenant].careers.example.com/jobs"                  # a template placeholder: urlparse raises "Invalid IPv6 URL" on it
+
+
+def test_a_page_with_a_template_placeholder_still_yields_its_real_board():
+    from bd.htmltext import links, parse_html
+    from bd.urls import hostname, normalize_url, safe_urljoin, safe_urlparse
+    assert board_from_url(PLACEHOLDER) is None and hostname(PLACEHOLDER) == "" and safe_urlparse(PLACEHOLDER).hostname is None
+    assert normalize_url(PLACEHOLDER) == PLACEHOLDER and safe_urljoin("https://acme.example/", PLACEHOLDER) == ""
+    body = f"<script>var t='{PLACEHOLDER}';</script><a href='{PLACEHOLDER}'>Careers</a><a href='https://jobs.lever.co/acme'>Jobs</a><a href='//[object Object]'>x</a>"
+    assert boards_in(body) == {("lever", "acme")}
+    assert [h for h, _t, _a in links(parse_html(body).root, "https://acme.example/")] == ["https://jobs.lever.co/acme"]
+
+
+def test_a_malformed_url_is_a_bad_url_not_a_crash(cfg):
+    from bd.sources import FetchError
+    for robots in (False, True):
+        f, *_ = make_fetcher(cfg, {}, robots=robots)
+        for url in (PLACEHOLDER, "https://[bad", "//[object Object]/x"):
+            with pytest.raises(FetchError) as e:
+                f.get(url)
+            assert e.value.reason == "bad_url"
+
+
+def test_one_company_that_breaks_the_search_does_not_stop_the_others(tmp_path, cfg, monkeypatch):
+    """Live: 'Job board search stopped: ValueError: Invalid IPv6 URL' after the second company, so no job board was found for anyone else."""
+    import bd.ats_find as af
+    conn = make_db(tmp_path)
+    bad = add_account(conn, "Badco", domain="badco.example")
+    good = add_account(conn, "Goodco", domain="goodco.example")
+    conn.commit()
+    real = af.find_board
+
+    def find(fetcher, domain):
+        if domain == "badco.example":
+            raise ValueError("Invalid IPv6 URL")
+        return real(fetcher, domain)
+    monkeypatch.setattr(af, "find_board", find)
+    f, *_ = make_fetcher(cfg, {"https://goodco.example/": site('<a href="https://jobs.lever.co/goodco">Careers</a>')})
+    logs = []
+    looked, saved = run_find(conn, cfg, f, FakeAts(), TODAY, log=logs.append)
+    assert (looked, saved) == (2, 1)
+    assert conn.execute("SELECT ats_board FROM accounts WHERE id = ?", (good,)).fetchone()[0] == "goodco"
+    assert any("Badco: unexpected ValueError: Invalid IPv6 URL" in line for line in logs)
+    assert conn.execute("SELECT errors FROM runs WHERE step = 'ats_find' AND account_id = ?", (bad,)).fetchone()[0].startswith("unexpected ValueError")
+
+
+def test_a_company_that_keeps_failing_goes_to_the_back_of_the_line(tmp_path, cfg):
+    conn = make_db(tmp_path)
+    first = add_account(conn, "Aaa", domain="aaa.example")
+    second = add_account(conn, "Bbb", domain="bbb.example")
+    conn.commit()
+    f, *_ = make_fetcher(cfg, {"https://bbb.example/": site("<p>No jobs</p>")})
+    run_find(conn, cfg, f, FakeAts(), TODAY, limit=1)                       # Aaa cannot be read; with a limit of one it is the only one tried
+    assert [a.id for a in due_accounts(conn, cfg, TODAY + timedelta(days=1))] == [second, first]

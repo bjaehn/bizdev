@@ -16,11 +16,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs
 
 import httpx2 as httpx
 
 from bd.config import Config
+from bd.urls import safe_urlparse
 
 PROVIDERS = ("greenhouse", "lever", "ashby")
 _TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
@@ -45,7 +46,7 @@ class RawPosting:
 
 def board_from_url(url: str) -> tuple[str, str] | None:
     """(provider, board id) if the URL is a posting or board page at a supported provider, else None."""
-    u = urlparse((url or "").strip())
+    u = safe_urlparse(url)
     host = (u.hostname or "").lower()
     parts = [p for p in u.path.split("/") if p]
     token = None
@@ -122,7 +123,7 @@ def _parse(provider: str, data: object) -> list[RawPosting]:
                 if isinstance(j, dict) and j.get("isListed", True)]
     for title, url, posted in rows:
         title, url = " ".join(str(title or "").split()), str(url or "").strip()
-        if title and posted and urlparse(url).scheme in ("http", "https") and urlparse(url).netloc:
+        if title and posted and safe_urlparse(url).scheme in ("http", "https") and safe_urlparse(url).netloc:
             out.append(RawPosting(title, url, posted))
     return out
 

@@ -83,6 +83,7 @@ class EdgarScanner(Scanner):
         errors: list[str] = []
         for f in filings:
             if f.accession in known_accessions:           # read on an earlier run (found something or not)
+                out.already_read += 1
                 continue
             out.candidates += 1
             try:

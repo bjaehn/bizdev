@@ -24,20 +24,20 @@ def put_update(conn, **vals):
 def test_cycles_show_the_default_until_one_is_saved_and_a_saved_value_reaches_every_run(conn, cfg):
     v = cycle_values(cfg, conn)
     assert v["deep_every_weeks"] == (4, 4, False) and v["ats_find_every_weeks"] == (8, 8, False)
-    assert save_cycles(conn, {"deep_every_weeks": "2", "ats_find_every_weeks": "0", "ats_find_per_run": "40"}) == []
-    assert load_cycle_overrides(conn) == {"deep_every_weeks": 2, "ats_find_every_weeks": 0, "ats_find_per_run": 40}
+    assert save_cycles(conn, {"deep_every_weeks": "2", "ats_find_every_weeks": "0", "ats_find_per_run": "40", "enrich_retry_every_weeks": "4"}) == []
+    assert load_cycle_overrides(conn) == {"deep_every_weeks": 2, "ats_find_every_weeks": 0, "ats_find_per_run": 40, "enrich_retry_every_weeks": 4}
     eff = apply_overrides(cfg, conn)
     assert (eff.scan.deep_every_weeks, eff.hiring.ats_find_every_weeks, eff.hiring.ats_find_per_run) == (2, 0, 40)
     assert cfg.scan.deep_every_weeks == 4 and cfg.hiring.ats_find_per_run == 25                          # the base config is not mutated
     assert cycle_values(cfg, conn)["deep_every_weeks"] == (2, 4, True)
     reset_cycles(conn)
     assert apply_overrides(cfg, conn).scan.deep_every_weeks == 4 and cycle_values(cfg, conn)["deep_every_weeks"] == (4, 4, False)
-    assert [r["new"] for r in conn.execute("SELECT new FROM audit_log WHERE field = 'settings.cycles' ORDER BY id")] == [json.dumps(load_cycle_overrides(conn) or {"deep_every_weeks": 2, "ats_find_every_weeks": 0, "ats_find_per_run": 40}), None]
+    assert [r["new"] for r in conn.execute("SELECT new FROM audit_log WHERE field = 'settings.cycles' ORDER BY id")] == [json.dumps(load_cycle_overrides(conn) or {"deep_every_weeks": 2, "ats_find_every_weeks": 0, "ats_find_per_run": 40, "enrich_retry_every_weeks": 4}), None]
 
 
 def test_a_cycle_outside_its_range_is_refused_and_a_bad_saved_value_is_ignored(conn, cfg):
-    assert save_cycles(conn, {"deep_every_weeks": "27", "ats_find_every_weeks": "8", "ats_find_per_run": "0"})                 # two errors
-    assert save_cycles(conn, {"deep_every_weeks": "x", "ats_find_every_weeks": "8", "ats_find_per_run": "5"})
+    assert save_cycles(conn, {"deep_every_weeks": "27", "ats_find_every_weeks": "8", "ats_find_per_run": "0", "enrich_retry_every_weeks": "4"})                 # two errors
+    assert save_cycles(conn, {"deep_every_weeks": "x", "ats_find_every_weeks": "8", "ats_find_per_run": "5", "enrich_retry_every_weeks": "4"})
     assert load_cycle_overrides(conn) == {}
     conn.execute("INSERT INTO settings(key, value_json, updated) VALUES ('cycles', ?, 'x')", (json.dumps({"deep_every_weeks": 999, "bogus": 1, "ats_find_per_run": True}),))
     assert load_cycle_overrides(conn) == {} and apply_overrides(cfg, conn).scan.deep_every_weeks == 4
@@ -99,10 +99,10 @@ def test_settings_page_shows_the_cycles_the_release_change_and_how_long_a_pass_t
     assert "Changed by a release" in t and "Companies to research per update: 10 → 25" in t
     assert "one full pass over the 100 companies on the list takes at least 10 updates" in t                # 100 companies at 10 per update
     assert "gives every company a look every 4 weeks only if each is scanned that often, which needs about 25 companies per update" in t     # 100 companies in 4 weeks
-    assert e.post("/settings/cycles", {"deep_every_weeks": "2", "ats_find_every_weeks": "4", "ats_find_per_run": "30"}).code == 303
+    assert e.post("/settings/cycles", {"deep_every_weeks": "2", "ats_find_every_weeks": "4", "ats_find_per_run": "30", "enrich_retry_every_weeks": "4"}).code == 303
     t = page()
     assert "saved here" in t and "Reset to config.yaml defaults" in t
-    assert e.post("/settings/cycles", {"deep_every_weeks": "99", "ats_find_every_weeks": "4", "ats_find_per_run": "30"}).code == 303 and "Not saved" in e.get("/settings").body
+    assert e.post("/settings/cycles", {"deep_every_weeks": "99", "ats_find_every_weeks": "4", "ats_find_per_run": "30", "enrich_retry_every_weeks": "4"}).code == 303 and "Not saved" in e.get("/settings").body
     assert e.post("/settings/cycles/reset").code == 303 and load_cycle_overrides(e.conn) == {}
 
 
@@ -114,7 +114,7 @@ def test_admin_home_says_a_release_changed_a_setting_and_the_coverage_follows_th
     apply_release_changes(e.conn)
     body = e.get("/").body
     assert "Settings changed by a release" in body and "Companies to research per update" in body and 'href="/settings"' in body
-    assert save_cycles(e.conn, {"deep_every_weeks": "0", "ats_find_every_weeks": "8", "ats_find_per_run": "25"}) == []
+    assert save_cycles(e.conn, {"deep_every_weeks": "0", "ats_find_every_weeks": "8", "ats_find_per_run": "25", "enrich_retry_every_weeks": "4"}) == []
     assert "scan.deep_every_weeks</code> is 0" in e.get("/").body                                              # the card follows the value saved in Admin
     e.conn.execute("DELETE FROM audit_log")
     e.conn.commit()
@@ -127,5 +127,5 @@ def test_the_update_description_names_the_new_free_steps_and_the_deep_cycle(app_
     t = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", e.get("/").body))
     assert "private equity firm's own portfolio page (free)" in t.replace("&#39;", "'") and "looks on each company's own careers page" in t.replace("&#39;", "'")
     assert "no deep technology and procurement look in 4 weeks" in t
-    save_cycles(e.conn, {"deep_every_weeks": "0", "ats_find_every_weeks": "8", "ats_find_per_run": "25"})
+    save_cycles(e.conn, {"deep_every_weeks": "0", "ats_find_every_weeks": "8", "ats_find_per_run": "25", "enrich_retry_every_weeks": "4"})
     assert "no deep technology and procurement look" not in re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", e.get("/").body))

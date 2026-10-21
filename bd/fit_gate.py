@@ -5,7 +5,7 @@ Verdicts: pass | fail | unknown. A company is scanned and scored unless it is kn
 Location and size are facts entered by a person or read from a source (accounts.chicagoland / revenue / employees / ownership);
 this module never infers them.
 
-  excluded        -> fail   (name/domain in exclusions, or an excluded industry such as cannabis)
+  excluded        -> fail   (name/domain in exclusions, a competitor of the firm, or an excluded industry such as cannabis)
   location no     -> fail
   size below floor-> fail   (all applicable measures known and all below)
   anything unverifiable (and nothing failed) -> unknown (still scanned)
@@ -21,6 +21,7 @@ from pathlib import Path
 
 from bd.accounts import Account, is_valid_domain, normalize_domain
 from bd.config import Config, SizeFloor
+from bd.pe_store import norm_name
 from bd.urls import host_in
 
 # "hold_review" stays a legal status in the schema for older databases, but the gate no longer produces it.
@@ -62,6 +63,14 @@ def _size_verdict(revenue: float | None, employees: int | None, floor: SizeFloor
     return "unknown"
 
 
+def is_competitor(name: str | None, domain: str | None, cfg: Config) -> bool:
+    """True when the firm is on the configured competitor list: its whole name (ignoring case, punctuation and legal suffixes) or its own domain."""
+    c = cfg.fit_gate.competitors
+    if domain and c.domains and host_in(domain, c.domains):
+        return True
+    return bool(name and norm_name(name) in {norm_name(n) for n in c.names})
+
+
 def check_fit(account: Account, exclusions: list[Exclusion], cfg: Config) -> FitResult:
     g = cfg.fit_gate
     fails: list[str] = []
@@ -71,6 +80,8 @@ def check_fit(account: Account, exclusions: list[Exclusion], cfg: Config) -> Fit
         if ex.name.strip().lower() == account.name.strip().lower() or (
                 ex.domain and account.domain and host_in(account.domain, [ex.domain])):
             fails.append(f"excluded: {ex.reason}")
+    if is_competitor(account.name, account.domain, cfg):
+        fails.append("excluded: conflict (a competitor of the firm; fit_gate.competitors)")
     industry = (account.industry or "").lower()
     for bad in g.excluded_industries:
         if bad.lower() in industry:
