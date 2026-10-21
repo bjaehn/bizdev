@@ -59,6 +59,9 @@ class DiscoverResponse(BaseModel):
     note: str = ""                       # why the list is empty, when it is (shown in the run log; never stored or scored)
 
 
+BLOCKED_NOTE = "source blocks our reader ({reason}): the search returned the page, code could not read it"
+
+
 @dataclass
 class Found:
     company: Company
@@ -66,6 +69,7 @@ class Found:
     firm_id: int | None = None       # set when the company came from a PE firm's portfolio page
     link_source: str | None = None   # verified portfolio listing (on the firm's own site) to record as a link
     exited: bool = False
+    source_note: str | None = None   # set when the source answered 401/403/429 to our reader: kept, but never shown as page-checked
 
 
 @dataclass
@@ -76,6 +80,7 @@ class DiscoverSummary:
     skipped_competitor: int = 0       # on the competitor list (fit_gate.competitors): not researched, not added, not queued
     rejected_queued: list[str] = field(default_factory=list)   # queued candidates the competitor list rejected at the start of the run
     skipped_source: int = 0
+    kept_blocked: list[str] = field(default_factory=list)      # kept although their source blocks our reader (the search returned it)
     researched: int = 0
     added: list[str] = field(default_factory=list)
     queued: list[str] = field(default_factory=list)
@@ -153,14 +158,20 @@ class Discoverer:
         self.notes[segment] = " ".join((resp.note or "").split())[:300]
         return resp.companies[: self.cfg.discovery.per_segment], res.retrieved_urls, res.usage, None
 
-    def source_ok(self, c: Company, retrieved: set[str]) -> str | None:
-        """None if the discovery source is acceptable, else why not."""
+    def source_ok(self, c: Company, retrieved: set[str]) -> tuple[str | None, str | None]:
+        """(why not, note): why not is None when the discovery source is acceptable. A source the search tool itself returned that answers 401, 403 or 429 to our
+        reader is accepted with a note saying so (the status line is all the verifier ever reads, so the search result is what proves the page exists); a source
+        that was not in the search results, is on a blocked domain, or is missing, down or unresolvable is not."""
         if host_in(hostname(c.source_url), self.cfg.sources.blocked_domains):
-            return "source on a blocked domain"
+            return "source on a blocked domain", None
         if normalize_url(c.source_url) not in retrieved:
-            return "source URL was not in the search results"
+            return "source URL was not in the search results", None
         v = self.verifier.verify(c.source_url)
-        return None if v.ok else f"source unreachable ({v.reason})"
+        if v.ok:
+            return None, None
+        if v.blocks_reader:
+            return None, BLOCKED_NOTE.format(reason=v.reason)
+        return f"source unreachable ({v.reason})", None
 
 
 def _known(conn: sqlite3.Connection) -> tuple[set[str], set[str]]:
@@ -241,15 +252,18 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
                 out.skipped_competitor += 1
                 log(f"    skipped {c.name}: on the competitor list")
                 continue
-            why = discoverer.source_ok(c, retrieved)
+            why, source_note = discoverer.source_ok(c, retrieved)
             if why:
                 out.skipped_source += 1
                 log(f"    dropped {c.name}: {why}")
                 continue
+            if source_note:
+                out.kept_blocked.append(c.name)
+                log(f"    kept {c.name}: {source_note}")
             names.add(_norm_name(c.name))
             if dom:
                 domains.add(dom)
-            new.append(Found(c, seg))
+            new.append(Found(c, seg, source_note=source_note))
     if out.budget_hit or (cap is not None and out.est_cost >= cap):
         out.budget_hit = True
         return out
@@ -320,6 +334,7 @@ def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifie
                                                     else "the per-run auto-add cap was reached")
         if r.error:
             out.errors += 1
+        stored_reason = "; ".join(x for x in (f.source_note, reason) if x)           # the source note travels with the company, whatever happens to it
         (out.added if status == "added" else out.rejected if status == "rejected" else out.queued).append(f.company.name)
         ids[f.company.name] = account_id
         _log(conn, as_of, "discover_enrich", account_id, r.usage.total_tokens, cost, r.error)
@@ -327,7 +342,7 @@ def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifie
             conn.execute("INSERT OR IGNORE INTO candidates(name,domain,segment,source_url,found_date,status,reason,facts_json,account_id) "
                          "VALUES (?,?,?,?,?,?,?,?,?)",
                          (f.company.name, data.get("domain"), f.segment, f.company.source_url, as_of.isoformat(), status,
-                          reason or None, json.dumps({**form, **{k: v for k, v in r.row.items() if k in ("evidence_urls", "notes")}}),
+                          stored_reason or None, json.dumps({**form, **{k: v for k, v in r.row.items() if k in ("evidence_urls", "notes")}}),
                           account_id))
             if f.firm_id is not None and f.link_source:
                 link_company(conn, f.firm_id, f.company.name, data.get("domain"), f.link_source, as_of, account_id,

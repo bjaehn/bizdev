@@ -331,7 +331,9 @@ def discover(
                            model=model, segments=segs, workers=workers, log=typer.echo)
     typer.echo(f"\nFound {summary.found} ({summary.skipped_known} already known"
                + (f", {summary.skipped_competitor} on the competitor list" if summary.skipped_competitor else "")
-               + f", {summary.skipped_source} with an unverifiable source); researched {summary.researched}: {len(summary.added)} auto-added, "
+               + f", {summary.skipped_source} with an unverifiable source"
+               + (f", {len(summary.kept_blocked)} kept although their source blocks our reader" if summary.kept_blocked else "")
+               + f"); researched {summary.researched}: {len(summary.added)} auto-added, "
                f"{len(summary.queued)} queued for review, {len(summary.rejected)} rejected by the fit gate.")
     note = f" ({summary.unpriced_calls} calls unpriced)" if summary.unpriced_calls else ""
     typer.echo(f"Total: {summary.tokens:,} tokens, ${summary.est_cost:.4f} estimated{note}, {summary.errors} call errors.")

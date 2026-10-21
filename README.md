@@ -21,7 +21,7 @@ accounts.csv ──bd seed──► database ──► fit gate ──► scan (
 ```
 
 * **Claude extracts, code decides.** Claude proposes signals; code accepts one only if its type, date window
-  and source URL pass (the URL must have been returned by the search tool *and* load when fetched).
+  and source URL pass (the URL must have been returned by the search tool *and* load when fetched). (Market discovery has one exception: a company's discovery source that answers 401, 403 or 429 to our reader is kept when the search tool returned it, marked "source blocks our reader" and never shown as page-checked.)
   Scoring is deterministic and unit tested.
 * **Fewer, better leads.** Only Hot (75+) and Warm (60-74) accounts with a High-confidence signal in the
   last 90 days are posted, at most 10, with a 4-week cooldown unless a new signal family appears or the
@@ -278,7 +278,7 @@ through a fake HTTP client (`tests/pe_fakes.py`); **no test or screen in the nor
 | Rule | Enforced in |
 |---|---|
 | Claude extracts, code scores; scoring unit tested | `bd/scoring.py`, `tests/test_scoring.py` |
-| Every `source_url` was retrieved and resolves | `bd/scanners/base.py`, `bd/verify.py` |
+| Every `source_url` was retrieved and resolves (a market-discovery source that answers 401/403/429 is kept only if the search returned it, and is marked) | `bd/scanners/base.py`, `bd/verify.py`, `bd/discover.py` |
 | `event_date` from the source; dedupe on account + type + date + domain | `bd/hashing.py`, `bd/scanners/base.py` |
 | Fewer, higher-confidence leads; Low is stored, never scored | `bd/scoring.py`, `bd/shortlist.py` |
 | Settings in `config.yaml`; secrets and model name from env only | `bd/config.py` |
