@@ -133,6 +133,7 @@ llm:
   web_search_max_uses: 4          # web searches per model call (a scan tier can override: scan.tiers.*.max_searches)
   web_search_tool_type: web_search_20260209   # check Anthropic docs if the model changes
   web_search_fallback_tool_type: web_search_20250305   # a call whose searches ALL failed with invalid_tool_input (nothing came back) is tried once with this basic search tool; null = never
+  web_search_allowed_callers: [direct]   # web_search_20260209 defaults to code-execution calls (dynamic filtering). Every failed search shown in the 2026-10-20 Update log had a {"params": {...}} input instead of {"query": ...}; "direct" should avoid it (read the "via=" in the next failure lines to confirm). null = the API default
   max_continuations: 5            # pause_turn resumes per call
   json_retries: 1                 # one retry on invalid JSON
   concurrency: 4                  # max simultaneous scanner calls

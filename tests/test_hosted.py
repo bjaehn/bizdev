@@ -246,6 +246,26 @@ def test_job_runs_logs_and_redacts_secrets(hosted, monkeypatch):
     assert "sk-test-very-secret-1234" not in log and "[ANTHROPIC_API_KEY hidden]" in log
 
 
+def test_job_page_shows_a_whole_update_and_says_when_it_cuts_a_longer_log(hosted, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-very-secret-1234")
+    jid = hosted.runner.submit("score", {}, confirmed=True)
+    hosted.runner.wait()
+    path, s = hosted.runner.log_dir / f"{jid}.log", session(hosted)
+    path.write_text("$ bd pe-collect --soft\nfirst line of the run\n" + "".join(f"  filler line {i}: sk-test-very-secret-1234\n" for i in range(1500)) + "last line of the run\n")
+    assert path.stat().st_size > 50_000                                                  # far past the old 20 KB tail
+    page = call(hosted.app, "GET", f"/jobs/{jid}", cookie=s)
+    assert "first line of the run" in page.body and "last line of the run" in page.body and "sk-test-very-secret-1234" not in page.body
+    assert "only its last" not in page.body and f"/jobs/{jid}/log" in page.body
+    raw = call(hosted.app, "GET", f"/jobs/{jid}/log", cookie=s)
+    assert raw.code == 200 and raw.h["Content-Type"].startswith("text/plain") and "first line of the run" in raw.body and "sk-test-very-secret-1234" not in raw.body
+    monkeypatch.setattr("bd.ui.app.LOG_PAGE_BYTES", 5_000)
+    cut = call(hosted.app, "GET", f"/jobs/{jid}", cookie=s)
+    assert "only its last" in cut.body and "last line of the run" in cut.body and "first line of the run" not in cut.body
+    assert "first line of the run" in call(hosted.app, "GET", f"/jobs/{jid}/log", cookie=s).body          # the plain-text link still has all of it
+    assert call(hosted.app, "GET", "/jobs/999/log", cookie=s).code == 404
+    assert call(hosted.app, "GET", f"/jobs/{jid}/log").code in (302, 303, 401)         # not without the login
+
+
 def test_failing_step_stops_the_sequence(hosted, monkeypatch):
     monkeypatch.setenv("FAIL_ON", "score")
     jid = hosted.runner.submit("weekly_dry", {}, confirmed=True)

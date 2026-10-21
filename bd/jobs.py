@@ -29,6 +29,7 @@ FREE_SCANNERS = frozenset({"ats", "financials", "sec_events"})     # no model ca
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
 TIMEOUT_SECONDS = 2 * 3600
 LOG_TAIL_BYTES = 20_000
+LOG_PAGE_BYTES = 400_000     # the job page shows a whole Update (about 60 KB); only a log bigger than this is cut, and the page says so
 
 JOBS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -335,16 +336,25 @@ class JobRunner:
         return Job(r["id"], r["kind"], json.loads(r["args_json"]), r["status"], r["created"], r["started"],
                    r["finished"], r["exit_code"], r["note"])
 
-    def log_tail(self, job_id: int) -> str:
+    def log_view(self, job_id: int, limit: int = LOG_PAGE_BYTES) -> tuple[str, int]:
+        """The end of a job's log, at most `limit` bytes, with secrets hidden, and the log's whole size in bytes. A cut log starts at a line, not mid-line."""
         p = self.log_dir / f"{int(job_id)}.log"
         if not p.exists():
-            return ""
+            return "", 0
         with p.open("rb") as f:
             f.seek(0, os.SEEK_END)
             size = f.tell()
-            f.seek(max(0, size - LOG_TAIL_BYTES))
+            f.seek(max(0, size - limit))
             text = f.read().decode("utf-8", "replace")
-        return redact(text)
+        if size > limit:
+            text = text.split("\n", 1)[-1]
+        return redact(text), size
+
+    def log_tail(self, job_id: int) -> str:
+        return self.log_view(job_id, LOG_TAIL_BYTES)[0]
+
+    def log_full(self, job_id: int) -> str:
+        return self.log_view(job_id, 1 << 40)[0]
 
     # ---- start -----------------------------------------------------------------------------------------------
     def submit(self, kind: str, form: dict[str, str], *, confirmed: bool = False, scheduled: bool = False) -> int:

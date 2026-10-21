@@ -272,6 +272,16 @@ def test_facts_the_model_did_not_return_are_noted_not_silent(cfg):
     assert r.missing == [] and any("Winnebago" in d for d in r.dropped)       # found but refused is a drop, not 'not found'
 
 
+def test_a_failed_search_is_reported_as_not_looked_up_never_as_not_found(cfg):
+    a = Account(id=1, name="HCSC", domain="hcsc.com", hq_city="Chicago", industry="Insurance", revenue=1e10, employees=20000, ownership="private")
+    llm = FakeLLM([json.dumps({"facts": {"il_county": None}})], search_errors=["invalid_tool_input"] * 3)
+    r = Enricher(cfg, llm, FakeVerifier(), FakeEdgar()).enrich(a, AS_OF)
+    assert r.error.startswith("search tool errors: invalid_tool_input x3") and r.missing == [] and r.row["notes"] == "not looked up: search tool errors: invalid_tool_input x3"
+    llm = FakeLLM([json.dumps({"facts": facts(il_county="Cook")})], urls=ALL_URLS, search_errors=["invalid_tool_input"])         # a search failed but facts came back: not an error
+    r = Enricher(cfg, llm, FakeVerifier(), FakeEdgar()).enrich(a, AS_OF)
+    assert r.error is None and r.row["chicagoland"] == "yes"
+
+
 def test_the_county_may_come_from_the_address_the_page_states():
     from importlib import resources
     p = resources.files("bd.prompts").joinpath("enrich.md").read_text(encoding="utf-8")
