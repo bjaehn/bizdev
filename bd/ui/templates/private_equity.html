@@ -28,6 +28,9 @@
 <div class="stat"><b>{{ stats.linked }}</b><span>companies on the scan list that a firm holds or is listed with</span></div>
 </div>{% endif %}
 {% if coverage %}<p class="notice {{ coverage_class }}">{{ coverage }}</p>{% endif %}
+{% if research %}<p class="notice {{ 'ok' if research.stopped_by == 'done' else 'caution' }}">Last PE research ({{ fmt_ts(research.when) }}): {{ research.summary }}{% if research.stopped_by != 'done' %} Raise the PE research number on <a href="/settings">Settings</a> to do more per update.{% endif %} Companies it added are scanned on the next update.</p>
+{% elif pe_budget %}<p class="meta">PE research has not run yet. Each update spends up to ${{ pe_budget }} of what the signal scan leaves of its limit on firms' deals and on the companies a page backs.</p>
+{% else %}<p class="meta">PE research is off: set the PE research number on <a href="/settings">Settings</a> above 0 to turn it on.</p>{% endif %}
 
 {% if q %}<h2>Who owns "{{ q }}"?</h2>
 <div class="card">

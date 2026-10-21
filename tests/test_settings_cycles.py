@@ -47,7 +47,7 @@ def test_a_cycle_outside_its_range_is_refused_and_a_bad_saved_value_is_ignored(c
 def test_a_saved_research_number_below_the_new_floor_is_raised_once_and_audited_as_a_release(conn):
     put_update(conn, research=10, segments=10, scan=10, budget=8, rfps=1)
     assert apply_release_changes(conn) == [("research", 10, 25)]
-    assert load_update(conn) == {"research": 25, "segments": 10, "scan": 10, "budget": 8, "rfps": 1}          # only that number moved
+    assert load_update(conn) == {"research": 25, "segments": 10, "scan": 10, "budget": 8, "rfps": 1, "pe_budget": 5}          # only that number moved (the PE number is its default)
     rows = conn.execute("SELECT actor, old, new FROM audit_log WHERE field = 'settings.update'").fetchall()
     assert [r["actor"] for r in rows] == ["release"] and json.loads(rows[0]["old"])["research"] == 10 and json.loads(rows[0]["new"])["research"] == 25
     assert apply_release_changes(conn) == []                                                                 # idempotent
@@ -129,3 +129,32 @@ def test_the_update_description_names_the_new_free_steps_and_the_deep_cycle(app_
     assert "no deep technology and procurement look in 4 weeks" in t
     save_cycles(e.conn, {"deep_every_weeks": "0", "ats_find_every_weeks": "8", "ats_find_per_run": "25", "enrich_retry_every_weeks": "4"})
     assert "no deep technology and procurement look" not in re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", e.get("/").body))
+
+
+# ---- the private-equity research number ----------------------------------------------------------------------------------------------------------------------
+def test_the_pe_research_number_defaults_to_five_keeps_the_default_for_an_old_form_and_is_bounded():
+    from bd.settings_store import UPDATE_DEFAULTS, UPDATE_FIELDS, parse_update
+    assert UPDATE_DEFAULTS["pe_budget"] == 5 and UPDATE_FIELDS["pe_budget"][1:] == (0, 50)
+    base = {k: str(v) for k, v in UPDATE_DEFAULTS.items() if k != "pe_budget"}
+    assert parse_update(base)[0]["pe_budget"] == 5                                              # a form that predates the setting keeps the default
+    assert parse_update({**base, "pe_budget": "0"})[0]["pe_budget"] == 0 and parse_update({**base, "pe_budget": "50"})[1] == []
+    assert parse_update({**base, "pe_budget": "51"})[1] and parse_update({**base, "pe_budget": "-1"})[1] and parse_update({**base, "pe_budget": "x"})[1]
+
+
+def test_the_update_runs_pe_research_after_the_paid_signal_scan_and_before_discovery_and_only_when_asked_for():
+    from bd.jobs import PAID_STEPS, is_paid, sequence_for, validate
+    form = {"research": "25", "segments": "2", "scan": "25", "budget": "8", "rfps": "0", "pe_budget": "5"}
+    args = validate("update", form)
+    assert args[-2:] == ["--pe-budget", "5"] and validate("update", {**form, "pe_budget": "0"})[-2:] == ["--pe-budget", "0"] and validate("update", {k: v for k, v in form.items() if k != "pe_budget"})[-2:] == ["--pe-budget", "0"]
+    steps = sequence_for("update", args, "2026-10-21")
+    names = [s[0] for s in steps]
+    paid_scan = max(i for i, s in enumerate(steps) if s[0] == "scan")
+    assert names.index("pe-research") == paid_scan + 1 and names.index("pe-research") < names.index("discover") < names.index("enrich")
+    assert steps[names.index("pe-research")] == ["pe-research", "--budget", "5", "--soft", "--as-of", "2026-10-21"]
+    assert "pe-research" not in [s[0] for s in sequence_for("update", validate("update", {**form, "pe_budget": "0"}), "2026-10-21")]
+    assert "pe-research" in PAID_STEPS and is_paid(["pe-research", "--budget", "5"]) and not is_paid(["pe-verify-leads"])
+    assert validate("pe_research", {"budget": "7"}) == ["pe-research", "--budget", "7"] and validate("pe_verify", {}) == ["pe-verify-leads"]
+    from bd.jobs import JobError
+    for bad in ({}, {"budget": "0"}, {"budget": "51"}, {"budget": "x"}):
+        with pytest.raises(JobError):
+            validate("pe_research", bad)

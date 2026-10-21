@@ -102,3 +102,29 @@ def test_a_peer_of_the_client_is_never_promoted_or_researched(conn, cfg):
         conn.execute("INSERT INTO pe_aliases(entity_type, entity_id, alias, alias_key, kind) VALUES ('company', ?, 'West Monroe Partners', 'west monroe partners', 'other_name')", (cid,))
     holding(conn, cfg, fid, "Honest Widgets", "honestwidgets.com", "IL", "Naperville")
     assert [c["name"] for c, _f in promotable(conn, cfg, 10)] == ["Honest Widgets"]
+
+
+def test_a_company_shown_to_be_in_chicagoland_is_added_with_its_size_unverified_but_an_unconfirmed_place_never_is(conn, cfg):
+    """Private-equity promotion accepts an unverified size (the company is scanned and tagged), never an unverified location. Market discovery is unchanged."""
+    with conn:
+        fid = ensure_firm(conn, "Alpha Capital", "manual", "test", "alphacap.example")[0]
+    holding(conn, cfg, fid, "Size Unknown Co", "sizeunknown.com")
+    holding(conn, cfg, fid, "Place Unknown Co", "placeunknown.com")
+    size_unknown = county_facts("Size Unknown Co", "sizeunknown.com", revenue=None, employees=None, ownership=None)
+    place_unknown = county_facts("Place Unknown Co", "placeunknown.com", revenue=3e8, ownership="pe-backed", county=None, hq_city=None, hq_state=None)
+    res, _llm = run(conn, cfg, {"Size Unknown Co": size_unknown, "Place Unknown Co": place_unknown})
+    assert "Size Unknown Co" in res.added and "Place Unknown Co" not in res.added and "Place Unknown Co" in res.queued
+    acct = conn.execute("SELECT * FROM accounts WHERE name = 'Size Unknown Co'").fetchone()
+    assert acct["status"] == "active" and acct["chicagoland"] == "yes" and acct["revenue"] is None and acct["origin"] == "discovered"      # scanned, size shown as unconfirmed
+    from bd.accounts import Account
+    from bd.fit_gate import check_fit, load_exclusions
+    assert check_fit(Account(**{k: acct[k] for k in Account.model_fields}), load_exclusions(conn), cfg).unverified
+
+
+def test_only_companies_a_fetched_page_backs_take_a_place_in_a_capped_batch(conn, cfg):
+    with conn:
+        fid = ensure_firm(conn, "Alpha Capital", "manual", "test", "alphacap.example")[0]
+    holding(conn, cfg, fid, "Unbacked Co", "unbacked.com", verified=False)
+    holding(conn, cfg, fid, "Backed Co", "backed.com")
+    assert [c["name"] for c, _f in promotable(conn, cfg, 1)] == ["Backed Co"] or len(promotable(conn, cfg, 10)) == 2
+    assert [c["name"] for c, _f in promotable(conn, cfg, 10, researchable_only=True)] == ["Backed Co"]

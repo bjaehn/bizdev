@@ -250,7 +250,7 @@ def run_collect(conn: sqlite3.Connection, cfg: Config, fetcher: Fetcher, today: 
 
 
 def run_history(conn: sqlite3.Connection, limit: int = 10) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM pe_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return conn.execute("SELECT * FROM pe_runs WHERE kind = 'collect' ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
 
 # ---- where a company is, from its own site (free) -------------------------------------------------------------------------------------------------

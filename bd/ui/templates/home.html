@@ -45,6 +45,7 @@
 <li>Reads each private equity firm's own portfolio page (free), and looks on each company's own careers page for its job board, so its postings come from the free complete feed (free).</li>
 <li>Reads every company's own job board (open roles, and the programs its job titles name) and its SEC event filings: 8-K items such as officer changes, restructuring, cyber incidents, defaults and restatements, and Schedule 13D from named activist investors (free).</li>
 <li>Scans up to <b>{{ u.scan }}</b> companies for leadership changes, hiring, press and company events. This is where most of the money goes.{% if coverage.deep.cycle_weeks %} Each scanned company that shows a signal, or has had no deep technology and procurement look in {{ coverage.deep.cycle_weeks }} weeks, also gets that deeper look.{% endif %}</li>
+{% if u.pe_budget %}<li>Checks the researched Chicago private equity leads against the pages they cite (free), then researches the firms' deals and the companies they hold, up to <b>${{ u.pe_budget }}</b> of what the scan leaves of the limit. Companies it adds are scanned on the next update.</li>{% endif %}
 <li>Searches <b>{{ u.segments }}</b> industry segments for new Chicagoland companies, with what is left of the limit.</li>
 <li>Researches up to <b>{{ u.research }}</b> companies whose location or size is unconfirmed, and fills in the ones with a source that checked out.</li>
 {% if u.rfps %}<li>Searches Chicago-area agency sites for open public RFPs (Open RFPs page).</li>{% endif %}

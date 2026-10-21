@@ -27,21 +27,22 @@ def cfg(cfg):
 # ---- the job ---------------------------------------------------------------------------------------------------------
 def test_update_job_is_validated_and_runs_the_steps_in_order():
     args = validate("update", UPD)
-    assert args == ["update", "--research", "25", "--segments", "2", "--scan", "25", "--budget", "8", "--rfps", "0"]
+    assert args == ["update", "--research", "25", "--segments", "2", "--scan", "25", "--budget", "8", "--rfps", "0", "--pe-budget", "0"]
     steps = sequence_for("update", args, "2026-10-16")
     # signals first: free sources, then the paid scan; company facts (research) and new companies only after, with what is left of the limit
-    assert [s[0] for s in steps] == ["check", "sec-fill", "pe-sync", "pe-import", "pe-collect", "ats-find", "scan", "scan", "discover", "enrich", "apply-proposals", "score"]
+    assert [s[0] for s in steps] == ["check", "sec-fill", "pe-sync", "pe-import", "pe-collect", "pe-verify-leads", "ats-find", "scan", "scan", "discover", "enrich", "apply-proposals", "score"]
     assert steps[1] == ["sec-fill", "--as-of", "2026-10-16"]
     assert steps[3] == ["pe-import", "--soft", "--as-of", "2026-10-16"]                                          # free; soft, the Chicago PE seed (leads only) right after the sync
     assert steps[4] == ["pe-collect", "--soft", "--as-of", "2026-10-16"]                                         # free; soft, so it can never stop the Update
-    assert steps[5] == ["ats-find", "--soft", "--as-of", "2026-10-16"]                                          # before the free scan, so a board found now is read now
-    assert steps[9] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
-    assert "--light" in steps[6] and "--light" not in steps[7] and steps[7][:3] == ["scan", "--limit", "25"]
-    assert steps[7][steps[7].index("--scanners") + 1] == "sweep,hiring" and steps[7][steps[7].index("--extras") + 1] == "tech_procurement"
-    assert "warn" not in " ".join(steps[7]) and "leadership" not in steps[7] and "press" not in steps[7]       # WARN notices are left to Advanced tools; the sweep covers leadership, press and events
-    assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[7]
+    assert steps[5] == ["pe-verify-leads", "--soft", "--as-of", "2026-10-16"]                                    # free; soft, the workbook's transaction leads read against the pages they cite
+    assert steps[6] == ["ats-find", "--soft", "--as-of", "2026-10-16"]                                          # before the free scan, so a board found now is read now
+    assert steps[10] == ["enrich", "--limit", "25", "--allow-empty", "--as-of", "2026-10-16"]
+    assert "--light" in steps[7] and "--light" not in steps[8] and steps[8][:3] == ["scan", "--limit", "25"]
+    assert steps[8][steps[8].index("--scanners") + 1] == "sweep,hiring" and steps[8][steps[8].index("--extras") + 1] == "tech_procurement"
+    assert "warn" not in " ".join(steps[8]) and "leadership" not in steps[8] and "press" not in steps[8]       # WARN notices are left to Advanced tools; the sweep covers leadership, press and events
+    assert "--allow-empty" in steps[-1] and "--allow-empty" in steps[8]
     skip = sequence_for("update", validate("update", {**UPD, "research": "0", "segments": "0"}), "2026-10-16")
-    assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "pe-import", "pe-collect", "ats-find", "scan", "scan", "score"]
+    assert [s[0] for s in skip] == ["check", "sec-fill", "pe-sync", "pe-import", "pe-collect", "pe-verify-leads", "ats-find", "scan", "scan", "score"]
     for bad in ({**UPD, "budget": "0"}, {**UPD, "budget": "101"}, {**UPD, "scan": "0"}, {**UPD, "research": "x"}, {}):
         with pytest.raises(JobError):
             validate("update", bad)
@@ -223,7 +224,7 @@ def test_update_settings_defaults_validation_and_audit(tmp_path):
     c = make_db(tmp_path)
     assert load_update(c) == UPDATE_DEFAULTS
     assert save_update(c, {"research": "10", "segments": "1", "scan": "15", "budget": "5"}) == []
-    assert load_update(c) == {"research": 10, "segments": 1, "scan": 15, "budget": 5, "rfps": 0}
+    assert load_update(c) == {"research": 10, "segments": 1, "scan": 15, "budget": 5, "rfps": 0, "pe_budget": 5}
     for bad in ({"research": "999", "segments": "1", "scan": "15", "budget": "5"}, {"research": "1", "segments": "1", "scan": "0", "budget": "5"},
                 {"research": "1", "segments": "1", "scan": "1", "budget": ""}):
         assert save_update(c, bad)
@@ -282,7 +283,7 @@ def test_pressing_update_needs_the_tick_uses_saved_numbers_and_opens_the_job(app
     assert r.code == 303 and r.h["Location"].startswith("/jobs/")
     e.app.jobs.wait()
     job = e.app.jobs.recent()[0]
-    assert job.kind == "update" and job.args == ["update", "--research", "7", "--segments", "1", "--scan", "9", "--budget", "4", "--rfps", "0"]
+    assert job.kind == "update" and job.args == ["update", "--research", "7", "--segments", "1", "--scan", "9", "--budget", "4", "--rfps", "0", "--pe-budget", "5"]
     body = e.get(r.h["Location"]).body
     assert "ARGS: enrich --limit 7" in body and "ARGS: scan --limit 9" in body
     assert e.post("/update", csrf=False).code == 403
@@ -373,8 +374,8 @@ def test_the_rfp_search_can_be_switched_off_for_an_update(app_env):
     from bd.jobs import sequence_for
     on = validate("update", {**UPD, "rfps": "1"})
     off = validate("update", {**UPD, "rfps": "0"})
-    assert validate("update", UPD)[-2:] == ["--rfps", "0"]                      # off unless asked for
-    assert on[-2:] == ["--rfps", "1"] and off[-2:] == ["--rfps", "0"] and "rfps" in [s[0] for s in sequence_for("update", on, "2026-10-16")]
+    assert validate("update", UPD)[-4:-2] == ["--rfps", "0"]                    # off unless asked for
+    assert on[-4:-2] == ["--rfps", "1"] and off[-4:-2] == ["--rfps", "0"] and "rfps" in [s[0] for s in sequence_for("update", on, "2026-10-16")]
     assert "rfps" not in [s[0] for s in sequence_for("update", off, "2026-10-16")]
     assert [s[0] for s in sequence_for("update", off, "2026-10-16")][-2:] == ["apply-proposals", "score"]
     with pytest.raises(JobError):
@@ -387,5 +388,5 @@ def test_the_rfp_search_can_be_switched_off_for_an_update(app_env):
     assert "open public RFPs" not in e.get("/").body and 'name="rfps"' in e.get("/settings").body
     e.post("/update", {"confirm": "1"})
     e.app.jobs.wait()
-    assert e.app.jobs.recent()[0].args[-2:] == ["--rfps", "0"]
+    assert e.app.jobs.recent()[0].args[-4:] == ["--rfps", "0", "--pe-budget", "5"]
     assert save_update(e.conn, {"research": "7", "segments": "1", "scan": "9", "budget": "4"}) == [] and load_update(e.conn)["rfps"] == 0   # an old form keeps the default

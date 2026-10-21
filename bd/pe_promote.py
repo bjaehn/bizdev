@@ -22,9 +22,16 @@ from bd.verify import UrlVerifier
 CONF_RANK = {"High": 0, "Medium": 1, "Low": 2}
 
 
-def promotable(conn: sqlite3.Connection, cfg: Config, limit: int) -> list[tuple[sqlite3.Row, str]]:
+def has_page(conn: sqlite3.Connection, company_id: int) -> bool:
+    """A fetched page backs a relationship of the company (page-verified evidence): the only thing that lets it be researched."""
+    return conn.execute("SELECT 1 FROM pe_evidence e JOIN pe_ownership o ON o.id = e.subject_id AND e.subject_type = 'ownership' "
+                        "WHERE o.company_id = ? AND e.verification = 'page_verified' LIMIT 1", (company_id,)).fetchone() is not None
+
+
+def promotable(conn: sqlite3.Connection, cfg: Config, limit: int, researchable_only: bool = False) -> list[tuple[sqlite3.Row, str]]:
     """(company, the firm it is listed under), best-supported first: still-held relationships, geography not out of scope, not already an account,
-    candidate or exclusion, and not a peer of the client (fit_gate.competitors)."""
+    candidate or exclusion, and not a peer of the client (fit_gate.competitors). `researchable_only` leaves out companies no fetched page backs, which a
+    paid run would only skip, so they never take a place in a capped batch."""
     names, domains = _known(conn)
     out = []
     for c in conn.execute("SELECT * FROM pe_companies WHERE account_id IS NULL ORDER BY name").fetchall():
@@ -32,7 +39,7 @@ def promotable(conn: sqlite3.Connection, cfg: Config, limit: int) -> list[tuple[
             continue                                                                       # known already, or a peer of the client: never researched
         o = conn.execute("SELECT o.*, f.name AS firm_name FROM pe_ownership o JOIN pe_firms f ON f.id = o.firm_id WHERE o.company_id = ? AND f.status = 'active' "
                          "AND o.status != 'historical' ORDER BY CASE o.confidence WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 ELSE 2 END, o.id LIMIT 1", (c["id"],)).fetchone()
-        if o is None:
+        if o is None or (researchable_only and not has_page(conn, c["id"])):
             continue
         g = company_geography(conn, c["id"], cfg)
         if g.status == "out_of_scope":
@@ -47,7 +54,7 @@ def run_promote(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifier, en
     workers = max(1, workers or cfg.llm.concurrency)
     cap = cfg.llm.max_cost_per_run_usd if max_cost is None else max_cost
     out = DiscoverSummary()
-    rows = promotable(conn, cfg, limit)
+    rows = promotable(conn, cfg, limit, researchable_only=True)
     out.segments = len(rows)
     out.found = len(rows)
     new: list[Found] = []
@@ -70,7 +77,7 @@ def run_promote(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifier, en
 
     if not new or (cap is not None and out.est_cost >= cap):
         return out
-    ids = research_and_add(conn, cfg, verifier, enricher, new, as_of, workers, out, spend, log)
+    ids = research_and_add(conn, cfg, verifier, enricher, new, as_of, workers, out, spend, log, accept_unverified_size=True)
     with conn:
         for name, account_id in ids.items():
             if account_id is not None and not conn.execute("SELECT 1 FROM pe_companies WHERE account_id = ?", (account_id,)).fetchone():

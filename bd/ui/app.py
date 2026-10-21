@@ -66,7 +66,7 @@ from bd.pipeline import (MAX_CLIENT_NAMES, STAGE_LABELS, STAGES, add_note, clien
 from bd.opportunities import build_opportunities, filter_opportunities, score_dates
 from bd.opportunity_model import assess_account, kind_label, rules_text
 from bd.pe_rollup import company_investors, firm_events, firm_rollup
-from bd.pe_view import GEO, collection_status, company_pe, firm_detail, firm_directory, fmt_ts, ownership_detail, run_detail, run_history as pe_run_history
+from bd.pe_view import GEO, collection_status, company_pe, firm_detail, firm_directory, fmt_ts, latest_research, ownership_detail, run_detail, run_history as pe_run_history
 from bd.setup_check import static_problems
 from bd.settings_store import (CYCLE_FIELDS, UPDATE_FIELDS, cycle_values, load_update, recent_release_changes, reset_cycles, save_cycles, save_update, INT_FIELDS, MAX_SEGMENTS, apply_overrides, load_discovery_overrides, parse_discovery,
                                refresh_enabled, reset_discovery, save_discovery, save_refresh)
@@ -670,7 +670,7 @@ class App:
             return self.redirect("/")
 
     def settings_update(self, req: Request, conn: sqlite3.Connection) -> Response:
-        errs = save_update(conn, {k: req.f(k) for k in UPDATE_FIELDS if k in req.form or k != "rfps"})
+        errs = save_update(conn, {k: req.f(k) for k in UPDATE_FIELDS if k in req.form or k not in ("rfps", "pe_budget")})
         if errs:
             self.say("err", "Not saved: " + "; ".join(errs))
         else:
@@ -1145,7 +1145,7 @@ class App:
         return self.render("private_equity.html", page="pe", u=u, wide=wide, phone=phone, lines=lines, co_lines=company_lines(u), firm=focus, past=past, cat=cat, q=q, cats=CAT_KEYS,
                            hits=pe_lookup(conn, today, q) if q else [], stats={"firms": len(live), "chicago": sum(f.chicago for f in live), "held": sum(f.current + f.pending for f in live),
                                                                                "leads": sum(f.leads for f in live), "linked": companies_with_signals},
-                           coverage=cov, coverage_class=cov_class)
+                           coverage=cov, coverage_class=cov_class, research=latest_research(conn), pe_budget=load_update(conn)["pe_budget"])
 
     def firm_add(self, req: Request, conn: sqlite3.Connection) -> Response:
         form = {k: req.f(k) for k in ("name", "domain", "hq_city", "portfolio_url")}
