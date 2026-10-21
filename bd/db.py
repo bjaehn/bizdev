@@ -494,9 +494,9 @@ def init_db(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")
     # `scope` is 'chicago' (a Chicago-based firm from the researched list) or 'investor' (a sponsor of a company on our list); `local_city` is where its Chicago
     # office is, which is NOT its headquarters; `seed_ref` ties a row to the seed CSVs `bd pe-import` loads. All nullable text: no CHECK, because a table with
-    # foreign keys cannot be rebuilt in place.
+    # foreign keys cannot be rebuilt in place. `lead_checked` is the day a lead's cited page was last read (bd.pe_verify), so a page is not fetched every Update.
     for table, cols in (("pe_firms", ("hq_state", "hq_source_url", "last_deals", "scope", "presence", "presence_note", "local_city", "focus", "seed_ref")),
-                        ("pe_companies", ("industry", "seed_ref")), ("pe_ownership", ("seed_ref",))):
+                        ("pe_companies", ("industry", "seed_ref")), ("pe_ownership", ("seed_ref", "lead_checked"))):
         have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
         for col in cols:
             if col not in have:

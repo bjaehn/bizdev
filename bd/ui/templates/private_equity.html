@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "_ui.html" import status_badge, src_link %}
+{% block title %}Private equity{% endblock %}
+{% macro link(firm_id, past, cat, q='') %}/private-equity{% set parts = [] %}{% if firm_id %}{% set _ = parts.append('firm=' ~ firm_id) %}{% endif %}{% if past %}{% set _ = parts.append('past=1') %}{% endif %}{% if cat %}{% set _ = parts.append('cat=' ~ cat) %}{% endif %}{% if q %}{% set _ = parts.append('q=' ~ (q|urlencode)) %}{% endif %}{% if parts %}?{{ parts|join('&amp;')|safe }}{% endif %}{% endmacro %}
+{% macro firm_table(rows) %}<div class="wrap"><table class="stackable"><tr><th>Firm</th><th class="num">Holdings</th><th class="num">Leads</th><th class="num">With signals</th><th class="num">Not drawn</th><th>What its companies show</th><th>Latest from the firm</th><th>Portfolio page</th></tr>
+
+{% for ln in rows %}{% set f = ln.firm %}<tr>
+<td data-label="Firm"><a href="/firms/{{ f.id }}"><b>{{ f.name }}</b></a>{% if f.chicago %} <span class="badge accent">Chicago</span>{% endif %}<br><a class="meta" href="{{ link(f.id, past, '') }}">Show on the map</a></td>
+<td data-label="Holdings" class="num">{{ f.current + f.pending }}{% if f.pending %}<br><span class="meta">{{ f.pending }} pending</span>{% endif %}</td>
+<td data-label="Leads" class="num">{{ f.leads }}</td>
+<td data-label="With signals" class="num">{{ f.with_signals }}</td>
+<td data-label="Not drawn" class="num">{{ f.collapsed }}</td>
+<td data-label="Companies show">{% if ln.themes %}{% for name, n in ln.themes %}{{ name }} <span class="meta">({{ n }})</span>{{ '; ' if not loop.last }}{% endfor %}{% else %}<span class="meta">nothing named yet</span>{% endif %}</td>
+<td data-label="Latest">{% if ln.event %}<span class="meta">{{ ln.event.date|fdate }}</span> · <b>{{ ln.event.label }}</b>{% if ln.event.company %} · {{ ln.event.company }}{% endif %} {{ src_link(ln.event.url) }}{% else %}<span class="meta">nothing dated in the last year</span>{% endif %}</td>
+<td data-label="Portfolio page"><span class="badge {{ ln.reading_class }}">{{ 'problem' if ln.reading_class == 'bad' else ('ok' if ln.reading_class == 'good' else 'check') }}</span> <span class="meta">{{ ln.reading }}</span></td></tr>{% endfor %}
+</table></div>{% endmacro %}
+{% block hero %}<h1>Private equity</h1>
+<p class="sub">Chicago private-equity firms, the companies they hold, and what those companies are showing. A line is drawn only as far as a source supports it; everything the researched workbook lists but no page has confirmed is a lead.</p>
+<form method="get" action="/private-equity" class="search noprint">
+<input id="q" type="text" name="q" value="{{ q }}" placeholder="Who owns this company? Type its name" aria-label="Find who owns a company">
+<button type="submit">Look up</button>
+</form>{% endblock %}
+{% block body %}
+{% if stats.firms %}<div class="stats">
+<div class="stat"><b>{{ stats.firms }}</b><span>firms hold or are listed with a company ({{ stats.chicago }} Chicago-based)</span></div>
+<div class="stat accent"><b>{{ stats.held }}</b><span>confirmed holdings, current or pending</span></div>
+<div class="stat warm"><b>{{ stats.leads }}</b><span>leads, not confirmed by a page</span></div>
+<div class="stat"><b>{{ stats.linked }}</b><span>companies on the scan list that a firm holds or is listed with</span></div>
+</div>{% endif %}
+{% if coverage %}<p class="notice {{ coverage_class }}">{{ coverage }}</p>{% endif %}
+{% if research %}<p class="notice {{ 'ok' if research.stopped_by == 'done' else 'caution' }}">Last PE research ({{ fmt_ts(research.when) }}): {{ research.summary }}{% if research.stopped_by != 'done' %} Raise the PE research number on <a href="/settings">Settings</a> to do more per update.{% endif %} Companies it added are scanned on the next update.</p>
+{% elif pe_budget %}<p class="meta">PE research has not run yet. Each update spends up to ${{ pe_budget }} of what the signal scan leaves of its limit on firms' deals and on the companies a page backs.</p>
+{% else %}<p class="meta">PE research is off: set the PE research number on <a href="/settings">Settings</a> above 0 to turn it on.</p>{% endif %}
+
+{% if q %}<h2>Who owns "{{ q }}"?</h2>
+<div class="card">
+{% if hits %}<ul class="plain">{% for h in hits %}<li><a href="{{ h.href }}"><b>{{ h.name }}</b></a>
+{% if h.investors %}<br>{% for fid, fname, status in h.investors %}<a href="{{ link(fid, past, '') }}">{{ fname }}</a> {% if status == 'unclear' %}<span class="badge">lead, not confirmed</span>{% else %}{{ status_badge(status) }}{% endif %}{{ ' · ' if not loop.last }}{% endfor %}
+{% else %}<br><span class="meta">no firm is recorded for it</span>{% endif %}
+{% if h.account_id %}<br><span class="meta">{{ h.signals }} signal{{ '' if h.signals == 1 else 's' }} in the last 90 days</span>{% else %}<br><span class="meta">not on the scan list, so not scanned for signals</span>{% endif %}</li>{% endfor %}</ul>
+<p class="meta">A lead is a listing that no retrieved page has confirmed. Open a company for its investors, their recent events and the evidence.</p>
+{% else %}<p>No company called "{{ q }}" is in the ownership ledger. That is not proof it is not private-equity-backed: the ledger knows only the firms and portfolio pages that have been read.</p>{% endif %}
+</div>{% endif %}
+
+<h2>{{ 'The neighbourhood of ' ~ firm.name if firm else 'Who holds whom' }}</h2>
+<div class="tabs">
+<a href="{{ link(None, past, cat) }}" class="{{ 'on' if not firm else '' }}">All firms</a>
+{% if firm %}<a href="{{ link(firm.id, past, cat) }}" class="on">{{ firm.name }}</a>{% endif %}
+<span class="meta">Past ownership</span>
+<a href="{{ link(firm.id if firm else None, False, cat) }}" class="{{ '' if past else 'on' }}">Hidden</a>
+<a href="{{ link(firm.id if firm else None, True, cat) }}" class="{{ 'on' if past else '' }}">Shown</a>
+</div>
+<div class="tabs"><span class="meta">Priority</span>
+<a href="{{ link(firm.id if firm else None, past, '') }}" class="{{ 'on' if not cat else '' }}">All</a>
+{% for name, key in cats.items() %}<a href="{{ link(firm.id if firm else None, past, key) }}" class="{{ 'on' if cat == key else '' }}">{{ name }}</a>{% endfor %}
+</div>
+{% if wide %}
+<div class="chart"><div class="chart--wide">{{ wide|safe }}</div><div class="chart--phone">{{ phone|safe }}</div></div>
+<div class="legend">
+<span><span class="swatch sq pg-sq pg-sq--chicago"></span> Chicago firm</span>
+<span><span class="swatch sq pg-sq"></span> Investor in a company on the list</span>
+<span><span class="swatch pg-dot pg-co--now"></span> Prospect now</span>
+<span><span class="swatch pg-dot pg-co--validate"></span> Validate first</span>
+<span><span class="swatch pg-dot pg-co--nurture"></span> Nurture</span>
+<span><span class="swatch pg-dot pg-co--none"></span> Monitor, or not enough evidence</span>
+<span><span class="swatch pg-dot pg-co--ring"></span> Location per the workbook, not confirmed</span>
+</div>
+<div class="legend">
+<span><span class="swatch ln ln-current"></span> Current</span>
+<span><span class="swatch ln ln-pending"></span> Pending</span>
+<span><span class="swatch ln ln-lead"></span> Lead, not confirmed</span>
+{% if past %}<span><span class="swatch ln ln-past"></span> Past</span>{% endif %}
+<span class="meta">Squares are firms, circles are companies: a larger circle has more dated events, a double ring is held by more than one firm, a diamond is a peer of the firm and never a prospect. Hover or tap a dot for its description.</span>
+</div>
+<p class="meta">Drawn: {{ u.companies|length }} compan{{ 'y' if u.companies|length == 1 else 'ies' }} and {{ u.firms|length }} firm{{ '' if u.firms|length == 1 else 's' }}. A company is drawn when it is on the scan list, has a signal in the last 90 days, or a retrieved page puts it in the area; one the workbook alone places in Chicago is a dashed ring. The rest of each portfolio is counted, not drawn (at most 30 companies per firm), and listed on the firm's page.{% if u.scored_on %} Priority is the evidence-based category, which is not a score of a firm.{% endif %}</p>
+<details class="card"><summary><b>The same picture as a list</b> <span class="meta">({{ co_lines|length }} compan{{ 'y' if co_lines|length == 1 else 'ies' }})</span></summary>
+<div class="wrap"><table class="stackable"><tr><th>Company</th><th>Priority</th><th>Held by</th><th class="num">Signals, 90 days</th></tr>
+{% for ln in co_lines %}{% set n = ln.company %}<tr>
+<td data-label="Company"><a href="{{ n.href }}">{{ n.name }}</a>{% if n.peer %} <span class="badge">peer, never a prospect</span>{% endif %}{% if not n.on_list %}<br><span class="meta">not on the scan list</span>{% endif %}</td>
+<td data-label="Priority"><span class="meta">{{ n.category }}</span></td>
+<td data-label="Held by">{% for fid, fname, status in ln.held %}<a href="{{ link(fid, past, '') }}">{{ fname }}</a> {% if status == 'unclear' %}<span class="badge">lead, not confirmed</span>{% else %}{{ status_badge(status) }}{% endif %}{{ ' · ' if not loop.last }}{% endfor %}</td>
+<td data-label="Signals" class="num">{% if n.on_list %}{{ n.signals }}{% else %}<span class="meta">not scanned</span>{% endif %}</td></tr>{% endfor %}
+</table></div></details>
+{% else %}<div class="card empty">{% if cat %}No company of that priority is drawn{% if firm %} for {{ firm.name }}{% endif %}. <a href="{{ link(firm.id if firm else None, past, '') }}">Show all priorities</a>.{% else %}Nothing is drawn yet. Firms and companies appear here once the ownership ledger has relationships a source supports, or the Chicago workbook has been loaded (Admin, Operate, "Load Chicago PE firms from the workbook").{% endif %}</div>{% endif %}
+
+<h2>The firms</h2>
+{% if lines %}{{ firm_table(lines[:20]) }}
+{% if lines|length > 20 %}<details class="card"><summary><b>{{ lines|length - 20 }} more firms</b> <span class="meta">(fewer holdings and leads)</span></summary>{{ firm_table(lines[20:]) }}</details>{% endif %}
+<p class="meta">Holdings are what the ledger derives as current or pending from a retrieved page. A lead is a listing no page has confirmed; leads are never counted as holdings. "With signals" counts a firm's holdings and leads whose own stored signals fall in the last 90 days: another company's signals are not shown as this one's. <a href="/firms">PE firm sources</a> shows which pages are read.</p>
+{% else %}<div class="card empty">No firm holds, or is listed with, a company yet.</div>{% endif %}
+{% endblock %}

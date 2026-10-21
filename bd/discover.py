@@ -266,9 +266,12 @@ def run_discover(conn: sqlite3.Connection, cfg: Config, discoverer: Discoverer, 
 def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifier, enricher: Enricher, new: list[Found],
                      as_of: date, workers: int, out: DiscoverSummary,
                      spend: Callable[[Usage], float | None],
-                     log: Callable[[str], None] = lambda s: None) -> dict[str, int | None]:
+                     log: Callable[[str], None] = lambda s: None, accept_unverified_size: bool = False) -> dict[str, int | None]:
     """Research each new company's facts (verified evidence only), then auto-add / queue / reject it. Shared by market
-    discovery and PE portfolio research. Returns {company name: account id or None}."""
+    discovery and PE portfolio research. Returns {company name: account id or None}.
+
+    `accept_unverified_size` (private-equity promotion only): a company the research shows to be in Chicagoland whose only open question is its size is added
+    all the same, as an unverified account that is scanned like any other; an unconfirmed location is never accepted, and nothing else about the gate changes."""
     from bd.pe_store import link_company
 
     dc = cfg.discovery
@@ -299,9 +302,12 @@ def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifie
         reason = r.error or "; ".join(errs) or "; ".join(verdict.reasons if verdict else [])
         status = "queued"
         account_id = None
+        size_only = bool(verdict and verdict.verdict == "unknown" and data.get("chicagoland") == "yes" and verdict.reasons
+                         and all(x.startswith("size unverified") for x in verdict.reasons))
+        accepted = bool(verdict and (verdict.verdict == "pass" or (accept_unverified_size and size_only)))
         if verdict and verdict.verdict == "fail":
             status = "rejected"
-        elif verdict and verdict.verdict == "pass" and data.get("domain") and auto_added < dc.max_auto_add_per_run:
+        elif accepted and data.get("domain") and auto_added < dc.max_auto_add_per_run:
             res = create_account(conn, cfg, f.company.name, form, actor="discover",
                                  extra={"origin": "discovered", "source_url": f.company.source_url, "reviewed": 0,
                                         "discovered_at": as_of.isoformat()})
@@ -309,7 +315,7 @@ def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifie
                 status, account_id, auto_added = "added", res.account_id, auto_added + 1
             else:
                 reason = "; ".join(res.errors)
-        elif verdict and verdict.verdict == "pass":
+        elif accepted:
             reason = "passed the fit gate but " + ("no verified domain" if not data.get("domain")
                                                     else "the per-run auto-add cap was reached")
         if r.error:

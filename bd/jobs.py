@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from bd.actor import current as current_actor
 
 # Names are duplicated from bd.scanners on purpose (the UI must not import scanner code); a test keeps them in sync.
-PAID_STEPS = frozenset({"enrich", "discover", "scan", "compare", "pe-portfolio", "pe-signals", "rfps", "ask", "card"})
+PAID_STEPS = frozenset({"enrich", "discover", "scan", "compare", "pe-portfolio", "pe-signals", "pe-research", "rfps", "ask", "card"})
 SCANNER_NAMES = ("leadership", "edgar", "earnings", "events", "press", "pe", "hiring", "ats", "tech_procurement", "warn", "financials", "sec_events", "sweep")
 FREE_SCANNERS = frozenset({"ats", "financials", "sec_events"})     # no model call: never counted against, or stopped by, the spending limit
 SECRET_ENV = ("ANTHROPIC_API_KEY", "TEAMS_WEBHOOK_URL", "BD_UI_PASSWORD")
@@ -56,6 +56,8 @@ KINDS: dict[str, tuple[str, bool, bool]] = {
     "pe_sync": ("Sync PE firms from accounts", False, False),
     "pe_import": ("Load the researched Chicago PE firms and companies (free)", False, False),
     "pe_collect": ("Read PE portfolio pages (free)", False, False),
+    "pe_verify": ("Check the workbook's transaction leads against their pages (free)", False, False),
+    "pe_research": ("Research PE firms, deals and portfolio companies (capped)", True, False),
     "pe_portfolio": ("Research PE portfolios", True, False),
     "pe_deals": ("Research PE transactions (acquisitions, add-ons, exits)", True, False),
     "pe_promote": ("Research portfolio companies for the target list", True, False),
@@ -129,6 +131,10 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
         if len(only) > 120 or any(c in only for c in "\n\r\x00"):
             raise JobError("firm name is too long or has odd characters.")
         return ["pe-collect"] + (["--firm", only] if only else []) + (["--force"] if form.get("force") else [])
+    if kind == "pe_verify":
+        return ["pe-verify-leads"]
+    if kind == "pe_research":
+        return ["pe-research", "--budget", str(num("budget", 1, 50, required=True))]
     if kind in ("pe_deals", "pe_promote"):
         return [kind.replace("_", "-"), "--limit", str(num("limit", 1, 50, required=True))]
     if kind in ("pe_portfolio", "pe_signals"):
@@ -156,9 +162,10 @@ def validate(kind: str, form: dict[str, str], *, scheduled: bool = False) -> lis
     if kind == "update":
         research, segs = num("research", 0, 100, required=True), num("segments", 0, 30, required=True)
         scan, budget = num("scan", 1, 100, required=True), num("budget", 1, 100, required=True)
-        rfps = num("rfps", 0, 1)
+        rfps, pe_budget = num("rfps", 0, 1), num("pe_budget", 0, 50)
         return ["update", "--research", str(research), "--segments", str(segs), "--scan", str(scan), "--budget", str(budget),
-                "--rfps", str(0 if rfps is None else rfps)]       # off unless asked for (see settings_store.UPDATE_DEFAULTS)
+                "--rfps", str(0 if rfps is None else rfps),        # off unless asked for (see settings_store.UPDATE_DEFAULTS)
+                "--pe-budget", str(0 if pe_budget is None else pe_budget)]
     if kind in ("refresh", "refresh_now"):
         return []   # steps are fixed in sequence_for()
     if kind == "discover":
@@ -247,9 +254,12 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         steps = [["check"], ["sec-fill", "--as-of", as_of],                  # free: gives public companies the SEC id that the filing scanners need
                  ["pe-sync"], ["pe-import", "--soft", "--as-of", as_of],     # free: the researched Chicago PE firms and relationships, loaded as leads
                  ["pe-collect", "--soft", "--as-of", as_of],        # free: each firm's own portfolio page, read politely; never stops the Update
+                 ["pe-verify-leads", "--soft", "--as-of", as_of],   # free: the workbook's transaction leads, read against the pages they cite
                  ["ats-find", "--soft", "--as-of", as_of],           # free: a company's own job board, found on its careers page, so the free complete feed can read it
                  ["scan", "--scanners", free_scanners(), "--force", "--light", "--allow-empty", "--as-of", as_of],
                  ["scan", "--limit", a["--scan"], "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--allow-empty", "--as-of", as_of]]
+        if int(a.get("--pe-budget", "0")):        # after the paid signal scan, so PE research only ever spends what the signals left of the limit
+            steps.append(["pe-research", "--budget", a["--pe-budget"], "--soft", "--as-of", as_of])
         if int(a["--segments"]):
             steps.append(["discover", "--limit", a["--segments"], "--as-of", as_of])
         if int(a["--research"]):
@@ -277,10 +287,10 @@ def sequence_for(kind: str, args: list[str], as_of: str) -> list[list[str]]:
         return [["scan", "--scanners", refresh_scanners(), "--force", "--light", "--as-of", as_of], ["score", "--as-of", as_of]]
     if kind in ("weekly", "weekly_dry"):
         dry = kind == "weekly_dry" or os.environ.get("BD_DRY_RUN") == "1"
-        return [["pe-sync"], ["pe-import", "--soft", "--as-of", as_of], ["pe-collect", "--soft", "--as-of", as_of], ["ats-find", "--soft", "--as-of", as_of],   # free and soft: portfolios and job boards refresh every Monday
+        return [["pe-sync"], ["pe-import", "--soft", "--as-of", as_of], ["pe-collect", "--soft", "--as-of", as_of], ["pe-verify-leads", "--soft", "--as-of", as_of], ["ats-find", "--soft", "--as-of", as_of],   # free and soft: portfolios and job boards refresh every Monday
                 ["scan", "--scanners", CORE_SCANNERS, "--extras", EXTRA_SCANNERS, "--as-of", as_of], ["pe-signals", "--as-of", as_of], ["rfps", "--allow-empty", "--as-of", as_of], ["score", "--as-of", as_of],
                 ["card", "--as-of", as_of] + (["--dry-run"] if dry else [])]
-    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "pe-collect", "pe-import", "pe-deals", "pe-promote", "rfps", "sec-fill") else [args]
+    return [args + ["--as-of", as_of]] if args[0] in ("scan", "score", "card", "enrich", "discover", "pe-portfolio", "pe-signals", "pe-collect", "pe-import", "pe-verify-leads", "pe-research", "pe-deals", "pe-promote", "rfps", "sec-fill") else [args]
 
 
 def redact(text: str, env: dict[str, str] | None = None) -> str:
@@ -399,6 +409,22 @@ class JobRunner:
         with self._conn() as c:
             return c.execute("SELECT COALESCE(MAX(id), 0) FROM runs").fetchone()[0]
 
+    def _max_pe_run_id(self) -> int:
+        try:
+            with self._conn() as c:
+                return c.execute("SELECT COALESCE(MAX(id), 0) FROM pe_runs").fetchone()[0]
+        except sqlite3.Error:
+            return 0
+
+    def _pe_research_since(self, pe_run_id: int) -> str:
+        """The one-line summary of the PE research run recorded after `pe_run_id`, if any."""
+        try:
+            with self._conn() as c:
+                r = c.execute("SELECT summary FROM pe_runs WHERE kind = 'research' AND id > ? ORDER BY id DESC LIMIT 1", (pe_run_id,)).fetchone()
+        except sqlite3.Error:
+            return ""
+        return r["summary"] if r and r["summary"] else ""
+
     def _spent_since(self, run_id: int) -> float:
         """Estimated cost logged since `run_id`. The scan total row repeats the per-call rows, so it is left out; calls to a model
         with no price log NULL and count as 0 (the Home page warns when the model is unpriced)."""
@@ -417,8 +443,9 @@ class JobRunner:
         try:
             self._set(job_id, status="running", started=_now())
             as_of = chicago_today()
-            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind in ("update", "lookup", "find", "compare") else None
+            budget = int(dict(zip(args[1::2], args[2::2])).get("--budget", 0)) if kind in ("update", "lookup", "find", "compare", "pe_research") else None
             start_id = self._max_run_id() if budget else 0
+            start_pe = self._max_pe_run_id()
             skipped_for_budget = False
             with (self.log_dir / f"{job_id}.log").open("ab") as log:
                 for step in sequence_for(kind, args, as_of):
@@ -445,6 +472,8 @@ class JobRunner:
                     spent = self._spent_since(start_id)
                     extra = f"Spent about ${spent:.2f} of the ${budget} limit." + (" Some steps were skipped: the limit was used up." if skipped_for_budget else "")
                     note = f"{note} {extra}" if note else extra
+                if (pe := self._pe_research_since(start_pe)):          # what the capped PE research did, and why it stopped, is never left out of the note
+                    note = f"{note} {pe}" if note else pe
         except subprocess.TimeoutExpired:
             status, code, note = "failed", -1, f"Stopped after {self.timeout // 60} minutes."
         except Exception as e:      # never let the thread die silently with the job stuck on "running"

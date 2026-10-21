@@ -22,6 +22,6 @@
 <h3>Recent sponsor and portfolio activity</h3>
 {% if pe.feed %}{{ pe_feed(pe.feed) }}{% if pe.feed_total > pe.feed|length %}<p class="meta">The newest {{ pe.feed|length }} of {{ pe.feed_total }}.</p>{% endif %}{% else %}<p class="meta">Nothing dated in the last 90 days has been found.</p>{% endif %}
 {% if pe.coverage %}<p class="notice {{ pe.coverage_class }}">{{ pe.coverage }}</p>{% endif %}
-<p class="meta"><a href="/firms">All private equity firms</a></p>
+<p class="meta"><a href="/private-equity">The private equity map: firms, their companies and who holds what</a></p>
 </div>
 {% endif %}

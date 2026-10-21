@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_ui.html" import status_badge, cat_badge, src_link %}
 {% block title %}{{ d.firm['name'] }}{% endblock %}
-{% block hero %}<p class="meta"><a href="/firms">← PE firms</a></p>
+{% block hero %}<p class="meta"><a href="/private-equity">← Private equity</a> · <a href="/firms">PE firm sources</a></p>
 <h1>{{ d.firm['name'] }}</h1>
 {% if d.firm['scope'] == 'chicago' %}<p class="meta"><span class="badge accent">Chicago</span> {{ d.firm['presence'] or 'Chicago-area firm' }}{% if d.firm['local_city'] %} · office in {{ d.firm['local_city'] }}{% endif %}{% if d.firm['focus'] %} · focus: {{ d.firm['focus'] }}{% endif %} (from the researched Chicago PE workbook; the office is not necessarily the firm's headquarters)</p>{% endif %}
 <p class="sub">{{ d.firm['domain'] or 'website not recorded' }}{% if d.firm['hq_city'] %} · firm headquarters {{ d.firm['hq_city'] }}{% if d.firm['hq_state'] %}, {{ d.firm['hq_state'] }}{% endif %} (as entered; not a portfolio company's location){% endif %} · <span class="badge {{ 'good' if d.firm['status'] == 'active' else 'bad' }}">{{ d.firm['status'] }}</span></p>{% endblock %}
@@ -11,6 +11,10 @@
 {% else %}<input type="hidden" name="status" value="active"><button type="submit">Make active</button>{% endif %}</form></div>
 {% if d.firm['status'] == 'excluded' %}<div class="flash err">An excluded firm is not read or scanned and its news no longer lifts any score.</div>{% endif %}
 
+{% if map_wide and not geo %}<h2>Its companies and co-investors</h2>
+<div class="chart"><div class="chart--wide">{{ map_wide|safe }}</div><div class="chart--phone">{{ map_phone|safe }}</div></div>
+<p class="meta">Solid lines are current holdings, dashed are pending, dotted are leads no page has confirmed. Squares are other firms that also hold one of these companies. <a href="/private-equity?firm={{ d.firm['id'] }}">Open this on the map</a> to show past ownership or filter by priority.</p>
+{% endif %}
 {% if not geo %}{% include "_pe_rollup.html" %}{% endif %}
 
 <h2>Firm details</h2>

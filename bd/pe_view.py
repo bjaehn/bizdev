@@ -82,7 +82,7 @@ class RunLine:
 
 
 def run_history(conn: sqlite3.Connection, limit: int = 8) -> list[RunLine]:
-    return [RunLine(r, json.loads(r["detail"]) if r["detail"] else []) for r in conn.execute("SELECT * FROM pe_runs ORDER BY id DESC LIMIT ?", (limit,))]
+    return [RunLine(r, json.loads(r["detail"]) if r["detail"] else []) for r in conn.execute("SELECT * FROM pe_runs WHERE kind = 'collect' ORDER BY id DESC LIMIT ?", (limit,))]
 
 
 def collection_status(conn: sqlite3.Connection, cfg: Config, today: date) -> dict:
@@ -277,8 +277,20 @@ def company_pe(conn: sqlite3.Connection, cfg: Config, today: date, company_id: i
 
 
 def run_detail(conn: sqlite3.Connection, run_id: int) -> RunLine | None:
-    r = conn.execute("SELECT * FROM pe_runs WHERE id = ?", (run_id,)).fetchone()
+    r = conn.execute("SELECT * FROM pe_runs WHERE id = ? AND kind = 'collect'", (run_id,)).fetchone()
     return RunLine(r, json.loads(r["detail"]) if r["detail"] else []) if r else None
+
+
+def latest_research(conn: sqlite3.Connection) -> dict | None:
+    """The most recent capped PE research run, as bd.pe_research stored it: {'when', 'summary', 'cap', 'spent', 'stopped_by', 'steps': [...]}; None if it never ran."""
+    r = conn.execute("SELECT * FROM pe_runs WHERE kind = 'research' ORDER BY id DESC LIMIT 1").fetchone()
+    if r is None:
+        return None
+    try:
+        d = json.loads(r["detail"]) if r["detail"] else {}
+    except ValueError:
+        d = {}
+    return {"when": r["started"], "summary": r["summary"], **(d if isinstance(d, dict) else {})}
 
 
 def fmt_ts(s: str | None) -> str:

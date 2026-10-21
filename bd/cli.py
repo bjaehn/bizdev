@@ -498,6 +498,114 @@ def pe_portfolio(
         _fail("Every portfolio call failed (bad API key or model, no network?).")
 
 
+@app.command(name="pe-research")
+def pe_research(
+    budget: int = typer.Option(..., help="The most this step may spend, in US dollars (taken from what is left of the Update's limit)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    workers: Optional[int] = typer.Option(None, help="Concurrent calls (default llm.concurrency)"),
+    dry_run: bool = typer.Option(False, help="Say who is due and what it could spend; no API calls"),
+    soft: bool = typer.Option(False, "--soft", help="Never fail the caller (used inside Update): a missing setting or an error is reported and the exit code stays 0"),
+) -> None:
+    """Capped private-equity research: firms' deals, then the portfolio companies a fetched page backs (added to the scan list if they pass the fit gate),
+    then portfolios not read in full. Each step takes a share of what is left, calls start in batches only while the limit would hold, and the run says why it
+    stopped and what it left. Free page checks (`pe-verify-leads`) are a separate step and run first."""
+    from datetime import datetime, timezone
+
+    from bd.db import connect, init_db
+    from bd.pe_deals import DealResearcher
+    from bd.pe_firms import PortfolioFinder
+    from bd.pe_promote import promotable
+    from bd.pe_research import deal_firms, portfolio_firms, record_run, research_cap, run_research
+    from bd.pe_store import sync_from_accounts
+    from bd.settings_store import apply_overrides
+    from bd.sources import Fetcher
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    cap, binder = research_cap(float(budget), cfg.llm.max_cost_per_run_usd)
+    if dry_run:
+        typer.echo(f"Cap ${cap:.2f} ({'the PE limit' if binder == 'pe_cap' else 'what is left of the Update limit'}). Due: {len(deal_firms(conn, run_date))} firm(s) for deals, "
+                   f"{len(promotable(conn, cfg, 10_000, researchable_only=True))} company(ies) a page backs, {len(portfolio_firms(conn, run_date))} firm(s) for portfolios.")
+        return
+    if not settings.user_agent_configured:
+        if soft:
+            typer.echo("PE research did not run: set BD_USER_AGENT (your company name and a contact email) so the pages that support each deal can be read.")
+            return
+        _fail("Set BD_USER_AGENT (your company name and a contact email): the pages that support each deal are read by code.")
+    started = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    fetcher = None
+    try:
+        sync_from_accounts(conn)
+        web, verifier, enricher, model = _pe_deps(settings, cfg)
+        fetcher = Fetcher(cfg, settings.user_agent)
+        rep = run_research(conn, cfg, DealResearcher(cfg, web, fetcher), PortfolioFinder(cfg, web, verifier), verifier, enricher, model, run_date, float(budget),
+                           cfg.llm.max_cost_per_run_usd, workers, log=typer.echo)
+        sync_from_accounts(conn)
+    except (typer.Exit, SystemExit):
+        if not soft:
+            raise
+        typer.echo("PE research did not run (see above). Nothing was spent.")
+        return
+    except Exception as e:      # noqa: BLE001  (inside Update PE research must never stop the steps that follow)
+        if not soft:
+            raise
+        typer.echo(f"PE research stopped: {type(e).__name__}: {e}. What was recorded before it stopped is kept.")
+        return
+    finally:
+        if fetcher is not None:
+            fetcher.close()
+    record_run(conn, rep, started)
+    typer.echo("\n" + rep.line())
+    if rep.stopped_by != "done":
+        left = ", ".join(f"{s.left} {s.step}" for s in rep.steps if s.left)
+        typer.echo(f"Left for the next Update: {left}. " + ("Raise the PE research number on Settings to do more per update." if rep.stopped_by == "pe_cap"
+                                                           else "The Update's own spending limit was used up first."))
+    if rep.steps[1].added:
+        typer.echo(f"{rep.steps[1].added} company(ies) were added to the scan list; the next Update scans them.")
+
+
+@app.command(name="pe-verify-leads")
+def pe_verify_leads(
+    limit: Optional[int] = typer.Option(None, help="At most N leads (Chicago firms first)"),
+    as_of: Optional[str] = typer.Option(None, help="Run date YYYY-MM-DD (default today)"),
+    soft: bool = typer.Option(False, "--soft", help="Never fail the caller (used inside Update and the Monday run): a missing setting or an error is reported and the exit code stays 0"),
+) -> None:
+    """Check the researched workbook's transaction leads against the pages they cite (free, no model). A lead is confirmed only when one sentence on the page
+    says the firm acquired or invested in the company and the deal rules accept it; an announcement becomes pending, a page that says the deal closed makes it
+    current, and anything else (a portfolio company's add-on, a sale, a mere mention) stays a lead."""
+    from bd.db import connect, init_db
+    from bd.pe_verify import run_verify_leads
+    from bd.settings_store import apply_overrides
+    from bd.sources import Fetcher
+
+    run_date = _parse_date(as_of)
+    cfg, settings = load_config(), Settings.from_env()
+    if not settings.user_agent_configured:
+        if soft:
+            typer.echo("Leads were not checked against their pages: set BD_USER_AGENT (your company name and a contact email) so the sites are told who is reading them.")
+            return
+        _fail("Set BD_USER_AGENT (your company name and a contact email): the pages the leads cite are read by code.")
+    conn = connect(settings.db_path)
+    init_db(conn)
+    cfg = apply_overrides(cfg, conn)
+    fetcher = Fetcher(cfg, settings.user_agent)
+    try:
+        res = run_verify_leads(conn, cfg, fetcher, run_date, limit, log=typer.echo)
+    except Exception as e:      # noqa: BLE001  (inside Update a free page check must never stop the signal scan that follows)
+        if not soft:
+            raise
+        typer.echo(f"Checking leads against their pages stopped: {type(e).__name__}: {e}. Nothing was changed by the part that did not finish.")
+        return
+    finally:
+        fetcher.close()
+    typer.echo(res.line())
+    for n in res.notes[:10]:
+        typer.echo(f"  not recorded: {n}")
+
+
 @app.command(name="pe-collect")
 def pe_collect(
     firm: Optional[str] = typer.Option(None, help="Only firms whose name contains this text"),

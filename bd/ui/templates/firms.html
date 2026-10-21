@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% from "_ui.html" import status_badge %}
-{% block title %}PE firms{% endblock %}
-{% block hero %}<h1>Private equity firms</h1>
+{% block title %}PE firm sources{% endblock %}
+{% block hero %}<p class="meta"><a href="/private-equity">← Private equity map</a></p>
+<h1>PE firm sources</h1>
 <p class="sub">Each firm's own portfolio page, read by code and kept as evidence: which companies it lists, what each source says about whether they are current, and what the evidence supports. Nothing here is a score for the firm.</p>{% endblock %}
 {% block body %}
 {% if errors %}<div class="errors">Not saved:<ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
