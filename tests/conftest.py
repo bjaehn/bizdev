@@ -20,6 +20,13 @@ def as_of():
     return AS_OF
 
 
+@pytest.fixture(autouse=True)
+def no_browser_by_accident(monkeypatch):
+    """PDF export reads as not installed in every test unless it says otherwise, so a test that follows every link on a page never starts Chromium (tests/test_pdf.py)."""
+    from bd import pdf
+    monkeypatch.setattr(pdf, "available", lambda: False)
+
+
 def sig(type_, age, conf="High", lines=("Strategy & Operations",), as_of=AS_OF):
     return ScoringSignal(type=type_, event_date=as_of - timedelta(days=age), confidence=conf,
                          service_lines=tuple(lines))

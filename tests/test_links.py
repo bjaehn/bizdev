@@ -5,6 +5,7 @@ from datetime import date
 
 import pytest
 
+from bd import pdf
 from bd.pipeline import set_client
 from bd.score_store import score_accounts
 from tests.conftest import add_account, add_signal
@@ -18,7 +19,9 @@ def links(body):
 
 
 @pytest.fixture
-def seeded(app_env):  # noqa: F811
+def seeded(app_env, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(pdf, "available", lambda: True)                             # the Export PDF links are offered and followed, but no browser is started
+    monkeypatch.setattr(pdf, "render", lambda html, footer: b"%PDF-1.4 fake")
     e = app_env
     today = date.today()
     ids = []
@@ -50,3 +53,4 @@ def test_every_link_on_the_main_pages_resolves(seeded):
                 bad.append((path, href, r.code))
     assert not bad, bad
     assert len(seen) > 15          # the crawl really followed links
+    assert {"/opportunities/pdf", f"/companies/{ids[0]}/pdf"} <= seen
