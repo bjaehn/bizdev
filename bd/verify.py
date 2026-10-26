@@ -106,3 +106,19 @@ class UrlVerifier:
 
     def close(self) -> None:
         self._client.close()
+
+
+HOMEPAGE_BLOCKED_NOTE = "homepage blocks our reader ({reason}): a server answered at the domain, code could not read the page"
+
+
+def homepage_ok(verifier: UrlVerifier, domain: str) -> tuple[str | None, str | None]:
+    """(why not, note) for a company's own domain taken as a hint: why not is None when the domain is usable. A homepage that loads is usable; one that answers 401,
+    403 or 429 is usable too, with a note saying code could not read it. Unlike a discovery source page, nothing here has to be vouched for by the search: the page is
+    the root of the host, which exists whenever a server answers at all, so no invented path can produce the answer. Down, missing, unresolvable and private hosts
+    are not usable."""
+    v = verifier.verify(f"https://{domain}")
+    if v.ok:
+        return None, None
+    if v.blocks_reader:
+        return None, HOMEPAGE_BLOCKED_NOTE.format(reason=v.reason)
+    return v.reason, None

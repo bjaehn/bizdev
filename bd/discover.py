@@ -32,7 +32,7 @@ from bd.fit_gate import check_fit, is_competitor, load_exclusions
 from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from bd.models import SourceType
 from bd.urls import host_in, hostname, normalize_url
-from bd.verify import UrlVerifier
+from bd.verify import UrlVerifier, homepage_ok
 
 KNOWN_NAMES_IN_PROMPT = 200
 
@@ -81,6 +81,7 @@ class DiscoverSummary:
     rejected_queued: list[str] = field(default_factory=list)   # queued candidates the competitor list rejected at the start of the run
     skipped_source: int = 0
     kept_blocked: list[str] = field(default_factory=list)      # kept although their source blocks our reader (the search returned it)
+    kept_blocked_domain: list[str] = field(default_factory=list)    # their own homepage answered 401/403/429, so the domain was kept unread
     researched: int = 0
     added: list[str] = field(default_factory=list)
     queued: list[str] = field(default_factory=list)
@@ -293,17 +294,24 @@ def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifie
 
     def research(f: Found):
         dom = normalize_domain(f.company.domain) if f.company.domain else ""
-        hint = dom if dom and is_valid_domain(dom) and not host_in(dom, cfg.sources.blocked_domains) \
-            and verifier.verify(f"https://{dom}").ok else None
+        hint = note = None
+        if dom and is_valid_domain(dom) and not host_in(dom, cfg.sources.blocked_domains):
+            why, note = homepage_ok(verifier, dom)
+            hint = None if why else dom
+            note = note if hint else None
         city = ", ".join(x for x in (f.company.hq_city, f.company.hq_state) if x) or None
-        return hint, enricher.enrich(Account(id=0, name=f.company.name, domain=hint, hq_city=city), as_of)
+        res = enricher.enrich(Account(id=0, name=f.company.name, domain=hint, hq_city=city), as_of)
+        return hint, note or (res.domain_note if not hint and res.row.get("domain") else None), res
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
         researched = list(ex.map(research, new))
     auto_added = 0
     ids: dict[str, int | None] = {}
-    for f, (hint, r) in zip(new, researched):
+    for f, (hint, home_note, r) in zip(new, researched):
         out.researched += 1
+        if home_note:
+            out.kept_blocked_domain.append(f.company.name)
+            log(f"    kept the domain of {f.company.name}: {home_note}")
         cost = spend(r.usage)
         facts = {**({"domain": hint} if hint else {}), **{k: v for k, v in r.row.items() if k != "name"}}
         form = {k: v for k, v in facts.items() if k in ("domain", "hq_city", "chicagoland", "revenue", "employees",
@@ -334,7 +342,7 @@ def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifie
                                                     else "the per-run auto-add cap was reached")
         if r.error:
             out.errors += 1
-        stored_reason = "; ".join(x for x in (f.source_note, reason) if x)           # the source note travels with the company, whatever happens to it
+        stored_reason = "; ".join(x for x in (f.source_note, home_note, reason) if x)           # the notes travel with the company, whatever happens to it
         (out.added if status == "added" else out.rejected if status == "rejected" else out.queued).append(f.company.name)
         ids[f.company.name] = account_id
         _log(conn, as_of, "discover_enrich", account_id, r.usage.total_tokens, cost, r.error)

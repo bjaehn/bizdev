@@ -1,5 +1,6 @@
-"""Discovery sources that block our reader: a company whose source page answers 401, 403 or 429 is kept when the search itself returned that page, and says so; every
-other failure to resolve still drops it. Nothing is ever shown as page-checked that code could not read. Pages and companies here are synthetic."""
+"""Discovery sources and homepages that block our reader. A company whose source page answers 401, 403 or 429 is kept when the search itself returned that page, and
+says so; a company whose own homepage answers 401, 403 or 429 keeps its domain, and says so; every other failure to resolve still drops the source or the domain.
+Nothing is ever shown as page-checked that code could not read. Pages and companies here are synthetic."""
 
 import pytest
 
@@ -111,3 +112,84 @@ def test_the_account_and_candidate_pages_say_the_source_blocks_our_reader(app_en
                    "'source blocks our reader (http_403): the search returned the page, code could not read it; size unverified')", (WALL, AS_OF.isoformat()))
     e.conn.commit()
     assert "source blocks our reader (http_403)" in e.get("/candidates").body
+
+
+# ---- the company's own homepage --------------------------------------------------------------------------------------------------------------------
+HOME_NOTE = "homepage blocks our reader (http_{status}): a server answered at the domain, code could not read the page"
+
+
+def walled_home(status="403", name="Walled Co", dom="walled.com", domain_hint=True, **over):
+    cs = [co(name, dom if domain_hint else None)]
+    return RoutingLLM(cs, {name: county_facts(name, dom, **over)}, all_urls(dom)), {f"https://{dom}": f"http_{status}"}
+
+
+@pytest.mark.parametrize("status", [401, 403, 429])
+def test_a_homepage_that_blocks_our_reader_keeps_its_domain_marked_and_the_company_is_added(cfg, conn, status):
+    llm, bad = walled_home(status)
+    lines: list[str] = []
+    s = go(cfg, conn, llm, bad, lines.append)
+    assert s.added == ["Walled Co"] and s.kept_blocked_domain == ["Walled Co"] and s.kept_blocked == [] and not s.queued
+    a = next(x for x in list_accounts(conn, status=None) if x.name == "Walled Co")
+    assert a.domain == "walled.com" and a.origin == "discovered" and not a.reviewed
+    assert HOME_NOTE.format(status=status) in reason(conn, "Walled Co")
+    assert any("kept the domain of Walled Co: homepage blocks our reader" in ln for ln in lines)
+
+
+def test_a_homepage_that_does_not_load_still_leaves_the_company_without_a_domain_and_queued(cfg, conn):
+    for i, why in enumerate(("http_404", "http_410", "http_500", "timeout", "dns_failure", "connect_error:ConnectError")):
+        llm, _ = walled_home(name=f"Gone Co {i}", dom=f"gone{i}.com")
+        s = go(cfg, conn, llm, {f"https://gone{i}.com": why})
+        assert s.queued == [f"Gone Co {i}"] and s.added == [] and s.kept_blocked_domain == [], why
+        c = conn.execute("SELECT domain, status, reason FROM candidates WHERE name = ?", (f"Gone Co {i}",)).fetchone()
+        assert c["domain"] is None and c["status"] == "queued" and "homepage blocks" not in (c["reason"] or ""), why      # no domain: its own site is not known, so facts cited there do not count
+
+
+def test_a_domain_on_the_blocked_list_is_never_fetched(cfg, conn):
+    llm = RoutingLLM([co("Linked Co", "linkedin.com")], {"Linked Co": county_facts("Linked Co", "linkedin.com")}, all_urls("linkedin.com"))
+    v = FakeVerifier({"https://linkedin.com": "http_403"})
+    run_discover(conn, cfg, Discoverer(cfg, llm, v), Enricher(cfg, llm, v, None), AS_OF, model=None, segments=["manufacturing"], workers=1, log=lambda s: None)
+    assert "https://linkedin.com" not in v.checked and conn.execute("SELECT status FROM candidates").fetchone()["status"] == "queued"
+
+
+def test_a_domain_only_the_researched_facts_name_is_kept_the_same_way(cfg, conn):
+    llm, bad = walled_home(domain_hint=False)                                          # discovery gave no domain; the enrich step found it
+    s = go(cfg, conn, llm, bad)
+    assert s.added == ["Walled Co"] and s.kept_blocked_domain == ["Walled Co"]
+    assert HOME_NOTE.format(status=403) in reason(conn, "Walled Co")
+    assert next(x for x in list_accounts(conn, status=None) if x.name == "Walled Co").domain == "walled.com"
+
+
+def test_both_notes_travel_with_the_company_in_order(cfg, conn):
+    llm = RoutingLLM([co("Walled Co", "walled.com", WALL)], {"Walled Co": county_facts("Walled Co", "walled.com")}, [LIST_PAGE, WALL, *all_urls("walled.com")])
+    s = go(cfg, conn, llm, {WALL: "http_403", "https://walled.com": "http_429"})
+    assert s.added == ["Walled Co"] and s.kept_blocked == ["Walled Co"] and s.kept_blocked_domain == ["Walled Co"]
+    r = reason(conn, "Walled Co")
+    assert r.index("source blocks our reader (http_403)") < r.index("homepage blocks our reader (http_429)")
+
+
+def test_when_the_evidence_pages_are_blocked_too_the_company_waits_for_a_person_but_keeps_its_domain(cfg, conn):
+    llm, bad = walled_home()
+    bad["https://walled.com/about"] = "http_403"                                       # the facts rest on the company's own blocked site: unverified, not added
+    s = go(cfg, conn, llm, bad)
+    assert s.queued == ["Walled Co"] and s.added == [] and s.kept_blocked_domain == ["Walled Co"]
+    c = conn.execute("SELECT domain, status, reason FROM candidates WHERE name = 'Walled Co'").fetchone()
+    assert c["domain"] == "walled.com" and c["status"] == "queued" and "homepage blocks our reader" in c["reason"]
+
+
+def test_the_account_and_candidate_pages_say_the_homepage_blocks_our_reader(app_env, cfg):  # noqa: F811
+    e = app_env
+    llm, bad = walled_home()
+    go(e.cfg, e.conn, llm, bad)
+    walled = next(a for a in list_accounts(e.conn, status=None) if a.name == "Walled Co")
+    page = " ".join(e.get(f"/accounts/{walled.id}").body.split())
+    assert "Found by market research" in page and "walled.com answers but blocks our reader, so the domain was not page-checked" in page
+    assert "Open it yourself to confirm it is this company's site" in page and "it blocks our reader, so it was not page-checked" not in page
+    llm2 = RoutingLLM([co("Open Co", "openco.com")], {"Open Co": county_facts("Open Co", "openco.com")}, all_urls("openco.com"))
+    go(e.cfg, e.conn, llm2, {})
+    open_ = next(a for a in list_accounts(e.conn, status=None) if a.name == "Open Co")
+    assert "blocks our reader" not in " ".join(e.get(f"/accounts/{open_.id}").body.split())
+    e.conn.execute("INSERT INTO candidates(name, domain, segment, source_url, found_date, status, reason) VALUES ('Queued Co','queued.com','x',?,?, 'queued', ?)",
+                   (LIST_PAGE, AS_OF.isoformat(), HOME_NOTE.format(status=403) + "; size unverified"))
+    e.conn.commit()
+    assert "homepage blocks our reader (http_403)" in e.get("/candidates").body
+

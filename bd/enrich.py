@@ -41,7 +41,7 @@ from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from bd.models import SourceType
 from bd.scanners.base import reconcile_source_type
 from bd.urls import host_in, hostname, normalize_url
-from bd.verify import UrlVerifier
+from bd.verify import UrlVerifier, homepage_ok
 
 EVIDENCE_FIELDS = ("il_county", "revenue_usd", "employees", "ownership", "sponsor", "cik")
 _HIGH_SOURCES = {"company_release", "sec_filing", "company_site", "warn_notice"}
@@ -87,6 +87,7 @@ class EnrichResult:
     dropped: list[str] = field(default_factory=list)       # what was found but not accepted, and why
     missing: list[str] = field(default_factory=list)       # facts still needed that the model did not return at all
     sec_notes: list[str] = field(default_factory=list)     # what code read from the SEC's own data (or why it could not)
+    domain_note: str | None = None                         # set when the proposed domain's homepage answers 401/403/429: kept, but never shown as page-checked
     usage: Usage = field(default_factory=Usage)
     error: str | None = None
 
@@ -270,11 +271,14 @@ class Enricher:
         domain = None
         if f.domain:
             d = normalize_domain(f.domain)
-            v = self.verifier.verify(f"https://{d}") if d else None
-            if d and not host_in(d, self.cfg.sources.blocked_domains) and v and v.ok:
+            why, note = (None, None) if d and not host_in(d, self.cfg.sources.blocked_domains) else ("not allowed", None)
+            if d and not why:
+                why, note = homepage_ok(self.verifier, d)
+            if d and not why:
                 domain = d
                 if not acct.domain:
                     put("domain", d)
+                    res.domain_note = note
             else:
                 res.dropped.append(f"domain: {f.domain} did not resolve or is not allowed")
         site = acct.domain or domain
@@ -326,7 +330,8 @@ class Enricher:
 
         if evid:
             row["evidence_urls"] = "; ".join(evid)
-        notes = list(res.dropped) + ([f"model note: {f.notes.strip()[:300]}"] if f.notes else [])
+        notes = list(res.dropped) + ([f"domain {row['domain']}: {res.domain_note}"] if res.domain_note and "domain" in row else []) \
+            + ([f"model note: {f.notes.strip()[:300]}"] if f.notes else [])
         if notes:
             row["notes"] = " | ".join(notes)
 
