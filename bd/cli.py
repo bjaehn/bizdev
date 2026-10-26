@@ -1093,6 +1093,8 @@ def check() -> None:
     cfg, settings = load_config(), Settings.from_env()
     sha = (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "").strip()          # which code is running: a log can say it came from a build before a fix was deployed
     typer.echo(f"Code: {sha[:7]} (the commit this deployment was built from)." if sha else "Code: commit unknown (no RAILWAY_GIT_COMMIT_SHA: a local run or another host).")
+    from bd.pdf import status_line
+    typer.echo(status_line())                                               # whether the Export PDF links are offered on this server
     problems = static_problems(cfg, os.environ)
     for p_ in problems:
         typer.echo(f"- {p_}")

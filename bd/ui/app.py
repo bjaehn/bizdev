@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -42,6 +43,7 @@ from bd.charts import spark_svg, trend_svg, weekly_svg
 from bd.signal_coverage import signal_coverage
 from bd.feed import FEED_DAYS, GROUP_LABELS, GROUPS as FEED_GROUPS, load_items as load_feed_items
 from bd.trend import KIND_LABELS, TREND_KINDS
+from bd import pdf as pdf_export
 from bd import users as people
 from bd.actor import acting_as, current as current_actor, current_id
 from bd.hiring_picture import hiring_picture
@@ -177,7 +179,7 @@ class App:
         self.env.globals.update(csrf=self._csrf, family_labels=FAMILY_LABELS, reasons=EXCLUSION_REASONS, labels=TYPE_LABELS,
                                 hosted=hosted is not None, operate=jobs is not None, signs_line=signs_line, newest_signal=newest_signal, spark=spark_svg, kind_colors=KIND_COLORS, admin_pages=ADMIN_PAGES, admin_groups=ADMIN_GROUPS,
                                 report_pages=frozenset(k for k, *_ in REPORT_ITEMS) | {"reports"}, find_budget=FIND_BUDGET,
-                                fmt_ts=fmt_ts, priority_rules=rules_text(self.cfg), kind_label=kind_label)
+                                fmt_ts=fmt_ts, priority_rules=rules_text(self.cfg), kind_label=kind_label, pdf_ready=lambda: pdf_export.available())
         init_conn = connect(db_path)
         init_db(init_conn)
         init_conn.close()
@@ -224,6 +226,27 @@ class App:
         flash = self._flash.pop("", []) + (self._flash.pop(current_actor(), []) if current_actor() else [])     # notices made outside any session, then this person's own
         body = self.env.get_template(template).render(flash=flash, who=current_actor(), **ctx).encode()
         return Response(http_status, body, [("Content-Type", "text/html; charset=utf-8")])
+
+    def document(self, req: Request, template: str, **ctx) -> str:
+        """The HTML a PDF is made from: the same template and data as the page, in 'pdf' mode. It consumes nobody's notices, every <details> is open (a PDF
+        cannot expand them), and a <base> makes its links open the live page. The base comes from the Host header only when that header is a plain host[:port]."""
+        host = req.headers.get("host", "")
+        base = f"{'https' if req.headers.get('x-forwarded-proto') == 'https' else 'http'}://{host}/" if re.fullmatch(r"[A-Za-z0-9.-]+(:\d{1,5})?", host) else None
+        html = self.env.get_template(template).render(flash=[], who=current_actor(), pdf=True, pdf_base=base, **ctx)
+        return re.sub(r"<details(?![^>]*\sopen)", "<details open", html)
+
+    def pdf_response(self, req: Request, template: str, ctx: dict, title: str, kind: str, name: str = "") -> Response:
+        if not pdf_export.available():
+            return self.error("503 Service Unavailable", "PDF export is not installed on this server.")
+        today = date.today()
+        try:
+            data = pdf_export.render(self.document(req, template, **ctx), f"BD Signals · {title} · exported {fmt_date(today)}")
+        except pdf_export.PdfBusy as e:
+            return self.error("503 Service Unavailable", str(e))
+        except pdf_export.PdfError as e:
+            return self.error("503 Service Unavailable", f"The PDF could not be made. {e}")
+        return Response("200 OK", data, [("Content-Type", "application/pdf"),
+                                         ("Content-Disposition", f'attachment; filename="{pdf_export.filename(kind, today, name)}"')])
 
     def error(self, status: str, message: str, nav: bool = True) -> Response:
         body = self.env.get_template("error.html").render(status=status, message=message, flash=[], nav=nav, who=current_actor()).encode()
@@ -542,6 +565,7 @@ class App:
             ("GET", "/help"): lambda: self.help_page(),
             ("GET", "/find"): lambda: self.find_page(req, conn),
             ("GET", "/opportunities"): lambda: self.opportunities(req, conn),
+            ("GET", "/opportunities/pdf"): lambda: self.opportunities_pdf(req, conn),
             ("POST", "/update"): lambda: self.update_start(req, conn),
             ("POST", "/check"): lambda: self.check_start(),
             ("POST", "/settings/update"): lambda: self.settings_update(req, conn),
@@ -607,6 +631,8 @@ class App:
             return self.company_profile(conn, int(parts[1]))
         if m == "GET" and len(parts) == 3 and parts[0] == "companies" and parts[1].isdigit() and parts[2] == "text":
             return self.company_text(conn, int(parts[1]))
+        if m == "GET" and len(parts) == 3 and parts[0] == "companies" and parts[1].isdigit() and parts[2] == "pdf":
+            return self.company_pdf(req, conn, int(parts[1]))
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] in ("stage", "note", "watch", "client"):
             return self.pipeline_update(req, conn, int(parts[1]), parts[2])
         if m == "POST" and len(parts) == 3 and parts[0] == "accounts" and parts[1].isdigit() and parts[2] == "reviewed":
@@ -678,8 +704,15 @@ class App:
         return self.redirect("/settings")
 
     def opportunities(self, req: Request, conn: sqlite3.Connection) -> Response:
+        return self.render("opportunities.html", **self._analysis_ctx(req, conn))
+
+    def opportunities_pdf(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """The Analysis page as a PDF, with the same filters in the query as the page."""
+        return self.pdf_response(req, "opportunities.html", self._analysis_ctx(req, conn), "Analysis", "analysis")
+
+    def _analysis_ctx(self, req: Request, conn: sqlite3.Connection) -> dict:
         """The one analysis page: the top three, whether things are heating up, everyone ranked, what you track and the hiring at the bottom.
-        One build (bd.week) feeds all of it, so the cards and the numbered list cannot disagree."""
+        One build (bd.week) feeds all of it, so the cards and the numbered list cannot disagree. The page and its PDF are both made from this."""
         w = build_week(conn, self.cfg, date.today())
         band = req.q("band") if req.q("band") in ("Hot", "Warm", "Watch") else ""
         family = req.q("family") if req.q("family") in FAMILY_LABELS else ""       # the Market heatmap links here with an industry and a signal type
@@ -689,11 +722,13 @@ class App:
         link = lambda **kw: "/opportunities?" + urlencode({k: v for k, v in {**kw, "family": family, "industry": industry}.items() if v}) + "#ranked"  # noqa: E731
         tabs = [(label, link(band=b), b == band and not everything) for label, b in (("All", ""), ("Hot", "Hot"), ("Warm", "Warm"), ("Watch", "Watch"))]
         tabs.append(("Everything scanned", link(tracked="1"), everything))
-        return self.render("opportunities.html", page="opportunities", w=w, shown=shown, tabs=tabs, band=band, everything=everything, family=family, industry=industry,
-                           stage_labels=STAGE_LABELS, kinds=[(k, label) for k, _, label in TREND_KINDS], kind_labels=KIND_LABELS,
-                           trend_chart=weekly_svg(w.trend.weeks, w.trend.series, KIND_LABELS),
-                           trend_chart_phone=weekly_svg(w.trend.weeks, w.trend.series, KIND_LABELS, width=380, height=250, last=6, fs=14), h=self.hiring_data(conn, req.q("theme")),
-                           pe=pe_home(conn, self.cfg, date.today()))
+        h = self.hiring_data(conn, req.q("theme"))
+        export_qs = urlencode({k: v for k, v in (("band", band), ("family", family), ("industry", industry), ("tracked", "1" if everything else ""), ("theme", h["theme"])) if v})
+        return dict(page="opportunities", w=w, shown=shown, tabs=tabs, band=band, everything=everything, family=family, industry=industry, export_qs=export_qs,
+                    stage_labels=STAGE_LABELS, kinds=[(k, label) for k, _, label in TREND_KINDS], kind_labels=KIND_LABELS,
+                    trend_chart=weekly_svg(w.trend.weeks, w.trend.series, KIND_LABELS),
+                    trend_chart_phone=weekly_svg(w.trend.weeks, w.trend.series, KIND_LABELS, width=380, height=250, last=6, fs=14), h=h,
+                    pe=pe_home(conn, self.cfg, date.today()))
 
     def pipeline_update(self, req: Request, conn: sqlite3.Connection, account_id: int, what: str) -> Response:
         if what == "stage":
@@ -834,10 +869,20 @@ class App:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
         if a is None:
             return self.error("404 Not Found", "No such company.")
+        return self.render("company.html", **self._company_ctx(conn, a))
+
+    def company_pdf(self, req: Request, conn: sqlite3.Connection, account_id: int) -> Response:
+        """One company's brief as a PDF: the same page and data as /companies/<id>."""
+        a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)
+        if a is None:
+            return self.error("404 Not Found", "No such company.")
+        return self.pdf_response(req, "company.html", self._company_ctx(conn, a), a.name, "brief", a.name)
+
+    def _company_ctx(self, conn: sqlite3.Connection, a: Account) -> dict:
         today = date.today()
-        return self.render("company.html", page="company", d=build_profile(conn, self.cfg, a, today), stage_labels=STAGE_LABELS, stages=STAGES, hp=hiring_picture(conn, self.cfg, account_id, today),
-                           cfg_hiring_days=self.cfg.hiring.window_days, pe=company_pe(conn, self.cfg, today, account_id=account_id), ap=assess_account(conn, self.cfg, account_id, today),
-                           inv=self._investors(conn, account_id, today))
+        return dict(page="company", d=build_profile(conn, self.cfg, a, today), stage_labels=STAGE_LABELS, stages=STAGES, hp=hiring_picture(conn, self.cfg, a.id, today),
+                    cfg_hiring_days=self.cfg.hiring.window_days, pe=company_pe(conn, self.cfg, today, account_id=a.id), ap=assess_account(conn, self.cfg, a.id, today),
+                    inv=self._investors(conn, a.id, today))
 
     def _investors(self, conn: sqlite3.Connection, account_id: int, today: date) -> list:
         row = conn.execute("SELECT id FROM pe_companies WHERE account_id = ?", (account_id,)).fetchone()

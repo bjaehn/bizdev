@@ -3,7 +3,7 @@
 {% block title %}Analysis{% endblock %}
 {% block herocls %}tall{% endblock %}
 {% block hero %}<h1>Analysis</h1>
-<p class="sub">{% if w.problem %}Nothing is ranked yet.{% else %}{{ w.ranked|length }} {{ 'company is' if w.ranked|length == 1 else 'companies are' }} ranked, scored {{ w.run_date|fdate }}.{% endif %}{% if w.trend.found_this_week %} {{ w.trend.found_this_week }} new signal{{ '' if w.trend.found_this_week == 1 else 's' }} found this week.{% endif %} <a href="/help">How this works</a></p>
+<p class="sub">{% if w.problem %}Nothing is ranked yet.{% else %}{{ w.ranked|length }} {{ 'company is' if w.ranked|length == 1 else 'companies are' }} ranked, scored {{ w.run_date|fdate }}.{% endif %}{% if w.trend.found_this_week %} {{ w.trend.found_this_week }} new signal{{ '' if w.trend.found_this_week == 1 else 's' }} found this week.{% endif %} <a href="/help">How this works</a>{% if pdf_ready() and not pdf %}<span class="noprint"> · <a href="/opportunities/pdf{{ '?' ~ export_qs if export_qs }}">Export PDF</a></span>{% endif %}</p>
 <form method="get" action="/find" class="search noprint">
 <input id="q" type="text" name="q" placeholder="Find a company by name" aria-label="Find a company by name">
 <button type="submit">Find</button>
@@ -59,8 +59,9 @@
 
 {% if not w.problem %}
 <h2 id="ranked">Ranked</h2>
-{% if family or industry %}<p class="meta">Only {% if industry %}{{ industry }} companies{% else %}companies{% endif %}{% if family %} with {{ family_labels[family]|lower }} signals{% endif %}. <a href="/opportunities{{ '?tracked=1' if everything else '' }}#ranked">Show everyone</a></p>{% endif %}
-<div class="tabs">{% for label, href, on in tabs %}<a href="{{ href }}" class="{{ 'on' if on else '' }}">{{ label }}</a>{% endfor %}<span class="meta">{{ shown|length }} compan{{ 'y' if shown|length == 1 else 'ies' }}{% if w.prev_date %}; changes are against the run on {{ w.prev_date|fdate }}{% endif %}</span></div>
+{% if family or industry %}<p class="meta">Only {% if industry %}{{ industry }} companies{% else %}companies{% endif %}{% if family %} with {{ family_labels[family]|lower }} signals{% endif %}.{% if not pdf %} <a href="/opportunities{{ '?tracked=1' if everything else '' }}#ranked">Show everyone</a>{% endif %}</p>{% endif %}
+{% if pdf %}<p class="meta">Showing {% for label, href, on in tabs if on %}{{ {'All': 'all ranked companies', 'Hot': 'Hot companies only', 'Warm': 'Warm companies only', 'Watch': 'Watch companies only', 'Everything scanned': 'everything scanned'}[label] }}{% endfor %}: {{ shown|length }} compan{{ 'y' if shown|length == 1 else 'ies' }}{% if w.prev_date %}; changes are against the run on {{ w.prev_date|fdate }}{% endif %}</p>
+{% else %}<div class="tabs">{% for label, href, on in tabs %}<a href="{{ href }}" class="{{ 'on' if on else '' }}">{{ label }}</a>{% endfor %}<span class="meta">{{ shown|length }} compan{{ 'y' if shown|length == 1 else 'ies' }}{% if w.prev_date %}; changes are against the run on {{ w.prev_date|fdate }}{% endif %}</span></div>{% endif %}
 {% if shown %}<div class="card">{{ rank_rows(shown) }}</div>
 {% elif w.closest and not everything %}
 <div class="card"><p class="meta">Nobody has enough signals to be ranked yet; these have the most.</p>{{ rank_rows(w.closest) }}</div>

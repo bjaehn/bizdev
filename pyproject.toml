@@ -18,7 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 ui = ["jinja2>=3.1"]
-dev = ["pytest>=8.0", "jinja2>=3.1"]
+pdf = ["playwright>=1.49"]                        # PDF export: headless Chromium in a child process (bd/pdf.py); the Dockerfile installs the browser
+dev = ["pytest>=8.0", "jinja2>=3.1", "playwright>=1.49"]
 
 [project.scripts]
 bd = "bd.cli:app"
