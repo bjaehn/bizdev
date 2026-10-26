@@ -34,7 +34,7 @@
 <td><label for="{{ p.account_id }}-{{ d.column }}">{{ d.column }}</label></td>
 <td>{{ d.current|fact(d.column) }}</td>
 <td><b>{{ d.proposed|fact(d.column) }}</b>{% if d.status == 'conflict' %}<br><span class="badge warm">differs from a known value</span>{% endif %}</td>
-<td>{% if d.evidence_url|safe_url %}<a href="{{ d.evidence_url|safe_url }}" target="_blank" rel="noopener noreferrer">source</a>{% else %}<span class="meta">none given</span>{% endif %}</td></tr>
+<td>{% if d.evidence_url|safe_url %}<a href="{{ d.evidence_url|safe_url }}" target="_blank" rel="noopener noreferrer">source</a>{% if d.unread %}<br><span class="meta">blocks our reader ({{ d.unread }}); not page-checked</span>{% endif %}{% else %}<span class="meta">none given</span>{% endif %}</td></tr>
 {% endfor %}
 </table></div>
 <p><button type="submit">Apply ticked facts</button> <span class="meta">Conflicts are unticked by default: they would replace a value already in the database.</span></p>

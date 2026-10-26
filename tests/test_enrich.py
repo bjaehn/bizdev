@@ -146,6 +146,37 @@ def test_a_homepage_that_answers_but_blocks_our_reader_is_proposed_with_a_note(c
         assert "domain" not in r.row and r.domain_note is None and any("domain: acme.com did not resolve" in d for d in r.dropped), why
 
 
+@pytest.mark.parametrize("status", [401, 403, 429])
+def test_facts_on_an_evidence_page_that_blocks_our_reader_are_kept_and_marked(cfg, status):
+    r, _ = enrich(cfg, facts(), bad={SITE: f"http_{status}"})                     # the page the employees figure cites; the search returned it
+    assert r.row["employees"] == "2500" and r.unread == {"employees": f"http_{status}"}
+    assert f"employees:unread=http_{status}" in r.row["evidence_urls"] and f"employees={SITE}" in r.row["evidence_urls"]
+    assert f"evidence blocks our reader for employees (http_{status}): the search returned the page, code could not read it" in r.row["notes"]
+    assert not any("employees" in d for d in r.dropped) and r.row["chicagoland"] == "yes" and r.row["revenue"] == "500000000"
+    r2, _ = enrich(cfg, facts(), bad={SITE: f"http_{status}", COUNTY_PAGE: f"http_{status}"})
+    assert r2.unread == {"il_county": f"http_{status}", "employees": f"http_{status}"}
+    assert f"evidence blocks our reader for location, employees (http_{status}): the search returned the pages, code could not read them" in r2.row["notes"]
+
+
+def test_evidence_that_is_down_not_returned_or_on_a_blocked_domain_is_still_dropped_and_never_called_unread(cfg):
+    for why in ("http_404", "http_410", "http_500", "timeout", "dns_failure"):
+        r, _ = enrich(cfg, facts(), bad={SITE: why})
+        assert "employees" not in r.row and r.unread == {} and "unread" not in r.row.get("evidence_urls", ""), why
+    r, _ = enrich(cfg, facts(), bad={COUNTY_PAGE: "http_403"}, urls=(SITE, SEC_10K, NEWS))            # blocked, and never returned by the search
+    assert "chicagoland" not in r.row and r.unread == {} and any("il_county: evidence URL was not in the search results" in d for d in r.dropped)
+    li = "https://www.linkedin.com/company/acme"
+    ev = {**facts()["evidence"], "employees": {"url": li, "source_type": "company_site"}}
+    r, _ = enrich(cfg, facts(evidence=ev), urls=ALL_URLS + (li,), bad={li: "http_403"})
+    assert "employees" not in r.row and r.unread == {} and any("blocked domain" in d for d in r.dropped)
+
+
+def test_a_fact_dropped_for_another_reason_is_not_marked_unread(cfg):
+    ev = {**facts()["evidence"], "revenue_usd": {"url": NEWS, "source_type": "secondary_report"}}
+    r, _ = enrich(cfg, facts(evidence=ev), bad={NEWS: "http_403"})
+    assert "revenue" not in r.row and r.unread == {} and "unread" not in r.row.get("evidence_urls", "")
+    assert any("revenue_usd: only a secondary source" in d for d in r.dropped)
+
+
 def test_a_domain_already_on_file_proposes_no_domain_and_no_note_and_a_blocked_one_is_not_fetched(cfg):
     r, _ = enrich(cfg, facts(), acct=Account(id=1, name="Acme Corp", domain="acme.com"), bad={"https://acme.com": "http_403"})
     assert "domain" not in r.row and r.domain_note is None and "homepage blocks" not in r.row.get("notes", "")

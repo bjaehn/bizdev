@@ -468,3 +468,13 @@ def test_bd_check_starts_by_saying_which_commit_the_deployment_was_built_from(mo
     assert r.output.startswith("Code: 06d377d (the commit this deployment was built from).") and r.exit_code != 0       # it still says what else to fix
     monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA")
     assert CliRunner().invoke(app, ["check"]).output.startswith("Code: commit unknown")
+
+
+def test_the_enrich_page_says_a_fact_rests_on_a_page_that_blocks_our_reader(hosted):
+    import sqlite3
+    c = sqlite3.connect(hosted.db)
+    c.execute("INSERT INTO accounts(name, domain, chicagoland) VALUES ('Acme', 'acme.com', 'unknown')")
+    c.commit()
+    (hosted.tmp / "p.csv").write_text("name,chicagoland,revenue,evidence_urls\nAcme,yes,500000000,il_county=https://acme.com/loc; il_county:unread=http_403; revenue_usd=https://acme.com/ir\n")
+    page = " ".join(call(hosted.app, "GET", "/enrich?file=p.csv", cookie=session(hosted)).body.split())
+    assert page.count("blocks our reader (http_403); not page-checked") == 1 and "https://acme.com/loc" in page and "https://acme.com/ir" in page

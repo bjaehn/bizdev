@@ -27,7 +27,7 @@ from bd.budget import Reserve
 from bd.config import Config
 from bd.cost import estimate_cost
 from bd.curate import create_account
-from bd.enrich import Enricher
+from bd.enrich import Enricher, evidence_note as evidence_note_of_unread
 from bd.fit_gate import check_fit, is_competitor, load_exclusions
 from bd.llm import LLM, LLMError, Usage, generate_validated, search_failure
 from bd.models import SourceType
@@ -82,6 +82,7 @@ class DiscoverSummary:
     skipped_source: int = 0
     kept_blocked: list[str] = field(default_factory=list)      # kept although their source blocks our reader (the search returned it)
     kept_blocked_domain: list[str] = field(default_factory=list)    # their own homepage answered 401/403/429, so the domain was kept unread
+    kept_blocked_evidence: list[str] = field(default_factory=list)  # facts kept on an evidence page that answered 401/403/429 to our reader
     researched: int = 0
     added: list[str] = field(default_factory=list)
     queued: list[str] = field(default_factory=list)
@@ -92,6 +93,10 @@ class DiscoverSummary:
     unpriced_calls: int = 0
     budget_hit: bool = False
     segments_skipped: int = 0         # segment searches never started because the spending limit would have been passed
+
+
+def evidence_note_of(r) -> str | None:
+    return evidence_note_of_unread(r.unread)
 
 
 def _norm_name(n: str) -> str:
@@ -312,6 +317,10 @@ def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifie
         if home_note:
             out.kept_blocked_domain.append(f.company.name)
             log(f"    kept the domain of {f.company.name}: {home_note}")
+        evidence_note = evidence_note_of(r)
+        if evidence_note:
+            out.kept_blocked_evidence.append(f.company.name)
+            log(f"    kept facts of {f.company.name}: {evidence_note}")
         cost = spend(r.usage)
         facts = {**({"domain": hint} if hint else {}), **{k: v for k, v in r.row.items() if k != "name"}}
         form = {k: v for k, v in facts.items() if k in ("domain", "hq_city", "chicagoland", "revenue", "employees",
@@ -342,7 +351,7 @@ def research_and_add(conn: sqlite3.Connection, cfg: Config, verifier: UrlVerifie
                                                     else "the per-run auto-add cap was reached")
         if r.error:
             out.errors += 1
-        stored_reason = "; ".join(x for x in (f.source_note, home_note, reason) if x)           # the notes travel with the company, whatever happens to it
+        stored_reason = "; ".join(x for x in (f.source_note, home_note, evidence_note, reason) if x)           # the notes travel with the company, whatever happens to it
         (out.added if status == "added" else out.rejected if status == "rejected" else out.queued).append(f.company.name)
         ids[f.company.name] = account_id
         _log(conn, as_of, "discover_enrich", account_id, r.usage.total_tokens, cost, r.error)

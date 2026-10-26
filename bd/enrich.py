@@ -88,8 +88,21 @@ class EnrichResult:
     missing: list[str] = field(default_factory=list)       # facts still needed that the model did not return at all
     sec_notes: list[str] = field(default_factory=list)     # what code read from the SEC's own data (or why it could not)
     domain_note: str | None = None                         # set when the proposed domain's homepage answers 401/403/429: kept, but never shown as page-checked
+    unread: dict[str, str] = field(default_factory=dict)   # fact -> status of its evidence page, for facts kept on a page that answered 401/403/429 (never shown as page-checked)
     usage: Usage = field(default_factory=Usage)
     error: str | None = None
+
+
+FACT_LABEL = {"il_county": "location", "revenue_usd": "revenue", "employees": "employees", "ownership": "ownership", "sponsor": "sponsor", "cik": "SEC number"}
+
+
+def evidence_note(unread: dict[str, str]) -> str | None:
+    """The note kept with facts whose evidence page the search returned but code could not read (it answered 401, 403 or 429)."""
+    if not unread:
+        return None
+    many = len(unread) > 1
+    return (f"evidence blocks our reader for {', '.join(FACT_LABEL.get(k, k) for k in unread)} ({'/'.join(sorted(set(unread.values())))}): "
+            f"the search returned the page{'s' if many else ''}, code could not read {'them' if many else 'it'}")
 
 
 def needed_facts(a: Account, from_sec: bool = False) -> list[str]:
@@ -257,6 +270,9 @@ class Enricher:
             res.dropped.append(f"{name}: evidence URL was not in the search results")
             return None
         v = self.verifier.verify(ev.url)
+        if v.blocks_reader:                               # the search returned it (checked above) and a server answered: kept, marked, never shown as page-checked
+            res.unread[name] = v.reason
+            return ev
         if not v.ok:
             res.dropped.append(f"{name}: evidence URL unreachable ({v.reason})")
             return None
@@ -328,10 +344,12 @@ class Enricher:
         if f.cik and not acct.cik:
             self._accept_cik(f, retrieved, res, evid)
 
+        used = {x.split("=", 1)[0] for x in evid}
+        res.unread = {k: v for k, v in res.unread.items() if k in used}          # only a fact that was kept can rest on an unread page
         if evid:
-            row["evidence_urls"] = "; ".join(evid)
+            row["evidence_urls"] = "; ".join(evid + [f"{k}:unread={v}" for k, v in res.unread.items()])
         notes = list(res.dropped) + ([f"domain {row['domain']}: {res.domain_note}"] if res.domain_note and "domain" in row else []) \
-            + ([f"model note: {f.notes.strip()[:300]}"] if f.notes else [])
+            + ([evidence_note(res.unread)] if res.unread else []) + ([f"model note: {f.notes.strip()[:300]}"] if f.notes else [])
         if notes:
             row["notes"] = " | ".join(notes)
 

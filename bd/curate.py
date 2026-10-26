@@ -148,6 +148,7 @@ class FieldDiff:
     proposed: object
     status: str                    # new (fills an unknown) | same | conflict (differs from a known value)
     evidence_url: str | None = None
+    unread: str | None = None      # the status (http_403 ...) when the evidence page answered but blocks our reader: not page-checked
 
 
 @dataclass
@@ -172,6 +173,16 @@ def _evidence(raw: str) -> dict[str, str]:
     return out
 
 
+def _unread(raw: str) -> dict[str, str]:
+    """The `fact:unread=http_403` entries enrich writes beside `fact=url` when the evidence page answered 401, 403 or 429 to our reader."""
+    out: dict[str, str] = {}
+    for part in (raw or "").split(";"):
+        key, sep, why = part.strip().partition("=")
+        if sep and key.strip().endswith(":unread"):
+            out[key.strip().removesuffix(":unread")] = why.strip()
+    return out
+
+
 def load_proposals(conn: sqlite3.Connection, path: str | Path) -> tuple[list[Proposal], list[str]]:
     """Parse a `bd enrich` CSV and compare each proposed fact with the database."""
     errors: list[str] = []
@@ -191,13 +202,14 @@ def load_proposals(conn: sqlite3.Connection, path: str | Path) -> tuple[list[Pro
         errors += errs
         acc = conn.execute("SELECT * FROM accounts WHERE lower(name) = lower(?)", (name,)).fetchone()
         ev = _evidence(row.get("evidence_urls") or "")
+        unread = _unread(row.get("evidence_urls") or "")
         prop = Proposal(name=name, account_id=acc["id"] if acc else None, notes=(row.get("notes") or "").strip(),
                         sec_name=(row.get("sec_name") or "").strip())
         if acc:
             for col, new in facts.items():
                 cur = acc[col]
                 status = "same" if cur == new else "new" if _is_unset(col, cur) else "conflict"
-                prop.diffs.append(FieldDiff(col, cur, new, status, ev.get(_EVIDENCE_KEY.get(col, col))))
+                prop.diffs.append(FieldDiff(col, cur, new, status, ev.get(_EVIDENCE_KEY.get(col, col)), unread.get(_EVIDENCE_KEY.get(col, col))))
         out.append(prop)
     return out, errors
 
@@ -234,7 +246,8 @@ def apply_all_new(conn: sqlite3.Connection, cfg: Config, path: str | Path, actor
         with conn:
             for d in p.diffs:
                 if d.status == "new" and d.evidence_url:
-                    log_audit(conn, actor, "evidence", p.account_id, d.column, None, d.evidence_url)
+                    log_audit(conn, actor, "evidence", p.account_id, d.column, None,
+                              d.evidence_url + (f" (blocks our reader: {d.unread}, not page-checked)" if d.unread else ""))
     return out
 
 

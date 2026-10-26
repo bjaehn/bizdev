@@ -39,6 +39,7 @@
 {% if a.origin == 'discovered' and not a.reviewed %}<div class="card"><h2>Found by market research</h2>
 <p class="meta">Discovered {{ a.discovered_at or '' }}{% if a.source_url|safe_url %} via <a href="{{ a.source_url|safe_url }}" target="_blank" rel="noopener noreferrer">{{ a.source_url|host }}</a>{% endif %}. Not yet reviewed: it is scanned only up to a per-run limit.</p>
 {% if source_blocked %}<p class="meta">The search returned this page, but it blocks our reader, so it was not page-checked. Open it yourself to confirm the company before marking it reviewed.</p>{% endif %}
+{% if evidence_facts %}<p class="meta">The facts for {{ evidence_facts }} were accepted from pages the search returned that answer but block our reader, so code could not read them. Open the sources in the change log to confirm them before marking it reviewed.</p>{% endif %}
 {% if home_blocked %}<p class="meta">The website {{ a.domain }} answers but blocks our reader, so the domain was not page-checked. Open it yourself to confirm it is this company's site before marking it reviewed.</p>{% endif %}
 <form method="post" action="/accounts/{{ a.id }}/reviewed"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Mark reviewed</button></form></div>{% endif %}
 
