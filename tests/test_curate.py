@@ -176,3 +176,20 @@ def test_apply_all_new_fills_only_unknown_facts_and_audits_evidence(cfg, tmp_pat
     ev = {r["field"]: r["new"] for r in conn.execute("SELECT field, new FROM audit_log WHERE action = 'evidence'")}
     assert ev["revenue"] == "https://acme.com/ir" and ev["chicagoland"] == "https://acme.com/loc"
     assert apply_all_new(conn, cfg, p)["facts"] == 0                         # idempotent
+
+
+def test_a_proposal_whose_evidence_page_blocks_our_reader_is_audited_as_not_page_checked(cfg, tmp_path):
+    from bd.curate import apply_all_new, load_proposals
+    from tests.conftest import add_account, make_db
+    conn = make_db(tmp_path)
+    a = add_account(conn, "Acme", domain="acme.com", chicagoland="unknown", revenue=None, ownership=None, hq_city="Chicago, IL")
+    p = tmp_path / "p.csv"
+    p.write_text("name,chicagoland,revenue,ownership,evidence_urls,notes\n"
+                 "Acme,yes,500000000,public,il_county=https://acme.com/loc; il_county:unread=http_403; revenue_usd=https://acme.com/ir; ownership=https://acme.com/ir,"
+                 "evidence blocks our reader for location (http_403)\n")
+    props, errs = load_proposals(conn, p)
+    d = {x.column: x for x in props[0].diffs}
+    assert errs == [] and d["chicagoland"].unread == "http_403" and d["revenue"].unread is None and d["chicagoland"].evidence_url == "https://acme.com/loc"
+    assert apply_all_new(conn, cfg, p)["facts"] == 3
+    ev = {r["field"]: r["new"] for r in conn.execute("SELECT field, new FROM audit_log WHERE action = 'evidence' AND account_id = ?", (a,))}
+    assert ev["chicagoland"] == "https://acme.com/loc (blocks our reader: http_403, not page-checked)" and ev["revenue"] == "https://acme.com/ir"
