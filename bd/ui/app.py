@@ -1004,11 +1004,12 @@ class App:
                              (a.id,)).fetchone()
         found = conn.execute("SELECT reason FROM candidates WHERE account_id = ? ORDER BY id LIMIT 1", (a.id,)).fetchone()
         blocked = bool(found and found["reason"] and "source blocks our reader" in found["reason"])     # kept although its source page refused our reader
+        home_blocked = bool(found and found["reason"] and "homepage blocks our reader" in found["reason"])    # its domain was kept although the homepage refused our reader
         top = next((x for x in signals if x["confidence"] in ("High", "Medium")), None)       # newest signal that counts toward the score
         headline = brief["why_now"] if brief else (f"{top['summary']} ({fmt_date(date.fromisoformat(top['event_date']))})" if top else None)
         return dict(headline=headline, state=get_state(conn, a.id), notes=notes_for(conn, a.id), stages=STAGES, stage_labels=STAGE_LABELS, brief=brief,
                     page="accounts", a=a, fit=fit, signals=signals, scores=scores, history=history, form=form, errors=errors,
-                    conf_scored={"High", "Medium"}, firms=firms, postings=postings, lead=set(self.cfg.hiring.leadership_levels), source_blocked=blocked)
+                    conf_scored={"High", "Medium"}, firms=firms, postings=postings, lead=set(self.cfg.hiring.leadership_levels), source_blocked=blocked, home_blocked=home_blocked)
 
     def account_page(self, req: Request, conn: sqlite3.Connection, account_id: int) -> Response:
         a = next((x for x in list_accounts(conn, status=None) if x.id == account_id), None)

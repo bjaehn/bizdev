@@ -136,6 +136,25 @@ def test_domain_must_resolve_and_not_be_blocked(cfg):
     assert "domain" not in r.row
 
 
+@pytest.mark.parametrize("status", [401, 403, 429])
+def test_a_homepage_that_answers_but_blocks_our_reader_is_proposed_with_a_note(cfg, status):
+    r, _ = enrich(cfg, facts(), bad={"https://acme.com": f"http_{status}"})
+    assert r.row["domain"] == "acme.com" and r.domain_note == f"homepage blocks our reader (http_{status}): a server answered at the domain, code could not read the page"
+    assert f"domain acme.com: homepage blocks our reader (http_{status})" in r.row["notes"] and not any("domain:" in d for d in r.dropped)
+    for why in ("http_404", "http_410", "http_500", "timeout", "dns_failure"):
+        r, _ = enrich(cfg, facts(), bad={"https://acme.com": why})
+        assert "domain" not in r.row and r.domain_note is None and any("domain: acme.com did not resolve" in d for d in r.dropped), why
+
+
+def test_a_domain_already_on_file_proposes_no_domain_and_no_note_and_a_blocked_one_is_not_fetched(cfg):
+    r, _ = enrich(cfg, facts(), acct=Account(id=1, name="Acme Corp", domain="acme.com"), bad={"https://acme.com": "http_403"})
+    assert "domain" not in r.row and r.domain_note is None and "homepage blocks" not in r.row.get("notes", "")
+    v = FakeVerifier({"https://www.linkedin.com": "http_403"})
+    en = Enricher(cfg, FakeLLM([json.dumps({"facts": facts(domain="https://www.linkedin.com/company/acme")})], urls=ALL_URLS), v, FakeEdgar())
+    res = en.enrich(Account(id=1, name="Acme Corp"), AS_OF)
+    assert "domain" not in res.row and not any("linkedin" in u for u in v.checked if u.count("/") == 2)
+
+
 def test_invalid_output_twice_gives_error_and_name_only_row(cfg):
     r, llm = enrich(cfg, None, replies=["nope", "still nope"])
     assert r.error and r.error.startswith("InvalidJSON") and r.row == {"name": "Acme Corp"} and len(llm.calls) == 2

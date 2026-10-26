@@ -21,7 +21,7 @@ accounts.csv ──bd seed──► database ──► fit gate ──► scan (
 ```
 
 * **Claude extracts, code decides.** Claude proposes signals; code accepts one only if its type, date window
-  and source URL pass (the URL must have been returned by the search tool *and* load when fetched). (Market discovery has one exception: a company's discovery source that answers 401, 403 or 429 to our reader is kept when the search tool returned it, marked "source blocks our reader" and never shown as page-checked.)
+  and source URL pass (the URL must have been returned by the search tool *and* load when fetched). (Market discovery has one exception: a company's discovery source that answers 401, 403 or 429 to our reader is kept when the search tool returned it, marked "source blocks our reader" and never shown as page-checked; and a company's own homepage that answers 401, 403 or 429 keeps its domain, marked "homepage blocks our reader" in the same places, because the root of a host cannot be an invented path.)
   Scoring is deterministic and unit tested.
 * **Fewer, better leads.** Only Hot (75+) and Warm (60-74) accounts with a High-confidence signal in the
   last 90 days are posted, at most 10, with a 4-week cooldown unless a new signal family appears or the
