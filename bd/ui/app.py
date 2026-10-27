@@ -592,6 +592,7 @@ class App:
             ("GET", "/hiring"): lambda: self.redirect("/opportunities" + (f"?theme={quote(req.q('theme'))}" if req.q("theme") else "") + "#hiring"),
             ("POST", "/settings/refresh"): lambda: self.refresh_save(req, conn),
             ("GET", "/private-equity"): lambda: self.pe_page(req, conn),
+            ("GET", "/private-equity/pdf"): lambda: self.pe_pdf(req, conn),
             ("GET", "/firms"): lambda: self.firms(conn),
             ("POST", "/firms/add"): lambda: self.firm_add(req, conn),
             ("GET", "/settings"): lambda: self.settings_page(conn),
@@ -1174,7 +1175,14 @@ class App:
                            history=pe_run_history(conn, 6), form=form or {}, errors=errors or [], last_job=last_job)
 
     def pe_page(self, req: Request, conn: sqlite3.Connection) -> Response:
-        """The private-equity network: a market map of firms and the companies they hold, or one firm's neighbourhood, with the plain table beside it."""
+        return self.render("private_equity.html", **self._pe_ctx(req, conn))
+
+    def pe_pdf(self, req: Request, conn: sqlite3.Connection) -> Response:
+        """The Private equity page as a PDF, with the same filters in the query as the page."""
+        return self.pdf_response(req, "private_equity.html", self._pe_ctx(req, conn), "Private equity", "private-equity")
+
+    def _pe_ctx(self, req: Request, conn: sqlite3.Connection) -> dict:
+        """The private-equity network: a market map of firms and the companies they hold, or one firm's neighbourhood, with the plain table beside it. The page and its PDF are both made from this."""
         today = date.today()
         firm = req.q("firm")
         firm_id = int(firm) if firm.isdigit() and conn.execute("SELECT 1 FROM pe_firms WHERE id = ? AND status = 'active'", (int(firm),)).fetchone() else None
@@ -1192,10 +1200,11 @@ class App:
                                               "AND o.status IN ('current', 'pending', 'unclear')").fetchone()[0] if live else 0
         focus = next((f for f in market.all_firms if f.id == firm_id), None)
         cov, cov_class = coverage_line(conn, self.cfg, today)
-        return self.render("private_equity.html", page="pe", u=u, wide=wide, phone=phone, lines=lines, co_lines=company_lines(u), firm=focus, past=past, cat=cat, q=q, cats=CAT_KEYS,
-                           hits=pe_lookup(conn, today, q) if q else [], stats={"firms": len(live), "chicago": sum(f.chicago for f in live), "held": sum(f.current + f.pending for f in live),
-                                                                               "leads": sum(f.leads for f in live), "linked": companies_with_signals},
-                           coverage=cov, coverage_class=cov_class, research=latest_research(conn), pe_budget=load_update(conn)["pe_budget"])
+        export_qs = urlencode({k: v for k, v in (("firm", firm_id or ""), ("past", "1" if past else ""), ("cat", cat), ("q", q)) if v})
+        return dict(page="pe", u=u, wide=wide, phone=phone, lines=lines, co_lines=company_lines(u), firm=focus, past=past, cat=cat, q=q, cats=CAT_KEYS, export_qs=export_qs,
+                    hits=pe_lookup(conn, today, q) if q else [], stats={"firms": len(live), "chicago": sum(f.chicago for f in live), "held": sum(f.current + f.pending for f in live),
+                                                                        "leads": sum(f.leads for f in live), "linked": companies_with_signals},
+                    coverage=cov, coverage_class=cov_class, research=latest_research(conn), pe_budget=load_update(conn)["pe_budget"])
 
     def firm_add(self, req: Request, conn: sqlite3.Connection) -> Response:
         form = {k: req.f(k) for k in ("name", "domain", "hq_city", "portfolio_url")}
