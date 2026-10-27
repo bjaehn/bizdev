@@ -5,7 +5,7 @@
 {% macro firm_table(rows) %}<div class="wrap"><table class="stackable"><tr><th>Firm</th><th class="num">Holdings</th><th class="num">Leads</th><th class="num">With signals</th><th class="num">Not drawn</th><th>What its companies show</th><th>Latest from the firm</th><th>Portfolio page</th></tr>
 
 {% for ln in rows %}{% set f = ln.firm %}<tr>
-<td data-label="Firm"><a href="/firms/{{ f.id }}"><b>{{ f.name }}</b></a>{% if f.chicago %} <span class="badge accent">Chicago</span>{% endif %}<br><a class="meta" href="{{ link(f.id, past, '') }}">Show on the map</a></td>
+<td data-label="Firm"><a href="/firms/{{ f.id }}"><b>{{ f.name }}</b></a>{% if f.chicago %} <span class="badge accent">Chicago</span>{% endif %}{% if not pdf %}<br><a class="meta" href="{{ link(f.id, past, '') }}">Show on the map</a>{% endif %}</td>
 <td data-label="Holdings" class="num">{{ f.current + f.pending }}{% if f.pending %}<br><span class="meta">{{ f.pending }} pending</span>{% endif %}</td>
 <td data-label="Leads" class="num">{{ f.leads }}</td>
 <td data-label="With signals" class="num">{{ f.with_signals }}</td>
@@ -15,7 +15,7 @@
 <td data-label="Portfolio page"><span class="badge {{ ln.reading_class }}">{{ 'problem' if ln.reading_class == 'bad' else ('ok' if ln.reading_class == 'good' else 'check') }}</span> <span class="meta">{{ ln.reading }}</span></td></tr>{% endfor %}
 </table></div>{% endmacro %}
 {% block hero %}<h1>Private equity</h1>
-<p class="sub">Chicago private-equity firms, the companies they hold, and what those companies are showing. A line is drawn only as far as a source supports it; everything the researched workbook lists but no page has confirmed is a lead.</p>
+<p class="sub">Chicago private-equity firms, the companies they hold, and what those companies are showing. A line is drawn only as far as a source supports it; everything the researched workbook lists but no page has confirmed is a lead.{% if pdf_ready() and not pdf %}<span class="noprint"> <a href="/private-equity/pdf{{ '?' ~ export_qs if export_qs }}">Export PDF</a></span>{% endif %}</p>
 <form method="get" action="/private-equity" class="search noprint">
 <input id="q" type="text" name="q" value="{{ q }}" placeholder="Who owns this company? Type its name" aria-label="Find who owns a company">
 <button type="submit">Look up</button>
@@ -43,7 +43,8 @@
 </div>{% endif %}
 
 <h2>{{ 'The neighbourhood of ' ~ firm.name if firm else 'Who holds whom' }}</h2>
-<div class="tabs">
+{% if pdf %}<p class="meta keep">Showing {{ 'the neighbourhood of ' ~ firm.name if firm else 'all firms' }}; past ownership {{ 'shown' if past else 'hidden' }}; priority {% if cat %}{% for name, key in cats.items() if key == cat %}{{ name }}{% endfor %}{% else %}all{% endif %}.</p>
+{% else %}<div class="tabs">
 <a href="{{ link(None, past, cat) }}" class="{{ 'on' if not firm else '' }}">All firms</a>
 {% if firm %}<a href="{{ link(firm.id, past, cat) }}" class="on">{{ firm.name }}</a>{% endif %}
 <span class="meta">Past ownership</span>
@@ -54,6 +55,7 @@
 <a href="{{ link(firm.id if firm else None, past, '') }}" class="{{ 'on' if not cat else '' }}">All</a>
 {% for name, key in cats.items() %}<a href="{{ link(firm.id if firm else None, past, key) }}" class="{{ 'on' if cat == key else '' }}">{{ name }}</a>{% endfor %}
 </div>
+{% endif %}
 {% if wide %}
 <div class="chart"><div class="chart--wide">{{ wide|safe }}</div><div class="chart--phone">{{ phone|safe }}</div></div>
 <div class="legend">

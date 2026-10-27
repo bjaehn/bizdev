@@ -22,6 +22,7 @@ from bd.score_store import score_accounts
 from bd.ui.app import Request
 from tests.conftest import add_account, add_signal
 from tests.test_hosted import HOST, call
+from tests.test_pe_page import world  # noqa: F401  (fixture: a small PE ledger with signals)
 from tests.test_update import app_env  # noqa: F401  (fixture)
 
 TODAY = date.today()
@@ -313,3 +314,59 @@ def test_both_exports_render_for_real(app_env, monkeypatch):  # noqa: F811
         for needle in needles:
             assert needle in text, (path, needle)
         assert "Sign out" not in text and "Export PDF" not in text                                          # none of the page's chrome is in the document
+
+
+# ---- the Private equity page -----------------------------------------------------------------------------------------------------------------------
+def test_the_private_equity_pdf_is_the_same_page_in_pdf_mode(world, seen):  # noqa: F811
+    e, fid, *_ = world
+    r = e.get("/private-equity/pdf")
+    assert r.code == 200 and r.body == "%PDF-1.4 fake" and r.h["Content-Type"] == "application/pdf"
+    assert r.h["Content-Disposition"] == f'attachment; filename="sei-bd-private-equity-{TODAY.isoformat()}.pdf"'
+    html, footer = seen[0]
+    assert footer == f"BD Signals · Private equity · exported {TODAY:%b} {TODAY.day}, {TODAY.year}"
+    assert "<title>Private equity" in html and html.count('<svg class="pg"') == 1 and "Alpha Capital" in html and "Lakeshore Health" in html
+    assert 'class="tabs"' not in html and "Showing all firms; past ownership hidden; priority all." in html and "Show on the map" not in html
+    assert "<details" not in html.replace("<details open", "") and "Export PDF" not in html and '<base href="http://' + HOST + '/">' in html
+
+
+def test_the_private_equity_pdf_keeps_the_filters_of_the_page_it_was_opened_from(world, seen):  # noqa: F811
+    e, fid, *_ = world
+    page = e.get(f"/private-equity?firm={fid}&past=1&cat=now").body
+    assert f'href="/private-equity/pdf?firm={fid}&amp;past=1&amp;cat=now"' in page
+    assert 'href="/private-equity/pdf"' in e.get("/private-equity").body
+    assert 'href="/private-equity/pdf?q=lakeshore"' in e.get("/private-equity?q=lakeshore").body
+    e.get(f"/private-equity/pdf?firm={fid}&past=1&cat=now&q=lakeshore")
+    html = seen[0][0]
+    assert "Showing the neighbourhood of Alpha Capital; past ownership shown; priority Prospect now." in html and 'Who owns "lakeshore"?' in html
+    e.get("/private-equity/pdf?firm=999&cat=nonsense&past=maybe")                                  # a bad value is ignored, not an error
+    assert "Showing all firms; past ownership hidden; priority all." in seen[1][0]
+
+
+def test_the_private_equity_export_link_follows_the_engine_and_a_signed_out_visitor_gets_no_pdf(world, seen, monkeypatch):  # noqa: F811
+    e, *_ = world
+    assert 'Export PDF</a>' in e.get("/private-equity").body
+    assert call(e.app, "GET", "/private-equity/pdf").code == 303 and not seen
+    monkeypatch.setattr(pdf, "available", lambda: False)
+    assert "Export PDF" not in e.get("/private-equity").body
+    r = e.get("/private-equity/pdf")
+    assert r.code == 503 and "PDF export is not installed on this server" in r.body and not seen
+
+
+@pytest.mark.skipif(not a_chromium() or not shutil.which("pdftotext"), reason="needs a Chromium and poppler's pdftotext")
+def test_the_private_equity_page_renders_for_real(world, monkeypatch):  # noqa: F811
+    pytest.importorskip("playwright")
+    monkeypatch.setattr(pdf, "available", real_available)
+    monkeypatch.setenv(pdf.CHROME_ENV, a_chromium())
+    e, *_ = world
+    cookie = call(e.app, "POST", "/login", {"password": "correct horse battery staple"}).h["Set-Cookie"].split(";")[0].split("=", 1)[1]
+    env = {"REQUEST_METHOD": "GET", "PATH_INFO": "/private-equity/pdf", "QUERY_STRING": "", "HTTP_HOST": HOST, "CONTENT_LENGTH": "0", "wsgi.input": __import__("io").BytesIO(b""),
+           "REMOTE_ADDR": "9.9.9.9", "HTTP_COOKIE": f"bd_session={cookie}"}
+    out = {}
+    body = b"".join(e.app(env, lambda st, h: out.update(status=st, headers=dict(h))))
+    assert out["status"].startswith("200") and body.startswith(b"%PDF") and len(body) > 5000
+    f = e.tmp / "pe.pdf"
+    f.write_bytes(body)
+    text = subprocess.run(["pdftotext", "-layout", str(f), "-"], capture_output=True, text=True, check=True).stdout
+    for needle in ("Private equity", "Alpha Capital", "Lakeshore Health", "The firms", "Page 1 of"):
+        assert needle in text, needle
+    assert "Sign out" not in text and "Export PDF" not in text
